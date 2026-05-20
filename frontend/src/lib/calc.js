@@ -1,60 +1,119 @@
-// =====================================================================
-// Lógica de cálculo de costos — funciones puras
-// =====================================================================
+// ============ CONSTANTES ============
+export const CATEGORIAS = [
+  { key: 'materiales',         label: 'Materiales',            icon: '🧱' },
+  { key: 'manoObra',           label: 'Mano de Obra',          icon: '👷' },
+  { key: 'herramientaEquipo',  label: 'Herramienta y Equipo',  icon: '🔧' },
+  { key: 'subcontratos',       label: 'Subcontratos',          icon: '🏢' },
+]
 
-export const fmt = (n) =>
-  (Number(n) || 0).toLocaleString('en-US', {
-    minimumFractionDigits: 2, maximumFractionDigits: 2,
-  })
-
-export const money = (n, currency = '$') => `${currency}${fmt(n)}`
-
-// Costo de un concepto individual:
-//   rendimiento × costoUnitario × (1 + desperdicio/100)
-export const conceptoCost = (c) => {
-  const rend = Number(c.rendimiento) || 0
-  const desp = Number(c.desperdicio) || 0
-  const cu = Number(c.costoUnitario ?? c.costo_unitario) || 0
-  return rend * cu * (1 + desp / 100)
+export const EMPTY_CATALOGOS = {
+  materiales: [], manoObra: [], herramientaEquipo: [], subcontratos: [],
 }
 
-export const sumConceptos = (arr) =>
-  (arr || []).reduce((s, c) => s + conceptoCost(c), 0)
+// ============ HELPERS ============
+export const round2  = n => Math.round((+n || 0) * 100) / 100
+export const fmt     = n => round2(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+export const money   = n => '$' + fmt(n)
+export const moneyK  = n => {
+  const v = +n || 0
+  if (v >= 1e6) return '$' + (v / 1e6).toFixed(2) + 'M'
+  if (v >= 1e3) return '$' + (v / 1e3).toFixed(1) + 'K'
+  return '$' + v.toFixed(0)
+}
+export const uid       = () => Math.random().toString(36).slice(2, 10)
+export const normalize = s => (s || '').toString().trim().toLowerCase().replace(/\s+/g, ' ')
 
-// Cálculo completo de una ficha de costo
-export const calcFicha = (ficha, pctIndirectos = 10, pctImprevistos = 1, pctUtilidad = 8) => {
-  const f = ficha || { materiales: [], manoObra: [], herramientaEquipo: [], subcontratos: [] }
-  const totMat = sumConceptos(f.materiales)
-  const totMo = sumConceptos(f.manoObra)
-  const totHe = sumConceptos(f.herramientaEquipo)
-  const totSub = sumConceptos(f.subcontratos)
-  const costoDirecto = totMat + totMo + totHe + totSub
-  const indirectos = costoDirecto * (pctIndirectos / 100)
-  const imprevistos = (costoDirecto + indirectos) * (pctImprevistos / 100)
-  const utilidad = (costoDirecto + indirectos) * (pctUtilidad / 100)
-  const precioUnitario = costoDirecto + indirectos + imprevistos + utilidad
+// ============ CATÁLOGO ============
+export const findInsumo = (cat, k, id) =>
+  (cat && cat[k] ? cat[k] : []).find(i => i.id === id)
+
+export const conceptoCost = (c, cat, k) => {
+  const ins = findInsumo(cat, k, c.insumoId)
+  if (!ins) return 0
+  return round2((+c.rendimiento || 0) * (+ins.costoBase || 0) * (1 + (+c.desperdicio || 0) / 100))
+}
+
+const sumCat = (arr, cat, k) =>
+  (arr || []).reduce((s, c) => s + conceptoCost(c, cat, k), 0)
+
+// ============ CÁLCULOS PRINCIPALES ============
+export const calcFicha = (f, cat, p) => {
+  f = f || { materiales: [], manoObra: [], herramientaEquipo: [], subcontratos: [] }
+  const totMat = round2(sumCat(f.materiales,         cat, 'materiales'))
+  const totMo  = round2(sumCat(f.manoObra,           cat, 'manoObra'))
+  const totHe  = round2(sumCat(f.herramientaEquipo,  cat, 'herramientaEquipo'))
+  const totSub = round2(sumCat(f.subcontratos,       cat, 'subcontratos'))
+  const cd      = round2(totMat + totMo + totHe + totSub)
+  const ind     = round2(cd * (p.pctIndirectos  / 100))
+  const imp     = round2((cd + ind) * (p.pctImprevistos / 100))
+  const uti     = round2((cd + ind) * (p.pctUtilidad    / 100))
+  const sinTax  = round2(cd + ind + imp + uti)
+  const tax     = round2(sinTax * (p.pctImpuesto / 100))
+  const pu      = round2(sinTax + tax)
   return {
     totMat, totMo, totHe, totSub,
-    costoDirecto, indirectos, imprevistos, utilidad,
-    precioUnitario,
+    costoDirecto: cd, indirectos: ind, imprevistos: imp, utilidad: uti,
+    subtotalSinImpuesto: sinTax, impuesto: tax, precioUnitario: pu,
   }
 }
 
-// Subtotal recursivo de un item del árbol (capítulo, sub-capítulo o actividad)
-export const calcItem = (item, ctx) => {
-  if (item.tipo === 'actividad') {
-    const f = calcFicha(item.ficha, ctx.pctIndirectos, ctx.pctImprevistos, ctx.pctUtilidad)
-    return {
-      precioUnitario: f.precioUnitario,
-      subtotal: f.precioUnitario * (Number(item.cantidad) || 0),
+export const calcItem = (it, cat, p) => {
+  if (it.tipo === 'actividad') {
+    const f = calcFicha(it.ficha, cat, p)
+    return { precioUnitario: f.precioUnitario, subtotal: round2(f.precioUnitario * (+it.cantidad || 0)) }
+  }
+  let s = 0
+  for (const c of it.children || []) s += calcItem(c, cat, p).subtotal
+  return { subtotal: round2(s) }
+}
+
+export const calcKPIs = b => {
+  const p = {
+    pctIndirectos: b.pctIndirectos, pctImprevistos: b.pctImprevistos,
+    pctUtilidad:   b.pctUtilidad,   pctImpuesto:    b.pctImpuesto,
+  }
+  let totDir = 0, totInd = 0, totImp = 0, totUti = 0, total = 0, nActs = 0
+  const walk = its => {
+    for (const it of its) {
+      if (it.tipo === 'actividad') {
+        const f = calcFicha(it.ficha, b.catalogos, p)
+        const q = +it.cantidad || 0
+        totDir += f.costoDirecto   * q
+        totInd += f.indirectos     * q
+        totImp += f.imprevistos    * q
+        totUti += f.utilidad       * q
+        total  += f.precioUnitario * q
+        nActs++
+      } else if (it.children) walk(it.children)
     }
   }
-  let subtotal = 0
-  for (const child of item.children || []) {
-    subtotal += calcItem(child, ctx).subtotal
+  walk(b.items)
+  return {
+    totDir: round2(totDir), totInd: round2(totInd),
+    totImp: round2(totImp), totUti: round2(totUti),
+    total:  round2(total),
+    nActividades: nActs,
+    nCapitulos:   b.items.filter(i => i.tipo === 'capitulo').length,
   }
-  return { subtotal }
 }
 
-export const totalGeneral = (items, ctx) =>
-  items.reduce((s, it) => s + calcItem(it, ctx).subtotal, 0)
+// ============ UTILIDADES DE CATÁLOGO ============
+export const findOrCreateInsumo = (cat, k, desc) => {
+  const n = normalize(desc)
+  if (!n) return null
+  const ex = (cat[k] || []).find(i => normalize(i.descripcion) === n)
+  if (ex) return { catalogos: cat, insumo: ex }
+  const ni = { id: uid(), codigo: '', descripcion: desc.trim(), unidad: 'und', costoBase: 0, proveedor: '', notas: '' }
+  return { catalogos: { ...cat, [k]: [...(cat[k] || []), ni] }, insumo: ni }
+}
+
+export const findPathById = (items, id, path = []) => {
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].id === id) return [...path, i]
+    if (items[i].children) {
+      const r = findPathById(items[i].children, id, [...path, i])
+      if (r) return r
+    }
+  }
+  return null
+}

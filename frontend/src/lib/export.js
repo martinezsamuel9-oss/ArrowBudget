@@ -1,16 +1,18 @@
-// =====================================================================
-// ARROW BUDGET — Exportación PDF y Excel
-// =====================================================================
-import { calcItem, calcFicha, conceptoCost, money, fmt } from './calc'
 import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
+import 'jspdf-autotable'
+import ExcelJS from 'exceljs'
+import { saveAs } from 'file-saver'
+import * as XLSX from 'xlsx'
+import {
+  round2, fmt, money, findInsumo, conceptoCost,
+  calcItem, calcFicha, CATEGORIAS, uid, normalize,
+} from './calc'
 
-// ─── ESTILOS EXCEL ────────────────────────────────────────────────────
 const X = {
   titleFill:   { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F1115' } },
-  titleFont:   { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFBBF24' } },
+  titleFont:   { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFF59E0B' } },
   headerFill:  { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } },
-  headerFont:  { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } },
+  headerFont:  { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } },
   capFill:     { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F1115' } },
   capFont:     { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFBBF24' } },
   subcapFill:  { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF475569' } },
@@ -18,393 +20,307 @@ const X = {
   subtotalFill:{ type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } },
   totalFill:   { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F1115' } },
   totalFont:   { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFBBF24' } },
-  border: {
-    top:    { style: 'thin', color: { argb: 'FFCBD5E1' } },
-    left:   { style: 'thin', color: { argb: 'FFCBD5E1' } },
-    bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
-    right:  { style: 'thin', color: { argb: 'FFCBD5E1' } },
-  },
-  ac: { vertical: 'middle', horizontal: 'center', wrapText: true },
-  ar: { vertical: 'middle', horizontal: 'right' },
-  al: { vertical: 'middle', horizontal: 'left', wrapText: true },
+  border: { top:{style:'thin',color:{argb:'FFCBD5E1'}}, left:{style:'thin',color:{argb:'FFCBD5E1'}}, bottom:{style:'thin',color:{argb:'FFCBD5E1'}}, right:{style:'thin',color:{argb:'FFCBD5E1'}} },
+  ac: { vertical:'middle', horizontal:'center', wrapText:true },
+  ar: { vertical:'middle', horizontal:'right' },
+  al: { vertical:'middle', horizontal:'left', wrapText:true },
 }
 const MFMT = '"$"#,##0.00'
 const NFMT = '#,##0.0000'
 
-const setC = (ws, addr, val, opts = {}) => {
+const setC = (ws, addr, val, opts={}) => {
   const c = ws.getCell(addr)
   c.value = val
-  if (opts.fill)   c.fill = opts.fill
-  if (opts.font)   c.font = opts.font
+  if (opts.fill) c.fill = opts.fill
+  if (opts.font) c.font = opts.font
   c.alignment = opts.alignment || X.al
   if (opts.numFmt) c.numFmt = opts.numFmt
   c.border = opts.border || X.border
   return c
 }
 
-const writeHeaderXLSX = (ws, budget) => {
+const writeHeader = (ws, budget) => {
   ws.mergeCells('A1:F1')
-  setC(ws, 'A1', 'PRESUPUESTO DE OBRA', { fill: X.titleFill, font: X.titleFont, alignment: X.ac })
-  ws.getRow(1).height = 28
-  setC(ws, 'A2', 'Cotizante:',  { font: { bold: true } }); setC(ws, 'B2', budget.cotizante || '')
-  setC(ws, 'D2', 'Cliente:',    { font: { bold: true } }); setC(ws, 'E2', budget.cliente   || '')
-  setC(ws, 'A3', 'Proyecto:',   { font: { bold: true } }); setC(ws, 'B3', budget.nombre_proyecto || '')
-  setC(ws, 'D3', 'Fecha:',      { font: { bold: true } }); setC(ws, 'E3', budget.fecha     || '')
-  setC(ws, 'A4', 'Lugar:',      { font: { bold: true } }); setC(ws, 'B4', budget.lugar     || '')
-  setC(ws, 'D4', 'Rev:',        { font: { bold: true } }); setC(ws, 'E4', budget.revision  || 1)
-  setC(ws, 'F4', budget.moneda  || 'USD', { font: { bold: true } })
+  setC(ws,'A1','PRESUPUESTO DE OBRA',{fill:X.titleFill,font:X.titleFont,alignment:X.ac})
+  ws.getRow(1).height=28
+  setC(ws,'A2','Cotizante:',{font:{bold:true}}); setC(ws,'B2',budget.cotizante||'')
+  setC(ws,'D2','Cliente:',{font:{bold:true}});   setC(ws,'E2',budget.cliente||'')
+  setC(ws,'A3','Proyecto:',{font:{bold:true}});  setC(ws,'B3',budget.nombreProyecto||'')
+  setC(ws,'D3','Fecha:',{font:{bold:true}});     setC(ws,'E3',budget.fecha||'')
+  setC(ws,'A4','Lugar:',{font:{bold:true}});     setC(ws,'B4',budget.lugar||'')
+  setC(ws,'D4','Rev:',{font:{bold:true}});       setC(ws,'E4',budget.revision||1)
+  setC(ws,'F4',budget.moneda||'USD',{font:{bold:true}})
   return 6
 }
 
-// ─── PDF HEADER ────────────────────────────────────────────────────────
-const drawPDFHeader = (doc, budget, subtitle) => {
+const drawPDFHeader = (doc, budget, subtitle='PRESUPUESTO DE OBRA') => {
   const w = doc.internal.pageSize.getWidth()
-  doc.setFillColor(15, 17, 21)
-  doc.rect(0, 0, w, 32, 'F')
-  doc.setTextColor(245, 158, 11); doc.setFontSize(15); doc.setFont(undefined, 'bold')
-  doc.text(subtitle, w / 2, 12, { align: 'center' })
+  doc.setFillColor(15,17,21); doc.rect(0,0,w,32,'F')
+  try { if(budget.logoOfertante) doc.addImage(budget.logoOfertante,'PNG',8,4,22,22) } catch{}
+  try { if(budget.logoCliente)   doc.addImage(budget.logoCliente,'PNG',w-30,4,22,22) } catch{}
+  doc.setTextColor(245,158,11); doc.setFontSize(15); doc.setFont(undefined,'bold')
+  doc.text(subtitle, w/2, 12, {align:'center'})
   doc.setTextColor(255); doc.setFontSize(11)
-  doc.text(budget.nombre_proyecto || '', w / 2, 19, { align: 'center' })
-  doc.setFontSize(8); doc.setFont(undefined, 'normal'); doc.setTextColor(220, 220, 220)
-  doc.text(`Rev ${budget.revision || 1} · ${budget.estado || 'Borrador'} · ${budget.moneda || 'USD'} · ${budget.fecha || ''}`, w / 2, 25, { align: 'center' })
+  doc.text(budget.nombreProyecto||'', w/2, 19, {align:'center'})
+  doc.setFontSize(8); doc.setFont(undefined,'normal'); doc.setTextColor(220,220,220)
+  doc.text(`Rev ${budget.revision||1} · ${budget.estado||'Activo'} · ${budget.moneda||'USD'} · ${budget.fecha||''}`, w/2, 25, {align:'center'})
   doc.setTextColor(0)
-  let y = 38; doc.setFontSize(9)
-  doc.setFont(undefined, 'bold'); doc.text('Cotizante:', 10, y)
-  doc.setFont(undefined, 'normal'); doc.text(budget.cotizante || '—', 32, y)
-  doc.setFont(undefined, 'bold'); doc.text('Cliente:', w / 2, y)
-  doc.setFont(undefined, 'normal'); doc.text(budget.cliente || '—', w / 2 + 18, y)
-  y += 5
-  doc.setFont(undefined, 'bold'); doc.text('Lugar:', 10, y)
-  doc.setFont(undefined, 'normal'); doc.text(budget.lugar || '—', 32, y)
-  y += 4
-  doc.setDrawColor(245, 158, 11); doc.setLineWidth(0.5); doc.line(10, y, w - 10, y)
-  return y + 4
+  let y=38; doc.setFontSize(9)
+  doc.setFont(undefined,'bold'); doc.text('Cotizante:',10,y); doc.setFont(undefined,'normal'); doc.text(budget.cotizante||'—',32,y)
+  doc.setFont(undefined,'bold'); doc.text('Cliente:',w/2,y); doc.setFont(undefined,'normal'); doc.text(budget.cliente||'—',w/2+18,y)
+  y+=5
+  doc.setFont(undefined,'bold'); doc.text('Ofertante:',10,y); doc.setFont(undefined,'normal'); doc.text(budget.ofertante||'—',32,y)
+  doc.setFont(undefined,'bold'); doc.text('Ubicación:',w/2,y); doc.setFont(undefined,'normal'); doc.text(budget.lugar||'—',w/2+22,y)
+  y+=5
+  doc.setFont(undefined,'bold'); doc.text('Realizado por:',10,y); doc.setFont(undefined,'normal'); doc.text(budget.realizadoPor||'—',35,y)
+  doc.setFont(undefined,'bold'); doc.text('Tipo:',w/2,y); doc.setFont(undefined,'normal'); doc.text(budget.tipo||'—',w/2+13,y)
+  y+=4
+  doc.setDrawColor(245,158,11); doc.setLineWidth(0.5); doc.line(10,y,w-10,y)
+  return y+4
 }
 
-// ─── Helpers: detect and normalize item format ─────────────────────────
-// Supports both:
-//   OLD: { tipo:'capitulo'|'subcapitulo'|actividad, codigo, descripcion, cantidad, unidad, children }
-//   NEW (flat): { kind:'chapter'|'subchapter'|'activity', code, desc, qty, unit, price, parent }
-
-function computeFlatSubtotals(items) {
-  const bySub = {}, byCap = {}
-  items.forEach(it => {
-    if (it.kind === 'activity') {
-      const s = (it.qty || 0) * (it.price || 0)
-      bySub[it.parent] = (bySub[it.parent] || 0) + s
-    }
-  })
-  items.forEach(it => {
-    if (it.kind === 'subchapter') {
-      byCap[it.parent] = (byCap[it.parent] || 0) + (bySub[it.id] || 0)
-    }
-  })
-  return { bySub, byCap }
-}
-
-// ─── PDF PRESUPUESTO ───────────────────────────────────────────────────
-export const exportPDFPresupuesto = (budget) => {
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' })
-  const ctx = { pctIndirectos: budget.pctIndirectos, pctImprevistos: budget.pctImprevistos, pctUtilidad: budget.pctUtilidad }
+export const exportPDFPresupuesto = (budget, params) => {
+  const doc = new jsPDF({orientation:'landscape',unit:'mm',format:'letter'})
   const y = drawPDFHeader(doc, budget, 'PRESUPUESTO DE OBRA')
   const rows = []
-  const isFlat = budget.items && budget.items[0] && budget.items[0].kind
-
-  if (isFlat) {
-    // NEW flat format
-    const { bySub, byCap } = computeFlatSubtotals(budget.items)
-    budget.items.forEach(it => {
-      if (it.kind === 'chapter') {
-        const total = byCap[it.id] || 0
-        rows.push([
-          { content: it.code, styles: { fontStyle: 'bold', fillColor: [15, 17, 21], textColor: 255 } },
-          { content: it.desc, styles: { fontStyle: 'bold', fillColor: [15, 17, 21], textColor: 255 } },
-          '', '', '',
-          { content: money(total), styles: { fontStyle: 'bold', halign: 'right', fillColor: [15, 17, 21], textColor: 245 } }
-        ])
-      } else if (it.kind === 'subchapter') {
-        const total = bySub[it.id] || 0
-        rows.push([
-          { content: it.code, styles: { fontStyle: 'bold', fillColor: [71, 85, 105], textColor: 255 } },
-          { content: '   ' + it.desc, styles: { fontStyle: 'bold', fillColor: [71, 85, 105], textColor: 255 } },
-          '', '', '',
-          { content: money(total), styles: { fontStyle: 'bold', halign: 'right', fillColor: [71, 85, 105], textColor: 255 } }
-        ])
+  const walk = (its, d=0) => {
+    for (const it of its) {
+      const c = calcItem(it, budget.catalogos, params)
+      const ind = '  '.repeat(d)
+      if (it.tipo==='capitulo') {
+        rows.push([{content:it.id,styles:{fontStyle:'bold',fillColor:[15,17,21],textColor:255}},{content:ind+it.descripcion,styles:{fontStyle:'bold',fillColor:[15,17,21],textColor:255}},'','',''  ,{content:money(c.subtotal),styles:{fontStyle:'bold',halign:'right',fillColor:[15,17,21],textColor:245}}])
+        if (it.children) walk(it.children, d+1)
+      } else if (it.tipo==='subcapitulo') {
+        rows.push([{content:it.id,styles:{fontStyle:'bold',fillColor:[71,85,105],textColor:255}},{content:ind+it.descripcion,styles:{fontStyle:'bold',fillColor:[71,85,105],textColor:255}},'','','',{content:money(c.subtotal),styles:{fontStyle:'bold',halign:'right',fillColor:[71,85,105],textColor:255}}])
+        if (it.children) walk(it.children, d+1)
       } else {
-        const sub = (it.qty || 0) * (it.price || 0)
-        rows.push([it.code, '      ' + it.desc, it.unit || '', fmt(it.qty || 0), money(it.price || 0), { content: money(sub), styles: { halign: 'right' } }])
-      }
-    })
-    const tot = budget.items.filter(i => i.kind === 'activity').reduce((s, a) => {
-      const direct = (a.qty || 0) * (a.price || 0)
-      return s + direct
-    }, 0)
-    const indir  = tot * ((budget.pctIndirectos  || 0) / 100)
-    const imprev = (tot + indir) * ((budget.pctImprevistos || 0) / 100)
-    const sub2   = tot + indir + imprev
-    const util   = sub2 * ((budget.pctUtilidad   || 0) / 100)
-    const total  = sub2 + util
-    rows.push([
-      { content: 'TOTAL GENERAL', colSpan: 5, styles: { fillColor: [15, 17, 21], textColor: 245, fontStyle: 'bold', halign: 'right' } },
-      { content: money(total), styles: { fillColor: [15, 17, 21], textColor: 245, fontStyle: 'bold', halign: 'right' } }
-    ])
-  } else {
-    // OLD hierarchical format
-    const walk = (its, d = 0) => {
-      for (const it of its) {
-        const c = calcItem(it, ctx)
-        const ind = '  '.repeat(d)
-        if (it.tipo === 'capitulo') {
-          rows.push([
-            { content: it.codigo, styles: { fontStyle: 'bold', fillColor: [15, 17, 21], textColor: 255 } },
-            { content: ind + it.descripcion, styles: { fontStyle: 'bold', fillColor: [15, 17, 21], textColor: 255 } },
-            '', '', '',
-            { content: money(c.subtotal), styles: { fontStyle: 'bold', halign: 'right', fillColor: [15, 17, 21], textColor: 245 } }
-          ])
-          if (it.children) walk(it.children, d + 1)
-        } else if (it.tipo === 'subcapitulo') {
-          rows.push([
-            { content: it.codigo, styles: { fontStyle: 'bold', fillColor: [71, 85, 105], textColor: 255 } },
-            { content: ind + it.descripcion, styles: { fontStyle: 'bold', fillColor: [71, 85, 105], textColor: 255 } },
-            '', '', '',
-            { content: money(c.subtotal), styles: { fontStyle: 'bold', halign: 'right', fillColor: [71, 85, 105], textColor: 255 } }
-          ])
-          if (it.children) walk(it.children, d + 1)
-        } else {
-          rows.push([it.codigo, ind + it.descripcion, it.unidad, fmt(it.cantidad), money(c.precioUnitario), { content: money(c.subtotal), styles: { halign: 'right' } }])
-        }
+        rows.push([it.id, ind+it.descripcion, it.unidad, fmt(it.cantidad), money(c.precioUnitario), {content:money(c.subtotal),styles:{halign:'right'}}])
       }
     }
-    walk(budget.items, 0)
-    const tot = budget.items.reduce((s, it) => s + calcItem(it, ctx).subtotal, 0)
-    rows.push([
-      { content: 'TOTAL GENERAL', colSpan: 5, styles: { fillColor: [15, 17, 21], textColor: 245, fontStyle: 'bold', halign: 'right' } },
-      { content: money(tot), styles: { fillColor: [15, 17, 21], textColor: 245, fontStyle: 'bold', halign: 'right' } }
-    ])
   }
-
-  autoTable(doc, {
-    startY: y,
-    head: [['ID', 'Descripción', 'Unidad', 'Cantidad', 'P. Unitario', 'Subtotal']],
-    body: rows,
-    styles: { fontSize: 8, cellPadding: 1.5 },
-    headStyles: { fillColor: [15, 17, 21], textColor: 245 },
-    columnStyles: { 0: { cellWidth: 20 }, 2: { halign: 'center', cellWidth: 18 }, 3: { halign: 'right', cellWidth: 20 }, 4: { halign: 'right', cellWidth: 25 }, 5: { halign: 'right', cellWidth: 28 } }
-  })
-  doc.save((budget.nombre_proyecto || 'Presupuesto').replace(/[^\w]+/g, '_') + '_Presupuesto.pdf')
+  walk(budget.items, 0)
+  const tot = round2(budget.items.reduce((s,it)=>s+calcItem(it,budget.catalogos,params).subtotal,0))
+  rows.push([{content:'TOTAL GENERAL',colSpan:5,styles:{fillColor:[15,17,21],textColor:245,fontStyle:'bold',halign:'right'}},{content:money(tot),styles:{fillColor:[15,17,21],textColor:245,fontStyle:'bold',halign:'right'}}])
+  doc.autoTable({startY:y,head:[['ID','Descripción','Unidad','Cantidad','P. Unitario','Subtotal']],body:rows,styles:{fontSize:8,cellPadding:1.5},headStyles:{fillColor:[15,17,21],textColor:245},columnStyles:{0:{cellWidth:20},2:{halign:'center',cellWidth:18},3:{halign:'right',cellWidth:20},4:{halign:'right',cellWidth:25},5:{halign:'right',cellWidth:28}}})
+  doc.save((budget.nombreProyecto||'Presupuesto').replace(/[^\w]+/g,'_')+'_Presupuesto.pdf')
 }
 
-// ─── PDF FICHA ─────────────────────────────────────────────────────────
-export const exportPDFFicha = (budget, act) => {
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' })
-  const ctx = { pctIndirectos: budget.pctIndirectos, pctImprevistos: budget.pctImprevistos, pctUtilidad: budget.pctUtilidad }
+export const exportPDFFicha = (budget, act, params) => {
+  const doc = new jsPDF({orientation:'portrait',unit:'mm',format:'letter'})
   let y = drawPDFHeader(doc, budget, 'FICHA DE COSTO UNITARIO')
-  doc.setFontSize(11); doc.setFont(undefined, 'bold')
-  doc.text(`${act.codigo} — ${act.descripcion}`, 10, y); y += 5
-  doc.setFontSize(9); doc.setFont(undefined, 'normal')
-  doc.text(`Cantidad: ${fmt(act.cantidad)} ${act.unidad || ''}`, 10, y); y += 4
-  const f = act.ficha || { materiales: [], manoObra: [], herramientaEquipo: [], subcontratos: [] }
-  const calc = calcFicha(f, ctx.pctIndirectos, ctx.pctImprevistos, ctx.pctUtilidad)
+  doc.setFontSize(11); doc.setFont(undefined,'bold')
+  doc.text(`${act.id} — ${act.descripcion}`, 10, y); y+=5
+  doc.setFontSize(9); doc.setFont(undefined,'normal')
+  doc.text(`Cantidad: ${fmt(act.cantidad)} ${act.unidad}`, 10, y); y+=4
+  const calc = calcFicha(act.ficha, budget.catalogos, params)
   const sect = (title, k, total) => {
-    const rs = (f[k] || []).map((c, i) => [
-      i + 1, c.descripcion, c.unidad || '', fmt(c.rendimiento),
-      fmt(c.desperdicio) + '%', money(c.costoUnitario ?? 0), money(conceptoCost(c))
-    ])
-    if (rs.length === 0) rs.push([{ content: '(sin conceptos)', colSpan: 7, styles: { halign: 'center', fontStyle: 'italic', textColor: 150 } }])
-    rs.push([{ content: 'SUBTOTAL ' + title, colSpan: 6, styles: { halign: 'right', fontStyle: 'bold', fillColor: [226, 232, 240] } }, { content: money(total), styles: { halign: 'right', fontStyle: 'bold', fillColor: [226, 232, 240] } }])
-    autoTable(doc, {
-      startY: y,
-      head: [[{ content: title, colSpan: 7, styles: { fillColor: [30, 41, 59], textColor: 255, halign: 'left', fontStyle: 'bold' } }],
-             ['#', 'Descripción', 'Und', 'Rend.', 'Desp.', 'C. Unit.', 'Subtotal']],
-      body: rs,
-      styles: { fontSize: 8, cellPadding: 1.2 },
-      headStyles: { fillColor: [71, 85, 105], textColor: 255 }
-    })
+    const rs = (act.ficha[k]||[]).map((c,i)=>{
+      const ins = findInsumo(budget.catalogos,k,c.insumoId)
+      return ins ? [i+1,ins.codigo,ins.descripcion,ins.unidad,fmt(c.rendimiento),fmt(c.desperdicio)+'%',money(ins.costoBase),money(conceptoCost(c,budget.catalogos,k))] : null
+    }).filter(Boolean)
+    if (!rs.length) rs.push([{content:'(sin conceptos)',colSpan:8,styles:{halign:'center',fontStyle:'italic',textColor:150}}])
+    rs.push([{content:'SUBTOTAL '+title,colSpan:7,styles:{halign:'right',fontStyle:'bold',fillColor:[226,232,240]}},{content:money(total),styles:{halign:'right',fontStyle:'bold',fillColor:[226,232,240]}}])
+    doc.autoTable({startY:y,head:[[{content:title,colSpan:8,styles:{fillColor:[30,41,59],textColor:255,halign:'left',fontStyle:'bold'}}],['#','Cód.','Insumo','Und','Rend.','Desp.','C.Base','Subtotal']],body:rs,styles:{fontSize:8,cellPadding:1.2},headStyles:{fillColor:[71,85,105],textColor:255}})
     y = doc.lastAutoTable.finalY + 3
   }
-  sect('MATERIALES', 'materiales', calc.totMat)
-  sect('MANO DE OBRA', 'manoObra', calc.totMo)
-  sect('HERRAMIENTA + EQUIPO', 'herramientaEquipo', calc.totHe)
-  sect('SUBCONTRATO', 'subcontratos', calc.totSub)
-  autoTable(doc, {
-    startY: y,
-    body: [
-      ['Costo Directo', money(calc.costoDirecto)],
-      [`Indirectos (${ctx.pctIndirectos}%)`, money(calc.indirectos)],
-      [`Imprevistos (${ctx.pctImprevistos}%)`, money(calc.imprevistos)],
-      [`Utilidad (${ctx.pctUtilidad}%)`, money(calc.utilidad)],
-      [{ content: 'PRECIO UNITARIO TOTAL', styles: { fontStyle: 'bold', fillColor: [15, 17, 21], textColor: 245 } },
-       { content: money(calc.precioUnitario), styles: { fontStyle: 'bold', fillColor: [15, 17, 21], textColor: 245, halign: 'right' } }]
-    ],
-    styles: { fontSize: 9, cellPadding: 2 },
-    columnStyles: { 0: { halign: 'right', fontStyle: 'bold' }, 1: { halign: 'right', cellWidth: 50 } },
-    theme: 'grid'
-  })
-  doc.save(`Ficha_${act.codigo}.pdf`)
+  sect('MATERIALES','materiales',calc.totMat)
+  sect('MANO DE OBRA','manoObra',calc.totMo)
+  sect('HERRAMIENTA + EQUIPO','herramientaEquipo',calc.totHe)
+  sect('SUBCONTRATO','subcontratos',calc.totSub)
+  doc.autoTable({startY:y,body:[
+    ['Costo Directo',money(calc.costoDirecto)],
+    [`Indirectos (${params.pctIndirectos}%)`,money(calc.indirectos)],
+    [`Imprevistos (${params.pctImprevistos}%)`,money(calc.imprevistos)],
+    [`Utilidad (${params.pctUtilidad}%)`,money(calc.utilidad)],
+    ['Subtotal antes de impuestos',money(calc.subtotalSinImpuesto)],
+    [`Impuesto (${params.pctImpuesto}%)`,money(calc.impuesto)],
+    [{content:'PRECIO UNITARIO TOTAL',styles:{fontStyle:'bold',fillColor:[15,17,21],textColor:245}},{content:money(calc.precioUnitario),styles:{fontStyle:'bold',fillColor:[15,17,21],textColor:245,halign:'right'}}]
+  ],styles:{fontSize:9,cellPadding:2},columnStyles:{0:{halign:'right',fontStyle:'bold'},1:{halign:'right',cellWidth:50}},theme:'grid'})
+  doc.save(`Ficha_${act.id}.pdf`)
 }
 
-// ─── EXCEL PRESUPUESTO ─────────────────────────────────────────────────
-export const exportExcelPresupuesto = async (budget) => {
-  const ExcelJS = (await import('exceljs')).default
-  const { saveAs } = await import('file-saver')
-  const ctx = { pctIndirectos: budget.pctIndirectos, pctImprevistos: budget.pctImprevistos, pctUtilidad: budget.pctUtilidad }
-  const wb = new ExcelJS.Workbook()
-  const ws = wb.addWorksheet('Presupuesto')
-  ws.columns = [{ width: 10 }, { width: 50 }, { width: 10 }, { width: 12 }, { width: 16 }, { width: 18 }]
-  let row = writeHeaderXLSX(ws, budget)
-  ;['ID', 'Descripción', 'Unidad', 'Cantidad', 'P. Unitario', 'Subtotal'].forEach((h, i) =>
-    setC(ws, String.fromCharCode(65 + i) + row, h, { fill: X.headerFill, font: X.headerFont, alignment: X.ac })
-  )
-  ws.getRow(row).height = 22; row++
-  const isFlat = budget.items && budget.items[0] && budget.items[0].kind
-  if (isFlat) {
-    const { bySub, byCap } = computeFlatSubtotals(budget.items)
-    budget.items.forEach(it => {
-      if (it.kind === 'chapter') {
-        const total = byCap[it.id] || 0
-        setC(ws, 'A' + row, it.code,  { fill: X.capFill, font: X.capFont, alignment: X.ac })
-        setC(ws, 'B' + row, it.desc,  { fill: X.capFill, font: X.capFont, alignment: X.al })
-        ;['C','D','E'].forEach(cc => setC(ws, cc + row, '', { fill: X.capFill }))
-        setC(ws, 'F' + row, total,    { fill: X.capFill, font: X.capFont, alignment: X.ar, numFmt: MFMT })
+export const exportPDFGeneral = (budget, params) => {
+  exportPDFPresupuesto(budget, params)
+  const acts=[]; const collect=its=>{for(const it of its){if(it.tipo==='actividad')acts.push(it);else if(it.children)collect(it.children)}}
+  collect(budget.items)
+  acts.forEach((act,i)=>setTimeout(()=>exportPDFFicha(budget,act,params),(i+1)*700))
+}
+
+export const exportPDFRangoFichas = (budget, params, ids) => {
+  const acts=[]; const collect=its=>{for(const it of its){if(it.tipo==='actividad'&&ids.includes(it.id))acts.push(it);else if(it.children)collect(it.children)}}
+  collect(budget.items)
+  if(!acts.length) return alert('No hay actividades seleccionadas.')
+  acts.forEach((act,i)=>setTimeout(()=>exportPDFFicha(budget,act,params),i*600))
+}
+
+export async function exportExcelPresupuesto(budget, params) {
+  const wb=new ExcelJS.Workbook(); const ws=wb.addWorksheet('Presupuesto')
+  ws.columns=[{width:10},{width:50},{width:10},{width:12},{width:16},{width:18}]
+  let row=writeHeader(ws,budget)
+  ;['ID','Descripción','Unidad','Cantidad','P. Unitario','Subtotal'].forEach((h,i)=>setC(ws,String.fromCharCode(65+i)+row,h,{fill:X.headerFill,font:X.headerFont,alignment:X.ac}))
+  ws.getRow(row).height=22; row++
+  const walk=(its,d=0)=>{
+    for(const it of its){
+      const c=calcItem(it,budget.catalogos,params); const ind='   '.repeat(d)
+      if(it.tipo==='capitulo'){
+        setC(ws,'A'+row,it.id,{fill:X.capFill,font:X.capFont,alignment:X.ac})
+        setC(ws,'B'+row,ind+it.descripcion,{fill:X.capFill,font:X.capFont,alignment:X.al})
+        ;['C','D','E'].forEach(cc=>setC(ws,cc+row,'',{fill:X.capFill}))
+        setC(ws,'F'+row,c.subtotal,{fill:X.capFill,font:X.capFont,alignment:X.ar,numFmt:MFMT})
+        row++; if(it.children)walk(it.children,d+1)
+        ;['A','B','C','D','E','F'].forEach(cc=>setC(ws,cc+row,cc==='B'?`${ind}SUBTOTAL Cap. ${it.id}`:cc==='F'?c.subtotal:'',{fill:X.subtotalFill,font:{italic:true,bold:true},alignment:cc==='F'?X.ar:X.al,numFmt:cc==='F'?MFMT:undefined}))
         row++
-      } else if (it.kind === 'subchapter') {
-        const total = bySub[it.id] || 0
-        setC(ws, 'A' + row, it.code,       { fill: X.subcapFill, font: X.subcapFont, alignment: X.ac })
-        setC(ws, 'B' + row, '   ' + it.desc, { fill: X.subcapFill, font: X.subcapFont, alignment: X.al })
-        ;['C','D','E'].forEach(cc => setC(ws, cc + row, '', { fill: X.subcapFill }))
-        setC(ws, 'F' + row, total,         { fill: X.subcapFill, font: X.subcapFont, alignment: X.ar, numFmt: MFMT })
-        row++
+      } else if(it.tipo==='subcapitulo'){
+        setC(ws,'A'+row,it.id,{fill:X.subcapFill,font:X.subcapFont,alignment:X.ac})
+        setC(ws,'B'+row,ind+it.descripcion,{fill:X.subcapFill,font:X.subcapFont,alignment:X.al})
+        ;['C','D','E'].forEach(cc=>setC(ws,cc+row,'',{fill:X.subcapFill}))
+        setC(ws,'F'+row,c.subtotal,{fill:X.subcapFill,font:X.subcapFont,alignment:X.ar,numFmt:MFMT})
+        row++; if(it.children)walk(it.children,d+1)
       } else {
-        const sub = (it.qty || 0) * (it.price || 0)
-        setC(ws, 'A' + row, it.code,             { alignment: X.ac })
-        setC(ws, 'B' + row, '      ' + it.desc,  { alignment: X.al })
-        setC(ws, 'C' + row, it.unit || '',        { alignment: X.ac })
-        setC(ws, 'D' + row, Number(it.qty) || 0,  { alignment: X.ar, numFmt: NFMT })
-        setC(ws, 'E' + row, Number(it.price) || 0,{ alignment: X.ar, numFmt: MFMT })
-        setC(ws, 'F' + row, sub,                  { alignment: X.ar, numFmt: MFMT, font: { bold: true } })
+        setC(ws,'A'+row,it.id,{alignment:X.ac}); setC(ws,'B'+row,ind+it.descripcion,{alignment:X.al})
+        setC(ws,'C'+row,it.unidad,{alignment:X.ac}); setC(ws,'D'+row,round2(it.cantidad),{alignment:X.ar,numFmt:NFMT})
+        setC(ws,'E'+row,c.precioUnitario,{alignment:X.ar,numFmt:MFMT}); setC(ws,'F'+row,c.subtotal,{alignment:X.ar,numFmt:MFMT,font:{bold:true}})
         row++
-      }
-    })
-    const directTotal = budget.items.filter(i => i.kind === 'activity').reduce((s, a) => s + (a.qty||0)*(a.price||0), 0)
-    const indir  = directTotal * ((budget.pctIndirectos  || 0) / 100)
-    const imprev = (directTotal + indir) * ((budget.pctImprevistos || 0) / 100)
-    const sub2   = directTotal + indir + imprev
-    const util   = sub2 * ((budget.pctUtilidad   || 0) / 100)
-    const tot = sub2 + util
-    row++
-    ws.mergeCells('A' + row + ':E' + row)
-    setC(ws, 'A' + row, 'TOTAL GENERAL', { fill: X.totalFill, font: X.totalFont, alignment: X.ar })
-    setC(ws, 'F' + row, tot,             { fill: X.totalFill, font: X.totalFont, alignment: X.ar, numFmt: MFMT })
-    ws.getRow(row).height = 26
-  } else {
-    const walk = (its, d = 0) => {
-      for (const it of its) {
-        const c = calcItem(it, ctx)
-        const ind = '   '.repeat(d)
-        if (it.tipo === 'capitulo') {
-          setC(ws, 'A' + row, it.codigo,           { fill: X.capFill, font: X.capFont, alignment: X.ac })
-          setC(ws, 'B' + row, ind + it.descripcion, { fill: X.capFill, font: X.capFont, alignment: X.al })
-          ;['C', 'D', 'E'].forEach(cc => setC(ws, cc + row, '', { fill: X.capFill }))
-          setC(ws, 'F' + row, c.subtotal,           { fill: X.capFill, font: X.capFont, alignment: X.ar, numFmt: MFMT })
-          row++
-          if (it.children) walk(it.children, d + 1)
-          ;['A', 'B', 'C', 'D', 'E', 'F'].forEach(cc =>
-            setC(ws, cc + row, cc === 'B' ? ind + 'SUBTOTAL Cap. ' + it.codigo : cc === 'F' ? c.subtotal : '',
-              { fill: X.subtotalFill, font: { italic: true, bold: true }, alignment: cc === 'F' ? X.ar : X.al, numFmt: cc === 'F' ? MFMT : undefined })
-          )
-          row++
-        } else if (it.tipo === 'subcapitulo') {
-          setC(ws, 'A' + row, it.codigo,           { fill: X.subcapFill, font: X.subcapFont, alignment: X.ac })
-          setC(ws, 'B' + row, ind + it.descripcion, { fill: X.subcapFill, font: X.subcapFont, alignment: X.al })
-          ;['C', 'D', 'E'].forEach(cc => setC(ws, cc + row, '', { fill: X.subcapFill }))
-          setC(ws, 'F' + row, c.subtotal,           { fill: X.subcapFill, font: X.subcapFont, alignment: X.ar, numFmt: MFMT })
-          row++
-          if (it.children) walk(it.children, d + 1)
-        } else {
-          setC(ws, 'A' + row, it.codigo,            { alignment: X.ac })
-          setC(ws, 'B' + row, ind + it.descripcion, { alignment: X.al })
-          setC(ws, 'C' + row, it.unidad || '',       { alignment: X.ac })
-          setC(ws, 'D' + row, Number(it.cantidad) || 0, { alignment: X.ar, numFmt: NFMT })
-          setC(ws, 'E' + row, c.precioUnitario,     { alignment: X.ar, numFmt: MFMT })
-          setC(ws, 'F' + row, c.subtotal,           { alignment: X.ar, numFmt: MFMT, font: { bold: true } })
-          row++
-        }
       }
     }
-    walk(budget.items, 0)
-    const tot = budget.items.reduce((s, it) => s + calcItem(it, ctx).subtotal, 0)
-    row++
-    ws.mergeCells('A' + row + ':E' + row)
-    setC(ws, 'A' + row, 'TOTAL GENERAL', { fill: X.totalFill, font: X.totalFont, alignment: X.ar })
-    setC(ws, 'F' + row, tot,             { fill: X.totalFill, font: X.totalFont, alignment: X.ar, numFmt: MFMT })
-    ws.getRow(row).height = 26
   }
-  const buf = await wb.xlsx.writeBuffer()
-  saveAs(new Blob([buf]), (budget.nombre_proyecto || 'Presupuesto').replace(/[^\w]+/g, '_') + '_Presupuesto.xlsx')
+  walk(budget.items,0)
+  const tot=round2(budget.items.reduce((s,it)=>s+calcItem(it,budget.catalogos,params).subtotal,0))
+  row++; ws.mergeCells(`A${row}:E${row}`)
+  setC(ws,'A'+row,'TOTAL GENERAL',{fill:X.totalFill,font:X.totalFont,alignment:X.ar})
+  setC(ws,'F'+row,tot,{fill:X.totalFill,font:X.totalFont,alignment:X.ar,numFmt:MFMT})
+  ws.getRow(row).height=26
+  const buf=await wb.xlsx.writeBuffer()
+  saveAs(new Blob([buf]),(budget.nombreProyecto||'Pres').replace(/[^\w]+/g,'_')+'_Presupuesto.xlsx')
 }
 
-// ─── EXCEL FICHA ───────────────────────────────────────────────────────
-export const exportExcelFicha = async (budget, act) => {
-  const ExcelJS = (await import('exceljs')).default
-  const { saveAs } = await import('file-saver')
-  const ctx = { pctIndirectos: budget.pctIndirectos, pctImprevistos: budget.pctImprevistos, pctUtilidad: budget.pctUtilidad }
-  const f = act.ficha || { materiales: [], manoObra: [], herramientaEquipo: [], subcontratos: [] }
-  const calc = calcFicha(f, ctx.pctIndirectos, ctx.pctImprevistos, ctx.pctUtilidad)
-  const wb = new ExcelJS.Workbook()
-  const ws = wb.addWorksheet('Ficha')
-  ws.columns = [{ width: 6 }, { width: 38 }, { width: 14 }, { width: 12 }, { width: 12 }, { width: 16 }, { width: 18 }]
-  ws.mergeCells('A1:G1')
-  setC(ws, 'A1', 'FICHA DE COSTO UNITARIO', { fill: X.titleFill, font: X.titleFont, alignment: X.ac })
-  ws.getRow(1).height = 26
-  ws.mergeCells('A2:G2')
-  setC(ws, 'A2', `${act.codigo} — ${act.descripcion}`, { font: { bold: true, size: 12 }, alignment: X.ac })
-  setC(ws, 'A3', 'Cantidad:', { font: { bold: true } })
-  setC(ws, 'B3', `${fmt(act.cantidad)} ${act.unidad || ''}`)
-  setC(ws, 'D3', 'Proyecto:', { font: { bold: true } })
-  setC(ws, 'E3', budget.nombre_proyecto || '')
-  let row = 5
-  const sect = (title, k, total) => {
-    ws.mergeCells('A' + row + ':G' + row)
-    setC(ws, 'A' + row, title, { fill: X.headerFill, font: X.headerFont, alignment: { vertical: 'middle', horizontal: 'left' } })
-    row++
-    ;['#', 'Descripción', 'Unidad', 'Rend.', 'Desp.%', 'C. Unit.', 'Subtotal'].forEach((h, i) =>
-      setC(ws, String.fromCharCode(65 + i) + row, h, { fill: X.headerFill, font: X.headerFont, alignment: X.ac })
-    )
-    row++
-    ;(f[k] || []).forEach((c, i) => {
-      setC(ws, 'A' + row, i + 1,                { alignment: X.ac })
-      setC(ws, 'B' + row, c.descripcion || '',   { alignment: X.al })
-      setC(ws, 'C' + row, c.unidad || '',         { alignment: X.ac })
-      setC(ws, 'D' + row, Number(c.rendimiento) || 0, { alignment: X.ar, numFmt: NFMT })
-      setC(ws, 'E' + row, Number(c.desperdicio) || 0, { alignment: X.ar, numFmt: '0.00"%"' })
-      setC(ws, 'F' + row, Number(c.costoUnitario) || 0, { alignment: X.ar, numFmt: MFMT })
-      setC(ws, 'G' + row, conceptoCost(c),       { alignment: X.ar, numFmt: MFMT, font: { bold: true } })
-      row++
-    })
-    ws.mergeCells('A' + row + ':F' + row)
-    setC(ws, 'A' + row, 'SUBTOTAL ' + title, { fill: X.subtotalFill, font: { bold: true }, alignment: X.ar })
-    setC(ws, 'G' + row, total,               { fill: X.subtotalFill, font: { bold: true }, alignment: X.ar, numFmt: MFMT })
-    row += 2
-  }
-  sect('MATERIALES',          'materiales',         calc.totMat)
-  sect('MANO DE OBRA',        'manoObra',           calc.totMo)
-  sect('HERRAMIENTA + EQUIPO','herramientaEquipo',  calc.totHe)
-  sect('SUBCONTRATO',         'subcontratos',       calc.totSub)
-  ;[
-    ['Costo Directo',                            calc.costoDirecto],
-    [`Indirectos (${ctx.pctIndirectos}%)`,       calc.indirectos],
-    [`Imprevistos (${ctx.pctImprevistos}%)`,     calc.imprevistos],
-    [`Utilidad (${ctx.pctUtilidad}%)`,           calc.utilidad],
-  ].forEach(([label, val]) => {
-    ws.mergeCells('A' + row + ':F' + row)
-    setC(ws, 'A' + row, label, { alignment: X.ar, font: { bold: true } })
-    setC(ws, 'G' + row, val,   { alignment: X.ar, numFmt: MFMT })
-    row++
+export async function exportExcelCatalogo(budget, catKey) {
+  const cat=CATEGORIAS.find(c=>c.key===catKey)
+  const wb=new ExcelJS.Workbook(); const ws=wb.addWorksheet(cat.label)
+  ws.columns=[{width:14},{width:40},{width:12},{width:16},{width:24},{width:30}]
+  ws.mergeCells('A1:F1')
+  setC(ws,'A1',`LISTA DE ${cat.label.toUpperCase()} — ${budget.nombreProyecto}`,{fill:X.titleFill,font:X.titleFont,alignment:X.ac})
+  ws.getRow(1).height=26
+  ;['Código','Descripción','Unidad','Precio Base','Proveedor','Notas'].forEach((h,i)=>setC(ws,String.fromCharCode(65+i)+'3',h,{fill:X.headerFill,font:X.headerFont,alignment:X.ac}))
+  ws.getRow(3).height=22
+  ;(budget.catalogos[catKey]||[]).forEach((ins,idx)=>{
+    const r=4+idx
+    setC(ws,'A'+r,ins.codigo||'',{alignment:X.ac,font:{name:'Consolas',size:10}})
+    setC(ws,'B'+r,ins.descripcion,{alignment:X.al}); setC(ws,'C'+r,ins.unidad,{alignment:X.ac})
+    setC(ws,'D'+r,round2(ins.costoBase),{alignment:X.ar,numFmt:MFMT,font:{bold:true}})
+    setC(ws,'E'+r,ins.proveedor||'',{alignment:X.al}); setC(ws,'F'+r,ins.notas||'',{alignment:X.al})
   })
-  ws.mergeCells('A' + row + ':F' + row)
-  setC(ws, 'A' + row, 'PRECIO UNITARIO TOTAL', { fill: X.totalFill, font: X.totalFont, alignment: X.ar })
-  setC(ws, 'G' + row, calc.precioUnitario,     { fill: X.totalFill, font: X.totalFont, alignment: X.ar, numFmt: MFMT })
-  ws.getRow(row).height = 26
-  const buf = await wb.xlsx.writeBuffer()
-  saveAs(new Blob([buf]), `Ficha_${act.codigo}.xlsx`)
+  const buf=await wb.xlsx.writeBuffer()
+  saveAs(new Blob([buf]),(budget.nombreProyecto||'Cat').replace(/[^\w]+/g,'_')+'_'+cat.label.replace(/\s+/g,'_')+'.xlsx')
+}
+
+export async function exportExcelFicha(budget, act, params) {
+  const wb=new ExcelJS.Workbook(); const ws=wb.addWorksheet('Ficha')
+  ws.columns=[{width:6},{width:38},{width:14},{width:12},{width:12},{width:12},{width:18}]
+  ws.mergeCells('A1:G1')
+  setC(ws,'A1','FICHA DE COSTO UNITARIO',{fill:X.titleFill,font:X.titleFont,alignment:X.ac}); ws.getRow(1).height=26
+  ws.mergeCells('A2:G2')
+  setC(ws,'A2',`${act.id} — ${act.descripcion}`,{font:{bold:true,size:12},alignment:X.ac})
+  setC(ws,'A3','Cantidad:',{font:{bold:true}}); setC(ws,'B3',`${fmt(act.cantidad)} ${act.unidad}`)
+  setC(ws,'D3','Proyecto:',{font:{bold:true}}); setC(ws,'E3',budget.nombreProyecto||'')
+  const calc=calcFicha(act.ficha,budget.catalogos,params)
+  let row=5
+  const sect=(title,k,total)=>{
+    ws.mergeCells(`A${row}:G${row}`)
+    setC(ws,'A'+row,title,{fill:X.headerFill,font:X.headerFont,alignment:{vertical:'middle',horizontal:'left'}}); row++
+    ;['#','Insumo','Código','Unidad','Rend.','Desp.%','Subtotal'].forEach((h,i)=>setC(ws,String.fromCharCode(65+i)+row,h,{fill:X.headerFill,font:X.headerFont,alignment:X.ac})); row++
+    ;(act.ficha[k]||[]).forEach((c,i)=>{
+      const ins=findInsumo(budget.catalogos,k,c.insumoId); if(!ins)return
+      setC(ws,'A'+row,i+1,{alignment:X.ac}); setC(ws,'B'+row,ins.descripcion,{alignment:X.al})
+      setC(ws,'C'+row,ins.codigo,{alignment:X.ac,font:{name:'Consolas',size:10}}); setC(ws,'D'+row,ins.unidad,{alignment:X.ac})
+      setC(ws,'E'+row,round2(c.rendimiento),{alignment:X.ar,numFmt:NFMT}); setC(ws,'F'+row,round2(c.desperdicio),{alignment:X.ar,numFmt:'0.00"%"'})
+      setC(ws,'G'+row,conceptoCost(c,budget.catalogos,k),{alignment:X.ar,numFmt:MFMT,font:{bold:true}}); row++
+    })
+    ws.mergeCells(`A${row}:F${row}`)
+    setC(ws,'A'+row,'SUBTOTAL '+title,{fill:X.subtotalFill,font:{bold:true},alignment:X.ar})
+    setC(ws,'G'+row,total,{fill:X.subtotalFill,font:{bold:true},alignment:X.ar,numFmt:MFMT}); row+=2
+  }
+  sect('MATERIALES','materiales',calc.totMat)
+  sect('MANO DE OBRA','manoObra',calc.totMo)
+  sect('HERRAMIENTA + EQUIPO','herramientaEquipo',calc.totHe)
+  sect('SUBCONTRATO','subcontratos',calc.totSub)
+  ;[['Costo Directo',calc.costoDirecto],[`Indirectos (${params.pctIndirectos}%)`,calc.indirectos],[`Imprevistos (${params.pctImprevistos}%)`,calc.imprevistos],[`Utilidad (${params.pctUtilidad}%)`,calc.utilidad],['Subtotal antes de impuestos',calc.subtotalSinImpuesto],[`Impuesto (${params.pctImpuesto}%)`,calc.impuesto]].forEach(([l,v])=>{
+    ws.mergeCells(`A${row}:F${row}`); setC(ws,'A'+row,l,{alignment:X.ar,font:{bold:true}}); setC(ws,'G'+row,v,{alignment:X.ar,numFmt:MFMT}); row++
+  })
+  ws.mergeCells(`A${row}:F${row}`)
+  setC(ws,'A'+row,'PRECIO UNITARIO TOTAL',{fill:X.totalFill,font:X.totalFont,alignment:X.ar})
+  setC(ws,'G'+row,calc.precioUnitario,{fill:X.totalFill,font:X.totalFont,alignment:X.ar,numFmt:MFMT}); ws.getRow(row).height=26
+  const buf=await wb.xlsx.writeBuffer()
+  saveAs(new Blob([buf]),`Ficha_${act.id}.xlsx`)
+}
+
+export async function exportExcelGeneral(budget, params) {
+  await exportExcelPresupuesto(budget, params)
+  for(const cat of CATEGORIAS){
+    if((budget.catalogos[cat.key]||[]).length){ await new Promise(r=>setTimeout(r,300)); await exportExcelCatalogo(budget,cat.key) }
+  }
+  const acts=[]; const collect=its=>{for(const it of its){if(it.tipo==='actividad')acts.push(it);else if(it.children)collect(it.children)}}
+  collect(budget.items)
+  for(const act of acts){ await new Promise(r=>setTimeout(r,300)); await exportExcelFicha(budget,act,params) }
+}
+
+export async function exportPlantilla(tipo) {
+  const cfgs={
+    presupuesto:{title:'PLANTILLA PRESUPUESTO',headers:['ID','Descripción','Unidad','Cantidad','P. Unitario','Subtotal'],sample:[['1','Cimentaciones','','','',''],['1.1','Cimentaciones Superficiales','','','',''],['1.1.01','Excavación a mano','m³',100,0,0]],notas:'Usá IDs jerárquicos: 1, 1.1, 1.1.01'},
+    materiales:{title:'PLANTILLA MATERIALES',headers:['Código','Descripción','Unidad','Precio Base','Proveedor','Notas'],sample:[['MAT-001','Cemento gris','saco',7.50,'Cemex',''],['MAT-002','Arena fina','m³',18.00,'Local','']],notas:'El sistema impedirá duplicados por descripción.'},
+    manoObra:{title:'PLANTILLA MANO DE OBRA',headers:['Código','Descripción','Unidad','Precio Base','Proveedor','Notas'],sample:[['MO-001','Peón','jornada',15,'',''],['MO-002','Albañil','jornada',25,'','']],notas:'Unidades: jornada, hora.'},
+    herramientaEquipo:{title:'PLANTILLA HERRAMIENTAS/EQUIPO',headers:['Código','Descripción','Unidad','Precio Base','Proveedor','Notas'],sample:[['HE-001','Mezcladora','día',35,'',''],['HE-002','Vibrador','hora',5,'','']],notas:'Herramienta menor, equipo, maquinaria.'},
+    subcontratos:{title:'PLANTILLA SUBCONTRATOS',headers:['Código','Descripción','Unidad','Precio Base','Proveedor','Notas'],sample:[['SC-001','Instalación eléctrica','GBL',5500,'Electro S.A.','']],notas:'Servicios contratados a terceros.'},
+  }
+  const c=cfgs[tipo]; if(!c) return
+  const wb=new ExcelJS.Workbook(); const ws=wb.addWorksheet('Plantilla')
+  ws.columns=c.headers.map((_,i)=>({width:tipo==='presupuesto'&&i===1?50:18}))
+  const last=String.fromCharCode(64+c.headers.length)
+  ws.mergeCells(`A1:${last}1`); setC(ws,'A1',c.title,{fill:X.titleFill,font:X.titleFont,alignment:X.ac}); ws.getRow(1).height=28
+  ws.mergeCells(`A2:${last}2`); setC(ws,'A2',c.notas,{font:{italic:true,color:{argb:'FF64748B'}},alignment:X.ac})
+  c.headers.forEach((h,i)=>setC(ws,String.fromCharCode(65+i)+'4',h,{fill:X.headerFill,font:X.headerFont,alignment:X.ac})); ws.getRow(4).height=22
+  c.sample.forEach((r,ri)=>r.forEach((v,ci)=>{
+    const isM=(tipo==='presupuesto'&&(ci===4||ci===5))||(tipo!=='presupuesto'&&ci===3); const isN=tipo==='presupuesto'&&ci===3
+    setC(ws,String.fromCharCode(65+ci)+(5+ri),v,{alignment:typeof v==='number'?X.ar:X.al,numFmt:isM?MFMT:isN?NFMT:undefined,font:isM?{bold:true}:undefined})
+  }))
+  const buf=await wb.xlsx.writeBuffer()
+  saveAs(new Blob([buf]),`Plantilla_${tipo}.xlsx`)
+}
+
+export async function importExcelPresupuesto(file, budget, setBudget) {
+  const buf=await file.arrayBuffer(); const wb=XLSX.read(buf)
+  const ws=wb.Sheets[wb.SheetNames[0]]
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''})
+  let h=rows.findIndex(r=>r.some(c=>/^\s*id\s*$/i.test(String(c)))); if(h<0)h=0
+  const newItems=[]
+  for(let i=h+1;i<rows.length;i++){
+    const r=rows[i]; const id=String(r[0]||'').trim(); const desc=String(r[1]||'').trim()
+    if(!id||/^subtotal|^total/i.test(desc)) continue
+    const parts=id.split('.')
+    if(parts.length===1) newItems.push({id,tipo:'capitulo',descripcion:desc,children:[]})
+    else if(parts.length===2){ const cap=newItems.find(x=>x.id===parts[0]); const it={id,tipo:'subcapitulo',descripcion:desc,children:[]}; (cap?cap.children:newItems).push(it) }
+    else { const cap=newItems.find(x=>x.id===parts[0]); const sub=cap?.children?.find(x=>x.id===parts.slice(0,2).join('.')); const it={id,tipo:'actividad',descripcion:desc,unidad:String(r[2]||'und').trim(),cantidad:parseFloat(r[3])||0,ficha:{materiales:[],manoObra:[],herramientaEquipo:[],subcontratos:[]}}; ((sub||cap)?(sub||cap).children:newItems).push(it) }
+  }
+  if(!newItems.length) return alert('No se detectaron filas válidas.')
+  if(!confirm(`Se detectaron ${newItems.length} capítulo(s). ¿Reemplazar el presupuesto?`)) return
+  setBudget({...budget,items:newItems})
+}
+
+export async function importExcelCatalogo(file, budget, setBudget, catKey) {
+  const cat=CATEGORIAS.find(c=>c.key===catKey)
+  const buf=await file.arrayBuffer(); const wb=XLSX.read(buf)
+  const ws=wb.Sheets[wb.SheetNames[0]]
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''})
+  let h=rows.findIndex(r=>r.some(c=>/c[oó]digo/i.test(String(c)))&&r.some(c=>/descripci[oó]n/i.test(String(c)))); if(h<0)h=0
+  const list=[...(budget.catalogos[catKey]||[])]; let ag=0,du=0
+  for(let i=h+1;i<rows.length;i++){
+    const r=rows[i]; const desc=String(r[1]||'').trim(); if(!desc) continue
+    const n=normalize(desc)
+    if(list.find(x=>normalize(x.descripcion)===n)){du++;continue}
+    list.push({id:uid(),codigo:String(r[0]||'').trim(),descripcion:desc,unidad:String(r[2]||'und').trim(),costoBase:parseFloat(r[3])||0,proveedor:String(r[4]||'').trim(),notas:String(r[5]||'').trim()}); ag++
+  }
+  if(!ag&&!du) return alert('No se detectaron filas válidas.')
+  if(!confirm(`Se agregarán ${ag} ${cat.label.toLowerCase()} (${du} duplicados omitidos). ¿Continuar?`)) return
+  setBudget({...budget,catalogos:{...budget.catalogos,[catKey]:list}})
+  alert(`Importación completada: ${ag} agregados, ${du} omitidos.`)
 }
