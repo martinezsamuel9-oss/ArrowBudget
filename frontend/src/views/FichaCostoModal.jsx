@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react'
 import { I } from '../icons'
 import { calcFicha, conceptoCost, fmt } from '../lib/calc'
 import { formatMoney } from '../components'
+import { exportPDFFicha, exportExcelFicha } from '../lib/export'
 
 const EMPTY_FICHA = () => ({ materiales: [], manoObra: [], herramientaEquipo: [], subcontratos: [] })
 const NEW_CONCEPTO = () => ({ id: Date.now() + Math.random(), descripcion: 'Nuevo concepto', unidad: 'und', rendimiento: 1, desperdicio: 0, costoUnitario: 0 })
@@ -167,7 +168,7 @@ function Section({ title, catKey, ficha, onChange, calc, currency, params }) {
 }
 
 /* ─── Main Modal ─── */
-export default function FichaCostoModal({ open, onClose, activity, params, currency, onSave }) {
+export default function FichaCostoModal({ open, onClose, activity, params, currency, budget, onSave }) {
   const [ficha, setFicha] = useState(EMPTY_FICHA())
 
   // Sync ficha when activity changes
@@ -184,9 +185,25 @@ export default function FichaCostoModal({ open, onClose, activity, params, curre
   const handleChange = (catKey, arr) => setFicha(prev => ({ ...prev, [catKey]: arr }))
 
   const handleSave = () => {
-    // Price comes from the ficha calculation
     onSave({ ...activity, ficha, price: calc.precioUnitario })
     onClose()
+  }
+
+  // Map flat activity → old format expected by export functions
+  const actForExport = {
+    codigo:      activity?.code,
+    descripcion: activity?.desc,
+    cantidad:    activity?.qty,
+    unidad:      activity?.unit,
+    ficha,
+  }
+
+  const handleExportPDF = () => {
+    if (budget) exportPDFFicha(budget, actForExport)
+  }
+
+  const handleExportExcel = () => {
+    if (budget) exportExcelFicha(budget, actForExport)
   }
 
   const cur = currency || 'USD'
@@ -265,10 +282,18 @@ export default function FichaCostoModal({ open, onClose, activity, params, curre
 
         {/* Footer */}
         <div style={S.footer}>
-          <div style={{ fontSize: 12, color: 'var(--c-text-3)' }}>
-            Al guardar, el precio unitario de la actividad se actualizará automáticamente.
-          </div>
           <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn ghost sm" onClick={handleExportPDF} title="Exportar ficha en PDF">
+              <I.FileText size={13} style={{ color: '#DC2626' }} /> PDF
+            </button>
+            <button className="btn ghost sm" onClick={handleExportExcel} title="Exportar ficha en Excel">
+              <I.FileSpreadsheet size={13} style={{ color: '#10B981' }} /> Excel
+            </button>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span style={{ fontSize: 12, color: 'var(--c-text-3)' }}>
+              Al guardar, el precio unitario se actualiza automáticamente.
+            </span>
             <button className="btn ghost" onClick={onClose}>Cancelar</button>
             <button className="btn primary" onClick={handleSave}>
               <I.Check size={14} /> Guardar APU

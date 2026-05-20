@@ -305,6 +305,7 @@ export function BudgetView({ project, params, setParams, onBack, onSettings, onP
         activity={fichaItem}
         params={params}
         currency={cotizante.currency || project.currency}
+        budget={budgetForExport}
         onSave={saveFicha}
       />
 
