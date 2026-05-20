@@ -31,7 +31,7 @@ export default function DashboardPage() {
       <header className="bg-blue-900 text-white px-4 py-3 flex justify-between items-center">
         <div className="flex items-center gap-2">
           <span className="text-2xl">🏗️</span>
-          <span className="font-bold">ARROW BUDGET</span>
+          <span className="font-bold">COTIZANTE</span>
         </div>
         <div className="flex items-center gap-3 text-sm">
           <Link to="/planes" className="bg-yellow-400 text-blue-900 px-3 py-1 rounded font-semibold">Planes</Link>

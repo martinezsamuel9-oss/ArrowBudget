@@ -27,25 +27,8 @@ export function AuthProvider({ children }) {
 
   const signIn = (email, password) =>
     supabase.auth.signInWithPassword({ email, password })
-
-  const signUp = async (email, password, { fullName = '', companyName = '' } = {}) => {
-    const { data, error } = await supabase.auth.signUp({
-      email, password,
-      options: { data: { full_name: fullName } },
-    })
-    if (!error && data?.user) {
-      // Upsert profile with name + company immediately after signup
-      await supabase.from('profiles').upsert({
-        id:           data.user.id,
-        email,
-        full_name:    fullName,
-        company_name: companyName,
-        updated_at:   new Date().toISOString(),
-      })
-    }
-    return { data, error }
-  }
-
+  const signUp = (email, password) =>
+    supabase.auth.signUp({ email, password })
   const signOut = () => supabase.auth.signOut()
   const signInWithGoogle = () =>
     supabase.auth.signInWithOAuth({ provider: 'google' })
