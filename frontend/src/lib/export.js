@@ -2,6 +2,8 @@
 // ARROW BUDGET — Exportación PDF y Excel
 // =====================================================================
 import { calcItem, calcFicha, conceptoCost, money, fmt } from './calc'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 // ─── ESTILOS EXCEL ────────────────────────────────────────────────────
 const X = {
@@ -81,7 +83,6 @@ const drawPDFHeader = (doc, budget, subtitle) => {
 
 // ─── PDF PRESUPUESTO ───────────────────────────────────────────────────
 export const exportPDFPresupuesto = (budget) => {
-  const { jsPDF } = window.jspdf
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' })
   const ctx = { pctIndirectos: budget.pctIndirectos, pctImprevistos: budget.pctImprevistos, pctUtilidad: budget.pctUtilidad }
   const y = drawPDFHeader(doc, budget, 'PRESUPUESTO DE OBRA')
@@ -117,7 +118,7 @@ export const exportPDFPresupuesto = (budget) => {
     { content: 'TOTAL GENERAL', colSpan: 5, styles: { fillColor: [15, 17, 21], textColor: 245, fontStyle: 'bold', halign: 'right' } },
     { content: money(tot), styles: { fillColor: [15, 17, 21], textColor: 245, fontStyle: 'bold', halign: 'right' } }
   ])
-  doc.autoTable({
+  autoTable(doc, {
     startY: y,
     head: [['ID', 'Descripción', 'Unidad', 'Cantidad', 'P. Unitario', 'Subtotal']],
     body: rows,
@@ -130,7 +131,6 @@ export const exportPDFPresupuesto = (budget) => {
 
 // ─── PDF FICHA ─────────────────────────────────────────────────────────
 export const exportPDFFicha = (budget, act) => {
-  const { jsPDF } = window.jspdf
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' })
   const ctx = { pctIndirectos: budget.pctIndirectos, pctImprevistos: budget.pctImprevistos, pctUtilidad: budget.pctUtilidad }
   let y = drawPDFHeader(doc, budget, 'FICHA DE COSTO UNITARIO')
@@ -147,7 +147,7 @@ export const exportPDFFicha = (budget, act) => {
     ])
     if (rs.length === 0) rs.push([{ content: '(sin conceptos)', colSpan: 7, styles: { halign: 'center', fontStyle: 'italic', textColor: 150 } }])
     rs.push([{ content: 'SUBTOTAL ' + title, colSpan: 6, styles: { halign: 'right', fontStyle: 'bold', fillColor: [226, 232, 240] } }, { content: money(total), styles: { halign: 'right', fontStyle: 'bold', fillColor: [226, 232, 240] } }])
-    doc.autoTable({
+    autoTable(doc, {
       startY: y,
       head: [[{ content: title, colSpan: 7, styles: { fillColor: [30, 41, 59], textColor: 255, halign: 'left', fontStyle: 'bold' } }],
              ['#', 'Descripción', 'Und', 'Rend.', 'Desp.', 'C. Unit.', 'Subtotal']],
@@ -161,7 +161,7 @@ export const exportPDFFicha = (budget, act) => {
   sect('MANO DE OBRA', 'manoObra', calc.totMo)
   sect('HERRAMIENTA + EQUIPO', 'herramientaEquipo', calc.totHe)
   sect('SUBCONTRATO', 'subcontratos', calc.totSub)
-  doc.autoTable({
+  autoTable(doc, {
     startY: y,
     body: [
       ['Costo Directo', money(calc.costoDirecto)],
