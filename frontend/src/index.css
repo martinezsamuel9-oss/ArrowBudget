@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'Segoe UI', Tahoma, sans-serif;
+  background: #f4f6fa;
+}
+
+.scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+.scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }

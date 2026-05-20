@@ -1,0 +1,1820 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Cotizante — Presupuestos de Obra</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  body { font-family: 'Inter', 'Segoe UI', sans-serif; background: #f6f7f9; color: #0f172a; margin: 0; }
+  .scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+  .scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+  .scrollbar-dark::-webkit-scrollbar { width: 6px; }
+  .scrollbar-dark::-webkit-scrollbar-thumb { background: #2a2f3a; border-radius: 4px; }
+  table input { background: transparent; }
+  .clickable-pu { cursor: pointer; user-select: none; transition: all .15s; }
+  .clickable-pu:hover { background: #fef3c7; outline: 1px dashed #f59e0b; border-radius: 4px; }
+  @keyframes spin { to { transform: rotate(360deg) } }
+</style>
+</head>
+<body>
+
+<div id="root">
+  <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0f1115;color:#fbbf24;font-family:'Inter',sans-serif">
+    <div style="text-align:center">
+      <div style="width:60px;height:60px;border:4px solid #1a1d24;border-top-color:#f59e0b;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 20px"></div>
+      <div style="font-size:24px;font-weight:800;letter-spacing:-.02em">COTIZANTE</div>
+      <div style="font-size:13px;color:#94a3b8;margin-top:8px">Cargando…</div>
+    </div>
+  </div>
+</div>
+
+<div id="err" style="display:none;position:fixed;top:0;left:0;right:0;background:#fee;color:#900;padding:20px;font-family:monospace;font-size:12px;white-space:pre-wrap;z-index:9999;max-height:60vh;overflow:auto;border-bottom:3px solid #c00"></div>
+
+<script>
+function showErr(msg, stack) {
+  var d = document.getElementById('err');
+  if (!d) return;
+  d.style.display = 'block';
+  d.textContent = 'ERROR: ' + msg + (stack ? '\n\n' + stack : '');
+}
+window.addEventListener('error', function(e) {
+  showErr(e.message || String(e), (e.error && e.error.stack) || '');
+});
+</script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useMemo, useEffect, useRef, Fragment } = React;
+
+// ============ HELPERS ============
+const round2 = n => Math.round((+n || 0) * 100) / 100;
+const fmt = n => round2(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const money = n => '$' + fmt(n);
+const moneyK = n => {
+  const v = +n || 0;
+  if (v >= 1e6) return '$' + (v/1e6).toFixed(2) + 'M';
+  if (v >= 1e3) return '$' + (v/1e3).toFixed(1) + 'K';
+  return '$' + v.toFixed(0);
+};
+const uid = () => Math.random().toString(36).slice(2, 10);
+const normalize = s => (s || '').toString().trim().toLowerCase().replace(/\s+/g, ' ');
+
+const CATEGORIAS = [
+  { key: 'materiales', label: 'Materiales', icon: '🧱' },
+  { key: 'manoObra', label: 'Mano de Obra', icon: '👷' },
+  { key: 'herramientaEquipo', label: 'Herramienta y Equipo', icon: '🔧' },
+  { key: 'subcontratos', label: 'Subcontratos', icon: '🏢' },
+];
+
+// ============ DATOS INICIALES ============
+const I = {
+  agua: uid(), cal: uid(), cinta: uid(), peon: uid(), oficial: uid(),
+  pala: uid(), pico: uid(), carret: uid(), seg: uid(),
+  vt: uid(), conc: uid(), cur: uid(), inst: uid(), ayud: uid(),
+  herr: uid(), vib: uid()
+};
+
+const makeBudget = (over = {}) => ({
+  id: uid(),
+  cotizante: 'EDIFICADORA S.A. de C.V.',
+  cliente: 'Grupo Desarrollo Inmobiliario S.A.',
+  ofertante: 'EDIFICADORA S.A. de C.V.',
+  realizadoPor: 'Ing. Moisés Martínez',
+  lugar: 'Tegucigalpa, Francisco Morazán, Honduras',
+  nombreProyecto: 'Complejo Residencial "Los Próceres" - Fase 1',
+  fecha: '2026-05-16',
+  revision: 2,
+  moneda: 'USD',
+  tipo: 'Residencial',
+  estado: 'Activo',
+  ultimaEdicion: 'hace 2 horas',
+  pctIndirectos: 10, pctImprevistos: 1, pctUtilidad: 8, pctImpuesto: 15,
+  logoOfertante: null, logoCliente: null,
+  versiones: [],
+  catalogos: {
+    materiales: [
+      { id: I.agua, codigo: 'MAT-001', descripcion: 'Agua', unidad: 'm³', costoBase: 10 },
+      { id: I.cal, codigo: 'MAT-002', descripcion: 'Cal de hidratación', unidad: 'kg', costoBase: 1 },
+      { id: I.cinta, codigo: 'MAT-003', descripcion: 'Cinta de peligro', unidad: 'm', costoBase: 1 },
+      { id: I.vt, codigo: 'MAT-004', descripcion: 'VT1-20', unidad: 'M2', costoBase: 18.62 },
+      { id: I.conc, codigo: 'MAT-005', descripcion: 'Concreto 280 kg/cm²', unidad: 'm³', costoBase: 162 },
+      { id: I.cur, codigo: 'MAT-006', descripcion: 'Curador de concreto', unidad: 'barril', costoBase: 417.70 }
+    ],
+    manoObra: [
+      { id: I.peon, codigo: 'MO-001', descripcion: 'Peón', unidad: 'jornada', costoBase: 1 },
+      { id: I.oficial, codigo: 'MO-002', descripcion: 'Oficial Albañil', unidad: 'jornada', costoBase: 2 },
+      { id: I.inst, codigo: 'MO-003', descripcion: 'Instalación de VT1', unidad: 'M2', costoBase: 12.74 },
+      { id: I.ayud, codigo: 'MO-004', descripcion: 'Ayudante', unidad: 'JRD', costoBase: 28 }
+    ],
+    herramientaEquipo: [
+      { id: I.pala, codigo: 'HE-001', descripcion: 'Palas', unidad: 'pza', costoBase: 0.5 },
+      { id: I.pico, codigo: 'HE-002', descripcion: 'Picos', unidad: 'pza', costoBase: 0.5 },
+      { id: I.carret, codigo: 'HE-003', descripcion: 'Carretilla', unidad: 'pza', costoBase: 0.5 },
+      { id: I.seg, codigo: 'HE-004', descripcion: 'Equipo de Seguridad', unidad: 'jgo', costoBase: 0.5 },
+      { id: I.herr, codigo: 'HE-005', descripcion: 'Herramienta menor', unidad: 'GBL', costoBase: 15.54 },
+      { id: I.vib, codigo: 'HE-006', descripcion: 'Vibrador de concreto', unidad: 'M3', costoBase: 2 }
+    ],
+    subcontratos: []
+  },
+  items: [
+    { id: '1', tipo: 'capitulo', descripcion: 'Cimentaciones', children: [
+      { id: '1.1', tipo: 'subcapitulo', descripcion: 'Cimentaciones Superficiales', children: [
+        { id: '1.1.01', tipo: 'actividad', descripcion: 'Excavación a mano para zapatas', unidad: 'm³', cantidad: 100, ficha: {
+          materiales: [
+            { id: uid(), insumoId: I.agua, rendimiento: 0.05, desperdicio: 0 },
+            { id: uid(), insumoId: I.cal, rendimiento: 1, desperdicio: 0 },
+            { id: uid(), insumoId: I.cinta, rendimiento: 1, desperdicio: 0 }
+          ],
+          manoObra: [
+            { id: uid(), insumoId: I.peon, rendimiento: 1, desperdicio: 0 },
+            { id: uid(), insumoId: I.oficial, rendimiento: 1, desperdicio: 0 }
+          ],
+          herramientaEquipo: [
+            { id: uid(), insumoId: I.pala, rendimiento: 2.5, desperdicio: 0 },
+            { id: uid(), insumoId: I.pico, rendimiento: 2, desperdicio: 0 },
+            { id: uid(), insumoId: I.carret, rendimiento: 1, desperdicio: 0 },
+            { id: uid(), insumoId: I.seg, rendimiento: 1.2, desperdicio: 0 }
+          ],
+          subcontratos: []
+        }},
+        { id: '1.1.02', tipo: 'actividad', descripcion: 'Excavación a máquina para zapatas', unidad: 'm³', cantidad: 200,
+          ficha: { materiales: [], manoObra: [], herramientaEquipo: [], subcontratos: [] }}
+      ]},
+      { id: '1.A', tipo: 'actividad', descripcion: 'Relleno con material selecto', unidad: 'm³', cantidad: 50,
+        ficha: { materiales: [], manoObra: [], herramientaEquipo: [], subcontratos: [] }}
+    ]},
+    { id: '2', tipo: 'capitulo', descripcion: 'Estructuras', children: [
+      { id: '2.1', tipo: 'subcapitulo', descripcion: 'Losas y Vigas', children: [
+        { id: '2.1.01', tipo: 'actividad', descripcion: "Losa VT1-20 nivel 2, concreto f'c=280kg/cm²", unidad: 'm²', cantidad: 423.22, ficha: {
+          materiales: [
+            { id: uid(), insumoId: I.vt, rendimiento: 1, desperdicio: 0 },
+            { id: uid(), insumoId: I.conc, rendimiento: 0.07, desperdicio: 4 },
+            { id: uid(), insumoId: I.cur, rendimiento: 0.002, desperdicio: 4 }
+          ],
+          manoObra: [
+            { id: uid(), insumoId: I.inst, rendimiento: 1, desperdicio: 0 },
+            { id: uid(), insumoId: I.ayud, rendimiento: 0.1, desperdicio: 0 }
+          ],
+          herramientaEquipo: [
+            { id: uid(), insumoId: I.herr, rendimiento: 0.05, desperdicio: 0 },
+            { id: uid(), insumoId: I.vib, rendimiento: 0.07, desperdicio: 0 }
+          ],
+          subcontratos: []
+        }}
+      ]}
+    ]}
+  ],
+  ...over
+});
+
+const initialProyectos = [
+  makeBudget(),
+  makeBudget({ nombreProyecto: 'Torre Comercial Centro', cliente: 'Inversiones del Sur', tipo: 'Comercial', estado: 'En revisión', revision: 1, ultimaEdicion: 'ayer' }),
+  makeBudget({ nombreProyecto: 'Remodelación Hospital Norte', cliente: 'Salud Pública', tipo: 'Salud', revision: 4, ultimaEdicion: 'hace 3 días' }),
+  makeBudget({ nombreProyecto: 'Edificio Educativo Fase 2', cliente: 'Universidad Nacional', tipo: 'Educativo', revision: 2, ultimaEdicion: 'hace 5 días' }),
+  makeBudget({ nombreProyecto: 'Plaza Las Palmas', cliente: 'Grupo Real', tipo: 'Comercial', revision: 3, ultimaEdicion: 'hace 1 semana' }),
+  makeBudget({ nombreProyecto: 'Conjunto El Lago', cliente: 'Constructora Lago', tipo: 'Residencial', estado: 'Borrador', revision: 1, ultimaEdicion: 'hace 2 semanas' })
+];
+
+// ============ CÁLCULOS ============
+const findInsumo = (cat, k, id) => (cat && cat[k] ? cat[k] : []).find(i => i.id === id);
+
+const conceptoCost = (c, cat, k) => {
+  const ins = findInsumo(cat, k, c.insumoId);
+  if (!ins) return 0;
+  return round2((+c.rendimiento || 0) * (+ins.costoBase || 0) * (1 + (+c.desperdicio || 0) / 100));
+};
+
+const sumCat = (arr, cat, k) => (arr || []).reduce((s, c) => s + conceptoCost(c, cat, k), 0);
+
+const calcFicha = (f, cat, p) => {
+  f = f || { materiales: [], manoObra: [], herramientaEquipo: [], subcontratos: [] };
+  const totMat = round2(sumCat(f.materiales, cat, 'materiales'));
+  const totMo = round2(sumCat(f.manoObra, cat, 'manoObra'));
+  const totHe = round2(sumCat(f.herramientaEquipo, cat, 'herramientaEquipo'));
+  const totSub = round2(sumCat(f.subcontratos, cat, 'subcontratos'));
+  const cd = round2(totMat + totMo + totHe + totSub);
+  const ind = round2(cd * (p.pctIndirectos / 100));
+  const imp = round2((cd + ind) * (p.pctImprevistos / 100));
+  const uti = round2((cd + ind) * (p.pctUtilidad / 100));
+  const sinTax = round2(cd + ind + imp + uti);
+  const tax = round2(sinTax * (p.pctImpuesto / 100));
+  const pu = round2(sinTax + tax);
+  return { totMat, totMo, totHe, totSub, costoDirecto: cd, indirectos: ind, imprevistos: imp, utilidad: uti, subtotalSinImpuesto: sinTax, impuesto: tax, precioUnitario: pu };
+};
+
+const calcItem = (it, cat, p) => {
+  if (it.tipo === 'actividad') {
+    const f = calcFicha(it.ficha, cat, p);
+    return { precioUnitario: f.precioUnitario, subtotal: round2(f.precioUnitario * (+it.cantidad || 0)) };
+  }
+  let s = 0;
+  for (const c of it.children || []) s += calcItem(c, cat, p).subtotal;
+  return { subtotal: round2(s) };
+};
+
+const calcKPIs = b => {
+  const p = { pctIndirectos: b.pctIndirectos, pctImprevistos: b.pctImprevistos, pctUtilidad: b.pctUtilidad, pctImpuesto: b.pctImpuesto };
+  let totDir = 0, totInd = 0, totImp = 0, totUti = 0, total = 0, nActs = 0;
+  const walk = its => {
+    for (const it of its) {
+      if (it.tipo === 'actividad') {
+        const f = calcFicha(it.ficha, b.catalogos, p);
+        const q = +it.cantidad || 0;
+        totDir += f.costoDirecto * q; totInd += f.indirectos * q; totImp += f.imprevistos * q;
+        totUti += f.utilidad * q; total += f.precioUnitario * q; nActs++;
+      } else if (it.children) walk(it.children);
+    }
+  };
+  walk(b.items);
+  return { totDir: round2(totDir), totInd: round2(totInd), totImp: round2(totImp), totUti: round2(totUti), total: round2(total), nActividades: nActs, nCapitulos: b.items.filter(i => i.tipo === 'capitulo').length };
+};
+
+const findOrCreateInsumo = (cat, k, desc) => {
+  const n = normalize(desc);
+  if (!n) return null;
+  const ex = (cat[k] || []).find(i => normalize(i.descripcion) === n);
+  if (ex) return { catalogos: cat, insumo: ex };
+  const ni = { id: uid(), codigo: '', descripcion: desc.trim(), unidad: 'und', costoBase: 0, proveedor: '', notas: '' };
+  return { catalogos: { ...cat, [k]: [...(cat[k] || []), ni] }, insumo: ni };
+};
+
+const findPathById = (items, id, path = []) => {
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].id === id) return [...path, i];
+    if (items[i].children) {
+      const r = findPathById(items[i].children, id, [...path, i]);
+      if (r) return r;
+    }
+  }
+  return null;
+};
+
+// ============ EXCEL STYLES ============
+const X = {
+  titleFill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F1115' } },
+  titleFont: { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFF59E0B' } },
+  headerFill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } },
+  headerFont: { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } },
+  capFill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F1115' } },
+  capFont: { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFBBF24' } },
+  subcapFill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF475569' } },
+  subcapFont: { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } },
+  subtotalFill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } },
+  totalFill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F1115' } },
+  totalFont: { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFBBF24' } },
+  border: { top: { style: 'thin', color: { argb: 'FFCBD5E1' } }, left: { style: 'thin', color: { argb: 'FFCBD5E1' } }, bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } }, right: { style: 'thin', color: { argb: 'FFCBD5E1' } } },
+  ac: { vertical: 'middle', horizontal: 'center', wrapText: true },
+  ar: { vertical: 'middle', horizontal: 'right' },
+  al: { vertical: 'middle', horizontal: 'left', wrapText: true }
+};
+const MFMT = '"$"#,##0.00';
+const NFMT = '#,##0.0000';
+
+const setC = (ws, addr, val, opts) => {
+  opts = opts || {};
+  const c = ws.getCell(addr);
+  c.value = val;
+  if (opts.fill) c.fill = opts.fill;
+  if (opts.font) c.font = opts.font;
+  c.alignment = opts.alignment || X.al;
+  if (opts.numFmt) c.numFmt = opts.numFmt;
+  c.border = opts.border || X.border;
+  return c;
+};
+
+const writeHeader = (ws, budget) => {
+  ws.mergeCells('A1:F1');
+  setC(ws, 'A1', 'PRESUPUESTO DE OBRA', { fill: X.titleFill, font: X.titleFont, alignment: X.ac });
+  ws.getRow(1).height = 28;
+  setC(ws, 'A2', 'Cotizante:', { font: { bold: true } }); setC(ws, 'B2', budget.cotizante || '');
+  setC(ws, 'D2', 'Cliente:', { font: { bold: true } }); setC(ws, 'E2', budget.cliente || '');
+  setC(ws, 'A3', 'Proyecto:', { font: { bold: true } }); setC(ws, 'B3', budget.nombreProyecto || '');
+  setC(ws, 'D3', 'Fecha:', { font: { bold: true } }); setC(ws, 'E3', budget.fecha || '');
+  setC(ws, 'A4', 'Lugar:', { font: { bold: true } }); setC(ws, 'B4', budget.lugar || '');
+  setC(ws, 'D4', 'Rev:', { font: { bold: true } }); setC(ws, 'E4', budget.revision || 1);
+  setC(ws, 'F4', budget.moneda || 'USD', { font: { bold: true } });
+  return 6;
+};
+
+// ============ PDF ============
+const drawPDFHeader = (doc, budget, subtitle) => {
+  subtitle = subtitle || 'PRESUPUESTO DE OBRA';
+  const w = doc.internal.pageSize.getWidth();
+  doc.setFillColor(15, 17, 21);
+  doc.rect(0, 0, w, 32, 'F');
+  try { if (budget.logoOfertante) doc.addImage(budget.logoOfertante, 'PNG', 8, 4, 22, 22); } catch (e) {}
+  try { if (budget.logoCliente) doc.addImage(budget.logoCliente, 'PNG', w - 30, 4, 22, 22); } catch (e) {}
+  doc.setTextColor(245, 158, 11); doc.setFontSize(15); doc.setFont(undefined, 'bold');
+  doc.text(subtitle, w/2, 12, { align: 'center' });
+  doc.setTextColor(255); doc.setFontSize(11);
+  doc.text(budget.nombreProyecto || '', w/2, 19, { align: 'center' });
+  doc.setFontSize(8); doc.setFont(undefined, 'normal'); doc.setTextColor(220, 220, 220);
+  doc.text('Rev ' + (budget.revision||1) + ' · ' + (budget.estado||'Activo') + ' · ' + (budget.moneda||'USD') + ' · ' + (budget.fecha||''), w/2, 25, { align: 'center' });
+  doc.setTextColor(0);
+  let y = 38; doc.setFontSize(9);
+  doc.setFont(undefined, 'bold'); doc.text('Cotizante:', 10, y); doc.setFont(undefined, 'normal'); doc.text(budget.cotizante||'—', 32, y);
+  doc.setFont(undefined, 'bold'); doc.text('Cliente:', w/2, y); doc.setFont(undefined, 'normal'); doc.text(budget.cliente||'—', w/2+18, y);
+  y += 5;
+  doc.setFont(undefined, 'bold'); doc.text('Ofertante:', 10, y); doc.setFont(undefined, 'normal'); doc.text(budget.ofertante||'—', 32, y);
+  doc.setFont(undefined, 'bold'); doc.text('Ubicación:', w/2, y); doc.setFont(undefined, 'normal'); doc.text(budget.lugar||'—', w/2+22, y);
+  y += 5;
+  doc.setFont(undefined, 'bold'); doc.text('Realizado por:', 10, y); doc.setFont(undefined, 'normal'); doc.text(budget.realizadoPor||'—', 35, y);
+  doc.setFont(undefined, 'bold'); doc.text('Tipo:', w/2, y); doc.setFont(undefined, 'normal'); doc.text(budget.tipo||'—', w/2+13, y);
+  y += 4;
+  doc.setDrawColor(245, 158, 11); doc.setLineWidth(0.5); doc.line(10, y, w-10, y);
+  return y + 4;
+};
+
+const exportPDFPresupuesto = (budget, params) => {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
+  const y = drawPDFHeader(doc, budget, 'PRESUPUESTO DE OBRA');
+  const rows = [];
+  const walk = (its, d) => {
+    d = d || 0;
+    for (const it of its) {
+      const c = calcItem(it, budget.catalogos, params);
+      const ind = '  '.repeat(d);
+      if (it.tipo === 'capitulo') {
+        rows.push([{ content: it.id, styles: { fontStyle: 'bold', fillColor: [15,17,21], textColor: 255 }}, { content: ind+it.descripcion, styles: { fontStyle: 'bold', fillColor: [15,17,21], textColor: 255 }}, '', '', '', { content: money(c.subtotal), styles: { fontStyle: 'bold', halign: 'right', fillColor: [15,17,21], textColor: 245 }}]);
+        if (it.children) walk(it.children, d+1);
+      } else if (it.tipo === 'subcapitulo') {
+        rows.push([{ content: it.id, styles: { fontStyle: 'bold', fillColor: [71,85,105], textColor: 255 }}, { content: ind+it.descripcion, styles: { fontStyle: 'bold', fillColor: [71,85,105], textColor: 255 }}, '', '', '', { content: money(c.subtotal), styles: { fontStyle: 'bold', halign: 'right', fillColor: [71,85,105], textColor: 255 }}]);
+        if (it.children) walk(it.children, d+1);
+      } else {
+        rows.push([it.id, ind+it.descripcion, it.unidad, fmt(it.cantidad), money(c.precioUnitario), { content: money(c.subtotal), styles: { halign: 'right' }}]);
+      }
+    }
+  };
+  walk(budget.items, 0);
+  const tot = round2(budget.items.reduce((s, it) => s + calcItem(it, budget.catalogos, params).subtotal, 0));
+  rows.push([{ content: 'TOTAL GENERAL', colSpan: 5, styles: { fillColor: [15,17,21], textColor: 245, fontStyle: 'bold', halign: 'right' }}, { content: money(tot), styles: { fillColor: [15,17,21], textColor: 245, fontStyle: 'bold', halign: 'right' }}]);
+  doc.autoTable({ startY: y, head: [['ID','Descripción','Unidad','Cantidad','P. Unitario','Subtotal']], body: rows, styles: { fontSize: 8, cellPadding: 1.5 }, headStyles: { fillColor: [15,17,21], textColor: 245 }, columnStyles: { 0:{cellWidth:20}, 2:{halign:'center',cellWidth:18}, 3:{halign:'right',cellWidth:20}, 4:{halign:'right',cellWidth:25}, 5:{halign:'right',cellWidth:28} } });
+  doc.save((budget.nombreProyecto || 'Presupuesto').replace(/[^\w]+/g, '_') + '_Presupuesto.pdf');
+};
+
+const exportPDFFicha = (budget, act, params) => {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
+  let y = drawPDFHeader(doc, budget, 'FICHA DE COSTO UNITARIO');
+  doc.setFontSize(11); doc.setFont(undefined, 'bold');
+  doc.text(act.id + ' — ' + act.descripcion, 10, y); y += 5;
+  doc.setFontSize(9); doc.setFont(undefined, 'normal');
+  doc.text('Cantidad: ' + fmt(act.cantidad) + ' ' + act.unidad, 10, y); y += 4;
+  const calc = calcFicha(act.ficha, budget.catalogos, params);
+  const sect = (title, k, total) => {
+    const rs = (act.ficha[k] || []).map((c, i) => {
+      const ins = findInsumo(budget.catalogos, k, c.insumoId);
+      return ins ? [i+1, ins.codigo, ins.descripcion, ins.unidad, fmt(c.rendimiento), fmt(c.desperdicio)+'%', money(ins.costoBase), money(conceptoCost(c, budget.catalogos, k))] : null;
+    }).filter(Boolean);
+    if (rs.length === 0) rs.push([{ content: '(sin conceptos)', colSpan: 8, styles: { halign: 'center', fontStyle: 'italic', textColor: 150 }}]);
+    rs.push([{ content: 'SUBTOTAL ' + title, colSpan: 7, styles: { halign: 'right', fontStyle: 'bold', fillColor: [226,232,240] }}, { content: money(total), styles: { halign: 'right', fontStyle: 'bold', fillColor: [226,232,240] }}]);
+    doc.autoTable({ startY: y, head: [[{ content: title, colSpan: 8, styles: { fillColor: [30,41,59], textColor: 255, halign: 'left', fontStyle: 'bold' }}], ['#','Cód.','Insumo','Und','Rend.','Desp.','C.Base','Subtotal']], body: rs, styles: { fontSize: 8, cellPadding: 1.2 }, headStyles: { fillColor: [71,85,105], textColor: 255 } });
+    y = doc.lastAutoTable.finalY + 3;
+  };
+  sect('MATERIALES', 'materiales', calc.totMat);
+  sect('MANO DE OBRA', 'manoObra', calc.totMo);
+  sect('HERRAMIENTA + EQUIPO', 'herramientaEquipo', calc.totHe);
+  sect('SUBCONTRATO', 'subcontratos', calc.totSub);
+  doc.autoTable({ startY: y, body: [
+    ['Costo Directo', money(calc.costoDirecto)],
+    ['Indirectos (' + params.pctIndirectos + '%)', money(calc.indirectos)],
+    ['Imprevistos (' + params.pctImprevistos + '%)', money(calc.imprevistos)],
+    ['Utilidad (' + params.pctUtilidad + '%)', money(calc.utilidad)],
+    ['Subtotal antes de impuestos', money(calc.subtotalSinImpuesto)],
+    ['Impuesto (' + params.pctImpuesto + '%)', money(calc.impuesto)],
+    [{ content: 'PRECIO UNITARIO TOTAL', styles: { fontStyle: 'bold', fillColor: [15,17,21], textColor: 245 }}, { content: money(calc.precioUnitario), styles: { fontStyle: 'bold', fillColor: [15,17,21], textColor: 245, halign: 'right' }}]
+  ], styles: { fontSize: 9, cellPadding: 2 }, columnStyles: { 0:{halign:'right',fontStyle:'bold'}, 1:{halign:'right',cellWidth:50} }, theme: 'grid' });
+  doc.save('Ficha_' + act.id + '.pdf');
+};
+
+const exportPDFGeneral = (budget, params) => {
+  exportPDFPresupuesto(budget, params);
+  const acts = [];
+  const collect = its => { for (const it of its) { if (it.tipo === 'actividad') acts.push(it); else if (it.children) collect(it.children); } };
+  collect(budget.items);
+  acts.forEach((act, i) => setTimeout(() => exportPDFFicha(budget, act, params), (i+1) * 700));
+};
+
+const exportPDFRangoFichas = (budget, params, ids) => {
+  const acts = [];
+  const collect = its => { for (const it of its) { if (it.tipo === 'actividad' && ids.includes(it.id)) acts.push(it); else if (it.children) collect(it.children); } };
+  collect(budget.items);
+  if (acts.length === 0) return alert('No hay actividades seleccionadas.');
+  acts.forEach((act, i) => setTimeout(() => exportPDFFicha(budget, act, params), i * 600));
+};
+
+// ============ EXCEL EXPORT ============
+async function exportExcelPresupuesto(budget, params) {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Presupuesto');
+  ws.columns = [{ width: 10 },{ width: 50 },{ width: 10 },{ width: 12 },{ width: 16 },{ width: 18 }];
+  let row = writeHeader(ws, budget);
+  ['ID','Descripción','Unidad','Cantidad','P. Unitario','Subtotal'].forEach((h, i) => setC(ws, String.fromCharCode(65+i)+row, h, { fill: X.headerFill, font: X.headerFont, alignment: X.ac }));
+  ws.getRow(row).height = 22; row++;
+  const walk = (its, d) => {
+    d = d || 0;
+    for (const it of its) {
+      const c = calcItem(it, budget.catalogos, params);
+      const ind = '   '.repeat(d);
+      if (it.tipo === 'capitulo') {
+        setC(ws, 'A'+row, it.id, { fill: X.capFill, font: X.capFont, alignment: X.ac });
+        setC(ws, 'B'+row, ind+it.descripcion, { fill: X.capFill, font: X.capFont, alignment: X.al });
+        ['C','D','E'].forEach(cc => setC(ws, cc+row, '', { fill: X.capFill }));
+        setC(ws, 'F'+row, c.subtotal, { fill: X.capFill, font: X.capFont, alignment: X.ar, numFmt: MFMT });
+        row++;
+        if (it.children) walk(it.children, d+1);
+        ['A','B','C','D','E','F'].forEach(cc => setC(ws, cc+row, cc === 'B' ? ind+'SUBTOTAL Cap. '+it.id : cc === 'F' ? c.subtotal : '', { fill: X.subtotalFill, font: { italic: true, bold: true }, alignment: cc === 'F' ? X.ar : X.al, numFmt: cc === 'F' ? MFMT : undefined }));
+        row++;
+      } else if (it.tipo === 'subcapitulo') {
+        setC(ws, 'A'+row, it.id, { fill: X.subcapFill, font: X.subcapFont, alignment: X.ac });
+        setC(ws, 'B'+row, ind+it.descripcion, { fill: X.subcapFill, font: X.subcapFont, alignment: X.al });
+        ['C','D','E'].forEach(cc => setC(ws, cc+row, '', { fill: X.subcapFill }));
+        setC(ws, 'F'+row, c.subtotal, { fill: X.subcapFill, font: X.subcapFont, alignment: X.ar, numFmt: MFMT });
+        row++;
+        if (it.children) walk(it.children, d+1);
+      } else {
+        setC(ws, 'A'+row, it.id, { alignment: X.ac });
+        setC(ws, 'B'+row, ind+it.descripcion, { alignment: X.al });
+        setC(ws, 'C'+row, it.unidad, { alignment: X.ac });
+        setC(ws, 'D'+row, round2(it.cantidad), { alignment: X.ar, numFmt: NFMT });
+        setC(ws, 'E'+row, c.precioUnitario, { alignment: X.ar, numFmt: MFMT });
+        setC(ws, 'F'+row, c.subtotal, { alignment: X.ar, numFmt: MFMT, font: { bold: true } });
+        row++;
+      }
+    }
+  };
+  walk(budget.items, 0);
+  const tot = round2(budget.items.reduce((s, it) => s + calcItem(it, budget.catalogos, params).subtotal, 0));
+  row++;
+  ws.mergeCells('A'+row+':E'+row);
+  setC(ws, 'A'+row, 'TOTAL GENERAL', { fill: X.totalFill, font: X.totalFont, alignment: X.ar });
+  setC(ws, 'F'+row, tot, { fill: X.totalFill, font: X.totalFont, alignment: X.ar, numFmt: MFMT });
+  ws.getRow(row).height = 26;
+  const buf = await wb.xlsx.writeBuffer();
+  saveAs(new Blob([buf]), (budget.nombreProyecto || 'Pres').replace(/[^\w]+/g, '_') + '_Presupuesto.xlsx');
+}
+
+async function exportExcelCatalogo(budget, catKey) {
+  const cat = CATEGORIAS.find(c => c.key === catKey);
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet(cat.label);
+  ws.columns = [{ width: 14 },{ width: 40 },{ width: 12 },{ width: 16 },{ width: 24 },{ width: 30 }];
+  ws.mergeCells('A1:F1');
+  setC(ws, 'A1', 'LISTA DE ' + cat.label.toUpperCase() + ' — ' + budget.nombreProyecto, { fill: X.titleFill, font: X.titleFont, alignment: X.ac });
+  ws.getRow(1).height = 26;
+  ['Código','Descripción','Unidad','Precio Base','Proveedor','Notas'].forEach((h, i) => setC(ws, String.fromCharCode(65+i)+'3', h, { fill: X.headerFill, font: X.headerFont, alignment: X.ac }));
+  ws.getRow(3).height = 22;
+  (budget.catalogos[catKey] || []).forEach((i, idx) => {
+    const r = 4 + idx;
+    setC(ws, 'A'+r, i.codigo || '', { alignment: X.ac, font: { name: 'Consolas', size: 10 } });
+    setC(ws, 'B'+r, i.descripcion, { alignment: X.al });
+    setC(ws, 'C'+r, i.unidad, { alignment: X.ac });
+    setC(ws, 'D'+r, round2(i.costoBase), { alignment: X.ar, numFmt: MFMT, font: { bold: true } });
+    setC(ws, 'E'+r, i.proveedor || '', { alignment: X.al });
+    setC(ws, 'F'+r, i.notas || '', { alignment: X.al });
+  });
+  const buf = await wb.xlsx.writeBuffer();
+  saveAs(new Blob([buf]), (budget.nombreProyecto || 'Cat').replace(/[^\w]+/g, '_') + '_' + cat.label.replace(/\s+/g, '_') + '.xlsx');
+}
+
+async function exportExcelFicha(budget, act, params) {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Ficha');
+  ws.columns = [{ width: 6 },{ width: 38 },{ width: 14 },{ width: 12 },{ width: 12 },{ width: 12 },{ width: 18 }];
+  ws.mergeCells('A1:G1');
+  setC(ws, 'A1', 'FICHA DE COSTO UNITARIO', { fill: X.titleFill, font: X.titleFont, alignment: X.ac });
+  ws.getRow(1).height = 26;
+  ws.mergeCells('A2:G2');
+  setC(ws, 'A2', act.id + ' — ' + act.descripcion, { font: { bold: true, size: 12 }, alignment: X.ac });
+  setC(ws, 'A3', 'Cantidad:', { font: { bold: true } }); setC(ws, 'B3', fmt(act.cantidad) + ' ' + act.unidad);
+  setC(ws, 'D3', 'Proyecto:', { font: { bold: true } }); setC(ws, 'E3', budget.nombreProyecto || '');
+  const calc = calcFicha(act.ficha, budget.catalogos, params);
+  let row = 5;
+  const sect = (title, k, total) => {
+    ws.mergeCells('A'+row+':G'+row);
+    setC(ws, 'A'+row, title, { fill: X.headerFill, font: X.headerFont, alignment: { vertical: 'middle', horizontal: 'left' } });
+    row++;
+    ['#','Insumo','Código','Unidad','Rend.','Desp.%','Subtotal'].forEach((h, i) => setC(ws, String.fromCharCode(65+i)+row, h, { fill: X.headerFill, font: X.headerFont, alignment: X.ac }));
+    row++;
+    (act.ficha[k] || []).forEach((c, i) => {
+      const ins = findInsumo(budget.catalogos, k, c.insumoId);
+      if (!ins) return;
+      setC(ws, 'A'+row, i+1, { alignment: X.ac });
+      setC(ws, 'B'+row, ins.descripcion, { alignment: X.al });
+      setC(ws, 'C'+row, ins.codigo, { alignment: X.ac, font: { name: 'Consolas', size: 10 } });
+      setC(ws, 'D'+row, ins.unidad, { alignment: X.ac });
+      setC(ws, 'E'+row, round2(c.rendimiento), { alignment: X.ar, numFmt: NFMT });
+      setC(ws, 'F'+row, round2(c.desperdicio), { alignment: X.ar, numFmt: '0.00"%"' });
+      setC(ws, 'G'+row, conceptoCost(c, budget.catalogos, k), { alignment: X.ar, numFmt: MFMT, font: { bold: true } });
+      row++;
+    });
+    ws.mergeCells('A'+row+':F'+row);
+    setC(ws, 'A'+row, 'SUBTOTAL ' + title, { fill: X.subtotalFill, font: { bold: true }, alignment: X.ar });
+    setC(ws, 'G'+row, total, { fill: X.subtotalFill, font: { bold: true }, alignment: X.ar, numFmt: MFMT });
+    row += 2;
+  };
+  sect('MATERIALES', 'materiales', calc.totMat);
+  sect('MANO DE OBRA', 'manoObra', calc.totMo);
+  sect('HERRAMIENTA + EQUIPO', 'herramientaEquipo', calc.totHe);
+  sect('SUBCONTRATO', 'subcontratos', calc.totSub);
+  [['Costo Directo', calc.costoDirecto], ['Indirectos (' + params.pctIndirectos + '%)', calc.indirectos], ['Imprevistos (' + params.pctImprevistos + '%)', calc.imprevistos], ['Utilidad (' + params.pctUtilidad + '%)', calc.utilidad], ['Subtotal antes de impuestos', calc.subtotalSinImpuesto], ['Impuesto (' + params.pctImpuesto + '%)', calc.impuesto]].forEach(p => {
+    ws.mergeCells('A'+row+':F'+row);
+    setC(ws, 'A'+row, p[0], { alignment: X.ar, font: { bold: true } });
+    setC(ws, 'G'+row, p[1], { alignment: X.ar, numFmt: MFMT });
+    row++;
+  });
+  ws.mergeCells('A'+row+':F'+row);
+  setC(ws, 'A'+row, 'PRECIO UNITARIO TOTAL', { fill: X.totalFill, font: X.totalFont, alignment: X.ar });
+  setC(ws, 'G'+row, calc.precioUnitario, { fill: X.totalFill, font: X.totalFont, alignment: X.ar, numFmt: MFMT });
+  ws.getRow(row).height = 26;
+  const buf = await wb.xlsx.writeBuffer();
+  saveAs(new Blob([buf]), 'Ficha_' + act.id + '.xlsx');
+}
+
+async function exportExcelGeneral(budget, params) {
+  await exportExcelPresupuesto(budget, params);
+  for (const cat of CATEGORIAS) if ((budget.catalogos[cat.key] || []).length) { await new Promise(r => setTimeout(r, 300)); await exportExcelCatalogo(budget, cat.key); }
+  const acts = [];
+  const collect = its => { for (const it of its) { if (it.tipo === 'actividad') acts.push(it); else if (it.children) collect(it.children); } };
+  collect(budget.items);
+  for (const act of acts) { await new Promise(r => setTimeout(r, 300)); await exportExcelFicha(budget, act, params); }
+}
+
+async function exportPlantilla(tipo) {
+  const cfgs = {
+    presupuesto: { title: 'PLANTILLA PRESUPUESTO', headers: ['ID','Descripción','Unidad','Cantidad','P. Unitario','Subtotal'], sample: [['1','Cimentaciones','','','',''],['1.1','Cimentaciones Superficiales','','','',''],['1.1.01','Excavación a mano','m³',100,0,0],['2','Estructuras','','','',''],['2.1','Losas','','','',''],['2.1.01','Losa VT1-20','m²',423.22,0,0]], notas: 'Usá IDs jerárquicos: 1, 1.1, 1.1.01' },
+    materiales: { title: 'PLANTILLA MATERIALES', headers: ['Código','Descripción','Unidad','Precio Base','Proveedor','Notas'], sample: [['MAT-001','Cemento gris','saco',7.50,'Cemex',''],['MAT-002','Arena fina','m³',18.00,'Local','']], notas: 'El sistema impedirá duplicados por descripción.' },
+    manoObra: { title: 'PLANTILLA MANO DE OBRA', headers: ['Código','Descripción','Unidad','Precio Base','Proveedor','Notas'], sample: [['MO-001','Peón','jornada',15,'',''],['MO-002','Albañil','jornada',25,'','']], notas: 'Unidades: jornada, hora.' },
+    herramientaEquipo: { title: 'PLANTILLA HERRAMIENTAS / EQUIPO', headers: ['Código','Descripción','Unidad','Precio Base','Proveedor','Notas'], sample: [['HE-001','Mezcladora','día',35,'',''],['HE-002','Vibrador','hora',5,'','']], notas: 'Herramienta menor, equipo, maquinaria.' },
+    subcontratos: { title: 'PLANTILLA SUBCONTRATOS', headers: ['Código','Descripción','Unidad','Precio Base','Proveedor','Notas'], sample: [['SC-001','Instalación eléctrica','GBL',5500,'Electro S.A.','']], notas: 'Servicios contratados a terceros.' }
+  };
+  const c = cfgs[tipo];
+  if (!c) return;
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Plantilla');
+  ws.columns = c.headers.map((_, i) => ({ width: tipo === 'presupuesto' && i === 1 ? 50 : 18 }));
+  const last = String.fromCharCode(64 + c.headers.length);
+  ws.mergeCells('A1:' + last + '1');
+  setC(ws, 'A1', c.title, { fill: X.titleFill, font: X.titleFont, alignment: X.ac });
+  ws.getRow(1).height = 28;
+  ws.mergeCells('A2:' + last + '2');
+  setC(ws, 'A2', c.notas, { font: { italic: true, color: { argb: 'FF64748B' } }, alignment: X.ac });
+  c.headers.forEach((h, i) => setC(ws, String.fromCharCode(65+i)+'4', h, { fill: X.headerFill, font: X.headerFont, alignment: X.ac }));
+  ws.getRow(4).height = 22;
+  c.sample.forEach((r, ri) => r.forEach((v, ci) => {
+    const isM = (tipo === 'presupuesto' && (ci === 4 || ci === 5)) || (tipo !== 'presupuesto' && ci === 3);
+    const isN = tipo === 'presupuesto' && ci === 3;
+    setC(ws, String.fromCharCode(65+ci) + (5+ri), v, { alignment: typeof v === 'number' ? X.ar : X.al, numFmt: isM ? MFMT : isN ? NFMT : undefined, font: isM ? { bold: true } : undefined });
+  }));
+  const buf = await wb.xlsx.writeBuffer();
+  saveAs(new Blob([buf]), 'Plantilla_' + tipo + '.xlsx');
+}
+
+// ============ IMPORT ============
+async function importExcelPresupuesto(file, budget, setBudget) {
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf);
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+  let h = rows.findIndex(r => r.some(c => /^\s*id\s*$/i.test(String(c))));
+  if (h < 0) h = 0;
+  const newItems = [];
+  for (let i = h+1; i < rows.length; i++) {
+    const r = rows[i];
+    const id = String(r[0] || '').trim();
+    const desc = String(r[1] || '').trim();
+    if (!id || /^subtotal|^total/i.test(desc)) continue;
+    const parts = id.split('.');
+    if (parts.length === 1) newItems.push({ id, tipo: 'capitulo', descripcion: desc, children: [] });
+    else if (parts.length === 2) {
+      const cap = newItems.find(x => x.id === parts[0]);
+      const it = { id, tipo: 'subcapitulo', descripcion: desc, children: [] };
+      (cap ? cap.children : newItems).push(it);
+    } else {
+      const cap = newItems.find(x => x.id === parts[0]);
+      const sub = cap && cap.children ? cap.children.find(x => x.id === parts.slice(0, 2).join('.')) : null;
+      const it = { id, tipo: 'actividad', descripcion: desc, unidad: String(r[2] || 'und').trim(), cantidad: parseFloat(r[3]) || 0, ficha: { materiales: [], manoObra: [], herramientaEquipo: [], subcontratos: [] } };
+      ((sub || cap) ? (sub || cap).children : newItems).push(it);
+    }
+  }
+  if (newItems.length === 0) return alert('No se detectaron filas válidas.');
+  if (!confirm('Se detectaron ' + newItems.length + ' capítulo(s). ¿Reemplazar el presupuesto?')) return;
+  setBudget({ ...budget, items: newItems });
+}
+
+async function importExcelCatalogo(file, budget, setBudget, catKey) {
+  const cat = CATEGORIAS.find(c => c.key === catKey);
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf);
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+  let h = rows.findIndex(r => r.some(c => /c[oó]digo/i.test(String(c))) && r.some(c => /descripci[oó]n/i.test(String(c))));
+  if (h < 0) h = 0;
+  const list = [...(budget.catalogos[catKey] || [])];
+  let ag = 0, du = 0;
+  for (let i = h+1; i < rows.length; i++) {
+    const r = rows[i];
+    const desc = String(r[1] || '').trim();
+    if (!desc) continue;
+    const n = normalize(desc);
+    if (list.find(x => normalize(x.descripcion) === n)) { du++; continue; }
+    list.push({ id: uid(), codigo: String(r[0] || '').trim(), descripcion: desc, unidad: String(r[2] || 'und').trim(), costoBase: parseFloat(r[3]) || 0, proveedor: String(r[4] || '').trim(), notas: String(r[5] || '').trim() });
+    ag++;
+  }
+  if (ag === 0 && du === 0) return alert('No se detectaron filas válidas.');
+  if (!confirm('Se agregarán ' + ag + ' ' + cat.label.toLowerCase() + ' (' + du + ' duplicados omitidos). ¿Continuar?')) return;
+  setBudget({ ...budget, catalogos: { ...budget.catalogos, [catKey]: list } });
+  alert('Importación completada: ' + ag + ' agregados, ' + du + ' omitidos.');
+}
+
+// ============ COMPONENTES UI ============
+function useClickOutside(ref, onClose) {
+  useEffect(() => {
+    const close = e => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [onClose]);
+}
+
+function Dropdown({ trigger, children, align, width }) {
+  align = align || 'right';
+  width = width || 'w-56';
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useClickOutside(ref, () => setOpen(false));
+  return (
+    <div ref={ref} className="relative inline-block">
+      <div onClick={() => setOpen(o => !o)}>{trigger}</div>
+      {open && (
+        <div className={'absolute z-30 mt-1 ' + (align === 'right' ? 'right-0' : 'left-0') + ' ' + width + ' bg-white border border-gray-200 shadow-2xl rounded-lg overflow-hidden'}>
+          <div onClick={() => setOpen(false)}>{children}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Modal({ open, onClose, title, children, footer, size }) {
+  if (!open) return null;
+  const sz = { sm: 'max-w-md', md: 'max-w-2xl', lg: 'max-w-4xl' }[size || 'md'];
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+      <div className={'bg-white rounded-2xl shadow-2xl w-full ' + sz + ' max-h-[92vh] overflow-hidden flex flex-col'}>
+        <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white px-5 py-4 flex justify-between items-center">
+          <h3 className="font-bold text-lg">{title}</h3>
+          <button onClick={onClose} className="text-white hover:bg-white/10 rounded-full w-8 h-8 leading-none">✕</button>
+        </div>
+        <div className="overflow-y-auto scrollbar p-5 flex-1">{children}</div>
+        {footer && <div className="bg-gray-50 px-5 py-3 flex justify-end gap-2 border-t">{footer}</div>}
+      </div>
+    </div>
+  );
+}
+
+function InsumoSelect({ catalogos, categoria, value, onChange, onCreateNew }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const ref = useRef(null);
+  useClickOutside(ref, () => setOpen(false));
+  const sel = (catalogos[categoria] || []).find(i => i.id === value);
+  const qn = normalize(q);
+  const list = (catalogos[categoria] || []).filter(i => !qn || normalize(i.descripcion).includes(qn) || normalize(i.codigo).includes(qn));
+  const exact = (catalogos[categoria] || []).find(i => normalize(i.codigo) === qn);
+  return (
+    <div ref={ref} className="relative w-full">
+      <button onClick={() => setOpen(o => !o)} className="w-full text-left px-2 py-1 hover:bg-amber-50 truncate">
+        {sel ? (
+          <span className="flex items-center gap-1.5">
+            {sel.codigo && <span className="text-[10px] font-mono bg-gray-100 text-gray-600 px-1 rounded">{sel.codigo}</span>}
+            <span className="truncate">{sel.descripcion}</span>
+          </span>
+        ) : <span className="text-gray-400 italic">— seleccionar (descripción o código) —</span>}
+      </button>
+      {open && (
+        <div className="absolute z-40 left-0 mt-1 w-80 bg-white border shadow-2xl rounded-lg overflow-hidden">
+          <input autoFocus value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && exact) { onChange(exact.id); setOpen(false); setQ(''); } }} placeholder="Buscar descripción o código..." className="w-full px-3 py-2 border-b text-sm outline-none" />
+          {exact && <div className="px-3 py-2 bg-amber-100 text-amber-900 text-xs border-b">↵ Asignar por código <strong>{exact.codigo}</strong> — {exact.descripcion}</div>}
+          <div className="max-h-56 overflow-y-auto">
+            {list.length === 0 && <div className="text-xs text-gray-500 p-2">Sin coincidencias.</div>}
+            {list.map(i => (
+              <div key={i.id} onClick={() => { onChange(i.id); setOpen(false); setQ(''); }} className="px-3 py-2 hover:bg-amber-50 cursor-pointer text-sm border-b">
+                <div className="flex items-center gap-1.5">
+                  {i.codigo && <span className="text-[10px] font-mono bg-gray-100 text-gray-700 px-1 rounded">{i.codigo}</span>}
+                  <span className="font-medium">{i.descripcion}</span>
+                </div>
+                <div className="text-xs text-gray-500">{i.unidad} · {money(i.costoBase)}</div>
+              </div>
+            ))}
+          </div>
+          {q.trim() && !exact && (
+            <button onClick={() => { onCreateNew(q.trim()); setOpen(false); setQ(''); }} className="w-full px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs border-t font-medium">+ Crear "{q.trim()}" en catálogo</button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FichaSection({ title, k, total, icon, ficha, catalogos, onAdd, onDel, onUpd, onCreateIns }) {
+  return (
+    <div className="mb-4 border border-gray-200 rounded-lg overflow-hidden">
+      <div className="bg-slate-800 text-white px-3 py-2 flex justify-between">
+        <h4 className="font-semibold text-sm">{icon} {title}</h4>
+        <button onClick={() => onAdd(k)} className="text-xs bg-white text-slate-800 px-2 py-0.5 rounded hover:bg-amber-50">+ Agregar</button>
+      </div>
+      <table className="w-full text-xs">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-2 py-1 w-8">#</th>
+            <th className="px-2 py-1 text-left">Insumo (catálogo)</th>
+            <th className="px-2 py-1 w-16">Unidad</th>
+            <th className="px-2 py-1 w-20">Rend.</th>
+            <th className="px-2 py-1 w-16">Desp.%</th>
+            <th className="px-2 py-1 w-24">Costo Base</th>
+            <th className="px-2 py-1 w-24 text-right">Subtotal</th>
+            <th className="w-6"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {(ficha[k] || []).map((c, i) => {
+            const ins = findInsumo(catalogos, k, c.insumoId);
+            return (
+              <tr key={c.id} className="border-t border-gray-100 hover:bg-amber-50/50">
+                <td className="px-2 py-1 text-center text-gray-400">{i+1}</td>
+                <td className="p-0"><InsumoSelect catalogos={catalogos} categoria={k} value={c.insumoId} onChange={v => onUpd(k, i, 'insumoId', v)} onCreateNew={d => onCreateIns(k, i, d)} /></td>
+                <td className="px-2 py-1 text-center text-gray-600">{ins ? ins.unidad : '—'}</td>
+                <td><input type="number" step="any" className="w-full px-1 py-0.5 text-right focus:bg-amber-50 outline-none" value={c.rendimiento} onChange={e => onUpd(k, i, 'rendimiento', parseFloat(e.target.value) || 0)} /></td>
+                <td><input type="number" step="any" className="w-full px-1 py-0.5 text-right focus:bg-amber-50 outline-none" value={c.desperdicio} onChange={e => onUpd(k, i, 'desperdicio', parseFloat(e.target.value) || 0)} /></td>
+                <td className="px-2 py-1 text-right text-gray-600">{ins ? money(ins.costoBase) : '—'}</td>
+                <td className="px-2 py-1 text-right font-medium">{money(conceptoCost(c, catalogos, k))}</td>
+                <td className="text-center"><button onClick={() => onDel(k, i)} className="text-red-400 hover:text-red-600">×</button></td>
+              </tr>
+            );
+          })}
+          <tr className="bg-gray-50 border-t font-semibold">
+            <td colSpan="6" className="px-2 py-1.5 text-right text-gray-700">SUBTOTAL {title}</td>
+            <td className="px-2 py-1.5 text-right">{money(total)}</td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function FichaCostoModal({ open, onClose, actividad, budget, catalogos, params, onUpdate, onUpdateCatalogos }) {
+  if (!open || !actividad) return null;
+  const f = actividad.ficha || { materiales: [], manoObra: [], herramientaEquipo: [], subcontratos: [] };
+  const calc = calcFicha(f, catalogos, params);
+  const upd = (k, i, fld, v) => { const nf = { ...f, [k]: [...f[k]] }; nf[k][i] = { ...nf[k][i], [fld]: v }; onUpdate({ ...actividad, ficha: nf }); };
+  const add = k => onUpdate({ ...actividad, ficha: { ...f, [k]: [...(f[k] || []), { id: uid(), insumoId: null, rendimiento: 1, desperdicio: 0 }] } });
+  const del = (k, i) => onUpdate({ ...actividad, ficha: { ...f, [k]: f[k].filter((_, ix) => ix !== i) } });
+  const createIns = (k, i, desc) => { const r = findOrCreateInsumo(catalogos, k, desc); if (!r) return; onUpdateCatalogos(r.catalogos); upd(k, i, 'insumoId', r.insumo.id); };
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[92vh] overflow-hidden flex flex-col">
+        <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white px-5 py-4 flex justify-between items-center">
+          <div>
+            <div className="text-xs uppercase tracking-wider text-amber-400 font-semibold">Ficha de Costo Unitario</div>
+            <h3 className="font-bold text-lg mt-0.5">{actividad.id} — {actividad.descripcion}</h3>
+          </div>
+          <button onClick={onClose} className="text-white hover:bg-white/10 rounded-full w-8 h-8 leading-none">✕</button>
+        </div>
+        <div className="grid grid-cols-4 gap-3 px-5 py-3 bg-amber-50 text-sm border-b">
+          <div><div className="text-xs text-gray-500">Actividad</div><div className="font-medium">{actividad.id}</div></div>
+          <div><div className="text-xs text-gray-500">Cantidad</div><div className="font-medium">{fmt(actividad.cantidad)} {actividad.unidad}</div></div>
+          <div><div className="text-xs text-gray-500">Unidad</div><div className="font-medium">{actividad.unidad}</div></div>
+          <div><div className="text-xs text-gray-500">Fecha</div><div className="font-medium">{new Date().toLocaleDateString()}</div></div>
+        </div>
+        <div className="overflow-y-auto scrollbar p-5 flex-1">
+          <FichaSection title="MATERIALES" k="materiales" total={calc.totMat} icon="🧱" ficha={f} catalogos={catalogos} onAdd={add} onDel={del} onUpd={upd} onCreateIns={createIns} />
+          <FichaSection title="MANO DE OBRA" k="manoObra" total={calc.totMo} icon="👷" ficha={f} catalogos={catalogos} onAdd={add} onDel={del} onUpd={upd} onCreateIns={createIns} />
+          <FichaSection title="HERRAMIENTA + EQUIPO" k="herramientaEquipo" total={calc.totHe} icon="🔧" ficha={f} catalogos={catalogos} onAdd={add} onDel={del} onUpd={upd} onCreateIns={createIns} />
+          <FichaSection title="SUBCONTRATO" k="subcontratos" total={calc.totSub} icon="🏢" ficha={f} catalogos={catalogos} onAdd={add} onDel={del} onUpd={upd} onCreateIns={createIns} />
+          <div className="mt-4 bg-slate-50 border border-slate-200 rounded-xl p-4">
+            <h4 className="font-bold text-sm mb-2 text-slate-700 uppercase">Resumen</h4>
+            <div className="grid grid-cols-2 gap-y-1 text-sm">
+              <span className="text-gray-600">Materiales</span><span className="text-right">{money(calc.totMat)}</span>
+              <span className="text-gray-600">Mano de Obra</span><span className="text-right">{money(calc.totMo)}</span>
+              <span className="text-gray-600">Herramientas y Equipo</span><span className="text-right">{money(calc.totHe)}</span>
+              <span className="text-gray-600">Subcontratos</span><span className="text-right">{money(calc.totSub)}</span>
+              <span className="font-semibold border-t pt-1">COSTO DIRECTO</span><span className="text-right font-semibold border-t pt-1">{money(calc.costoDirecto)}</span>
+              <span className="text-gray-600">Indirectos ({params.pctIndirectos}%)</span><span className="text-right">{money(calc.indirectos)}</span>
+              <span className="text-gray-600">Imprevistos ({params.pctImprevistos}%)</span><span className="text-right">{money(calc.imprevistos)}</span>
+              <span className="text-gray-600">Utilidad ({params.pctUtilidad}%)</span><span className="text-right">{money(calc.utilidad)}</span>
+              <span className="font-semibold border-t pt-1">Subtotal sin impuesto</span><span className="text-right font-semibold border-t pt-1">{money(calc.subtotalSinImpuesto)}</span>
+              <span className="text-gray-600">Impuesto ({params.pctImpuesto}%)</span><span className="text-right">{money(calc.impuesto)}</span>
+            </div>
+            <div className="mt-2 bg-slate-900 text-white px-4 py-2 flex justify-between items-center rounded-lg">
+              <span className="font-bold uppercase text-sm">Precio Unitario Total</span>
+              <span className="font-bold text-2xl text-amber-400">{money(calc.precioUnitario)}</span>
+            </div>
+          </div>
+        </div>
+        <div className="bg-gray-50 px-5 py-3 flex justify-between items-center border-t">
+          <div className="flex gap-2">
+            <button onClick={() => budget && exportPDFFicha(budget, actividad, params)} className="px-3 py-2 bg-rose-500 hover:bg-rose-600 text-white rounded-lg text-sm font-semibold">🖨️ PDF</button>
+            <button onClick={() => budget && exportExcelFicha(budget, actividad, params)} className="px-3 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-semibold">📊 Excel</button>
+          </div>
+          <button onClick={onClose} className="px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-medium">Cerrar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Sidebar({ page, setPage, projectActivo, setTabProject, tabProject, user, onLogout, projectsCount }) {
+  const Nav = ({ icon, label, active, badge, onClick }) => (
+    <button onClick={onClick} className={'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition ' + (active ? 'bg-amber-500/15 text-amber-300 border border-amber-500/20' : 'text-slate-300 hover:bg-white/5')}>
+      <span className="text-base">{icon}</span>
+      <span className="flex-1 text-left truncate">{label}</span>
+      {badge !== undefined && <span className={'text-xs px-1.5 py-0.5 rounded-full ' + (active ? 'bg-amber-500/30 text-amber-200' : 'bg-white/10 text-slate-400')}>{badge}</span>}
+    </button>
+  );
+  return (
+    <aside className="w-64 bg-[#0f1115] text-white flex-shrink-0 flex flex-col h-screen sticky top-0 border-r border-white/5">
+      <div className="px-4 py-4 flex items-center gap-3 border-b border-white/5">
+        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center text-slate-900 font-bold text-xl">🏗️</div>
+        <div>
+          <div className="font-extrabold tracking-tight">COTIZANTE</div>
+          <div className="text-xs text-slate-400">Presupuestos de Obra</div>
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto scrollbar-dark px-3 py-4 space-y-5">
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 px-3 mb-2">Trabajo</div>
+          <div className="space-y-0.5">
+            <Nav icon="🏠" label="Inicio" active={page === 'inicio'} onClick={() => setPage('inicio')} />
+            <Nav icon="📁" label="Proyectos" badge={projectsCount} active={page === 'proyectos'} onClick={() => setPage('proyectos')} />
+          </div>
+        </div>
+        {projectActivo && (
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 px-3 mb-2">Proyecto activo</div>
+            <div className="px-3 mb-2">
+              <div className="text-sm font-medium text-slate-200 truncate">{projectActivo.nombreProyecto}</div>
+              <div className="text-xs text-slate-500">Rev {projectActivo.revision} · {projectActivo.moneda}</div>
+            </div>
+            <div className="space-y-0.5">
+              <Nav icon="📄" label="Presupuesto" active={page === 'proyecto' && tabProject === 'presupuesto'} onClick={() => { setPage('proyecto'); setTabProject('presupuesto'); }} />
+              <Nav icon="🧱" label="Materiales" active={page === 'proyecto' && tabProject === 'cat-mat'} onClick={() => { setPage('proyecto'); setTabProject('cat-mat'); }} />
+              <Nav icon="👷" label="Mano de Obra" active={page === 'proyecto' && tabProject === 'cat-mo'} onClick={() => { setPage('proyecto'); setTabProject('cat-mo'); }} />
+              <Nav icon="🔧" label="Herramientas / Equipo" active={page === 'proyecto' && tabProject === 'cat-he'} onClick={() => { setPage('proyecto'); setTabProject('cat-he'); }} />
+              <Nav icon="🏢" label="Subcontratos" active={page === 'proyecto' && tabProject === 'cat-sub'} onClick={() => { setPage('proyecto'); setTabProject('cat-sub'); }} />
+            </div>
+          </div>
+        )}
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 px-3 mb-2">Herramientas</div>
+          <div className="space-y-0.5">
+            <Nav icon="📊" label="Reportes" active={page === 'reportes'} onClick={() => setPage('reportes')} />
+            <Nav icon="📚" label="Biblioteca" active={page === 'biblioteca'} onClick={() => setPage('biblioteca')} />
+            <Nav icon="📥" label="Plantillas" active={page === 'plantillas'} onClick={() => setPage('plantillas')} />
+            <Nav icon="💳" label="Planes y Facturación" active={page === 'planes'} onClick={() => setPage('planes')} />
+          </div>
+        </div>
+      </div>
+      <div className="px-3 py-3 border-t border-white/5 flex items-center gap-3">
+        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-400 to-purple-600 flex items-center justify-center text-white font-bold">{(user && user.name ? user.name : 'U').slice(0, 2).toUpperCase()}</div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-semibold truncate">{user && user.name}</div>
+          <div className="text-xs text-slate-400 truncate">{user && user.empresa}</div>
+        </div>
+        <button onClick={onLogout} className="p-2 hover:bg-white/5 rounded-lg text-slate-400" title="Salir">↪</button>
+      </div>
+    </aside>
+  );
+}
+
+function NotifPopover() {
+  const notifs = [
+    { tipo: 'info', txt: 'El precio del Cemento subió 5%', t: 'hace 2h' },
+    { tipo: 'warning', txt: 'Proyecto Las Palmas: 7 días sin guardar', t: 'hace 1d' },
+    { tipo: 'success', txt: 'Suscripción Profesional renovada', t: 'hace 3d' }
+  ];
+  return (
+    <Dropdown align="right" width="w-80" trigger={<button className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 relative">🔔<span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500"></span></button>}>
+      <div className="px-3 py-2 border-b font-bold text-sm">Notificaciones</div>
+      {notifs.map((n, i) => (
+        <div key={i} className="px-3 py-2 hover:bg-amber-50 border-b text-sm">
+          <div className={'text-xs font-bold uppercase ' + (n.tipo === 'warning' ? 'text-amber-600' : n.tipo === 'success' ? 'text-emerald-600' : 'text-blue-600')}>{n.tipo}</div>
+          <div className="text-slate-800">{n.txt}</div>
+          <div className="text-xs text-gray-400">{n.t}</div>
+        </div>
+      ))}
+    </Dropdown>
+  );
+}
+
+function SettingsPopover({ user, onLogout, onConfig, onPlanes }) {
+  return (
+    <Dropdown align="right" width="w-56" trigger={<button className="p-2 hover:bg-gray-100 rounded-lg text-gray-600">⚙️</button>}>
+      <div className="px-3 py-3 border-b">
+        <div className="font-semibold text-sm truncate">{user && user.name}</div>
+        <div className="text-xs text-gray-500 truncate">{user && user.email}</div>
+      </div>
+      <button onClick={onConfig} className="w-full text-left px-3 py-2 hover:bg-amber-50 text-sm">⚙️ Configuración del proyecto</button>
+      <button onClick={onPlanes} className="w-full text-left px-3 py-2 hover:bg-amber-50 text-sm">💳 Planes</button>
+      <button onClick={onLogout} className="w-full text-left px-3 py-2 hover:bg-rose-50 text-rose-600 text-sm border-t">↪ Cerrar sesión</button>
+    </Dropdown>
+  );
+}
+
+function Topbar({ crumbs, search, setSearch, onHome, searchResults, onResultPick, notifNode, settingsNode }) {
+  return (
+    <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-4 sticky top-0 z-20">
+      <button onClick={onHome} className="text-gray-500 hover:text-slate-900" title="Inicio">🏠</button>
+      <div className="flex items-center gap-2 text-sm text-gray-500">
+        {crumbs.map((c, i) => (
+          <Fragment key={i}>
+            <span className="text-gray-400">›</span>
+            <span className={i === crumbs.length - 1 ? 'text-slate-900 font-medium' : ''}>{c}</span>
+          </Fragment>
+        ))}
+      </div>
+      <div className="flex-1 max-w-2xl mx-auto relative">
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar proyectos, actividades, materiales..." className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none focus:bg-white focus:border-amber-400" />
+        {searchResults && (searchResults.proys.length + searchResults.acts.length + searchResults.insumos.length) > 0 && (
+          <div className="absolute z-30 top-full left-0 right-0 mt-1 bg-white border shadow-2xl rounded-lg overflow-hidden max-h-96 overflow-y-auto">
+            {searchResults.proys.length > 0 && (
+              <Fragment>
+                <div className="text-xs font-bold uppercase text-gray-500 px-3 py-1.5 bg-gray-50 border-b">Proyectos</div>
+                {searchResults.proys.slice(0, 5).map(p => (
+                  <button key={p.id} onClick={() => onResultPick('proy', p)} className="w-full text-left px-3 py-2 hover:bg-amber-50 border-b text-sm">
+                    <div className="font-medium">{p.nombreProyecto}</div>
+                    <div className="text-xs text-gray-500">{p.cliente}</div>
+                  </button>
+                ))}
+              </Fragment>
+            )}
+            {searchResults.acts.length > 0 && (
+              <Fragment>
+                <div className="text-xs font-bold uppercase text-gray-500 px-3 py-1.5 bg-gray-50 border-b">Actividades</div>
+                {searchResults.acts.slice(0, 5).map(a => (
+                  <button key={a.id} onClick={() => onResultPick('act', a)} className="w-full text-left px-3 py-2 hover:bg-amber-50 border-b text-sm flex items-center gap-2">
+                    <span className="text-xs font-mono bg-gray-100 px-1.5 py-0.5 rounded">{a.id}</span>
+                    <span className="truncate">{a.descripcion}</span>
+                  </button>
+                ))}
+              </Fragment>
+            )}
+            {searchResults.insumos.length > 0 && (
+              <Fragment>
+                <div className="text-xs font-bold uppercase text-gray-500 px-3 py-1.5 bg-gray-50 border-b">Insumos</div>
+                {searchResults.insumos.slice(0, 5).map(i => (
+                  <button key={i.id} onClick={() => onResultPick('ins', i)} className="w-full text-left px-3 py-2 hover:bg-amber-50 border-b text-sm flex items-center gap-2">
+                    <span className="text-xs font-mono bg-gray-100 px-1.5 py-0.5 rounded">{i.codigo || '—'}</span>
+                    <span className="truncate flex-1">{i.descripcion}</span>
+                    <span className="text-xs text-gray-500">{i.catLabel}</span>
+                  </button>
+                ))}
+              </Fragment>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="flex items-center gap-1">
+        {notifNode}
+        {settingsNode}
+      </div>
+    </div>
+  );
+}
+
+function EstadoMenu({ budget, setBudget }) {
+  const estados = [
+    { v: 'Borrador', cls: 'bg-gray-100 text-gray-700', dot: 'bg-gray-500' },
+    { v: 'Activo', cls: 'bg-emerald-50 text-emerald-700', dot: 'bg-emerald-500' },
+    { v: 'En revisión', cls: 'bg-amber-50 text-amber-700', dot: 'bg-amber-500' },
+    { v: 'Aprobado', cls: 'bg-blue-50 text-blue-700', dot: 'bg-blue-500' },
+    { v: 'Rechazado', cls: 'bg-rose-50 text-rose-700', dot: 'bg-rose-500' },
+    { v: 'Archivado', cls: 'bg-slate-100 text-slate-700', dot: 'bg-slate-500' }
+  ];
+  const cur = estados.find(e => e.v === (budget.estado || 'Activo')) || estados[1];
+  return (
+    <Dropdown align="left" width="w-48" trigger={<button className={'px-2.5 py-1 rounded-full text-xs font-medium flex items-center gap-1 hover:opacity-80 ' + cur.cls}><span className={'w-1.5 h-1.5 rounded-full ' + cur.dot}></span>{cur.v} ▾</button>}>
+      <div className="text-xs font-bold text-gray-500 uppercase px-3 py-2 border-b">Cambiar estado</div>
+      {estados.map(e => (
+        <button key={e.v} onClick={() => setBudget({ ...budget, estado: e.v })} className="w-full text-left px-3 py-2 hover:bg-amber-50 text-sm flex items-center gap-2">
+          <span className={'w-1.5 h-1.5 rounded-full ' + e.dot}></span>{e.v}
+          {e.v === cur.v && <span className="ml-auto text-emerald-600">✓</span>}
+        </button>
+      ))}
+    </Dropdown>
+  );
+}
+
+function DescargaRow({ label, desc, pdf, excel }) {
+  return (
+    <div className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-amber-50 text-sm border-b last:border-b-0">
+      <div className="flex-1 min-w-0">
+        <div className="font-medium text-slate-900 truncate">{label}</div>
+        <div className="text-[11px] text-gray-500 truncate">{desc}</div>
+      </div>
+      <button onClick={pdf} className="w-7 h-7 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded flex items-center justify-center" title="PDF">📄</button>
+      <button onClick={excel} className="w-7 h-7 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded flex items-center justify-center" title="Excel">📊</button>
+    </div>
+  );
+}
+
+function DescargasMenu({ budget, params, onRangoFichas }) {
+  const acts = useMemo(() => {
+    const r = [];
+    const walk = its => its.forEach(it => { if (it.tipo === 'actividad') r.push(it); else if (it.children) walk(it.children); });
+    walk(budget.items);
+    return r;
+  }, [budget.items]);
+  return (
+    <Dropdown align="right" width="w-72" trigger={<button className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-900 rounded-lg text-sm font-bold flex items-center gap-1.5">📥 Descargas ▾</button>}>
+      <div className="text-xs font-bold text-gray-500 uppercase px-3 py-2 bg-gray-50 border-b">Presupuesto</div>
+      <DescargaRow label="Presupuesto" desc="Tabla completa" pdf={() => exportPDFPresupuesto(budget, params)} excel={() => exportExcelPresupuesto(budget, params)} />
+      <div className="text-xs font-bold text-gray-500 uppercase px-3 py-2 bg-gray-50 border-b border-t">Fichas de costo</div>
+      <DescargaRow label="Ficha individual" desc={'Elegí 1 de ' + acts.length}
+        pdf={() => { const id = prompt('ID de actividad:\n' + acts.slice(0, 6).map(a => a.id).join(', ')); const act = acts.find(a => a.id === id); if (act) exportPDFFicha(budget, act, params); else if (id) alert('No encontrada.'); }}
+        excel={() => { const id = prompt('ID de actividad:'); const act = acts.find(a => a.id === id); if (act) exportExcelFicha(budget, act, params); else if (id) alert('No encontrada.'); }} />
+      <DescargaRow label="Rango de fichas" desc="Seleccionar varias" pdf={onRangoFichas} excel={onRangoFichas} />
+      <div className="text-xs font-bold text-gray-500 uppercase px-3 py-2 bg-gray-50 border-b border-t">General</div>
+      <DescargaRow label="General (todo)" desc="Presupuesto + catálogos + fichas" pdf={() => exportPDFGeneral(budget, params)} excel={() => exportExcelGeneral(budget, params)} />
+    </Dropdown>
+  );
+}
+
+function RangoFichasDialog({ open, onClose, budget, params }) {
+  const [sel, setSel] = useState(() => new Set());
+  const acts = useMemo(() => {
+    const r = [];
+    const walk = its => its.forEach(it => { if (it.tipo === 'actividad') r.push(it); else if (it.children) walk(it.children); });
+    walk(budget.items);
+    return r;
+  }, [budget.items]);
+  if (!open) return null;
+  const toggle = id => { const n = new Set(sel); n.has(id) ? n.delete(id) : n.add(id); setSel(n); };
+  const dlExcel = async () => { for (const id of sel) { const a = acts.find(x => x.id === id); if (a) { await exportExcelFicha(budget, a, params); await new Promise(r => setTimeout(r, 250)); } } onClose(); };
+  return (
+    <Modal open={open} onClose={onClose} title={'Seleccionar fichas (' + sel.size + '/' + acts.length + ')'} size="md" footer={
+      <Fragment>
+        <button onClick={onClose} className="px-3 py-2 bg-white border rounded-lg text-sm">Cancelar</button>
+        <button onClick={dlExcel} disabled={sel.size === 0} className="px-3 py-2 bg-emerald-500 disabled:opacity-40 text-white rounded-lg text-sm font-semibold">📊 Excel ({sel.size})</button>
+        <button onClick={() => { exportPDFRangoFichas(budget, params, [...sel]); onClose(); }} disabled={sel.size === 0} className="px-3 py-2 bg-rose-500 disabled:opacity-40 text-white rounded-lg text-sm font-semibold">📄 PDF ({sel.size})</button>
+      </Fragment>
+    }>
+      <div className="flex gap-2 mb-3">
+        <button onClick={() => setSel(new Set(acts.map(a => a.id)))} className="text-xs px-3 py-1 bg-slate-900 text-white rounded-lg">Todas</button>
+        <button onClick={() => setSel(new Set())} className="text-xs px-3 py-1 bg-gray-200 rounded-lg">Limpiar</button>
+      </div>
+      <div className="space-y-1 max-h-96 overflow-y-auto">
+        {acts.map(a => (
+          <label key={a.id} className="flex items-center gap-3 px-3 py-2 hover:bg-amber-50 rounded-lg cursor-pointer border">
+            <input type="checkbox" checked={sel.has(a.id)} onChange={() => toggle(a.id)} className="w-4 h-4 accent-amber-500" />
+            <span className="text-xs font-mono text-gray-500 w-16">{a.id}</span>
+            <span className="text-sm flex-1 truncate">{a.descripcion}</span>
+            <span className="text-xs text-gray-500">{a.unidad} · {fmt(a.cantidad)}</span>
+          </label>
+        ))}
+      </div>
+    </Modal>
+  );
+}
+
+function GuardarVersionDialog({ open, onClose, budget, setBudget }) {
+  const [n, setN] = useState('');
+  const [notas, setNotas] = useState('');
+  useEffect(() => { if (open) { setN('Rev ' + ((budget.revision || 1) + 1)); setNotas(''); } }, [open]);
+  if (!open) return null;
+  const guardar = () => {
+    const v = { id: uid(), nombre: n, notas, fecha: new Date().toISOString(), revision: (budget.revision || 1) + 1 };
+    setBudget({ ...budget, revision: v.revision, versiones: [...(budget.versiones || []), v], ultimaEdicion: 'ahora' });
+    onClose();
+    alert('Versión "' + n + '" guardada como Rev ' + v.revision + '.');
+  };
+  return (
+    <Modal open={open} onClose={onClose} title="Guardar versión" size="sm" footer={
+      <Fragment>
+        <button onClick={onClose} className="px-3 py-2 bg-white border rounded-lg text-sm">Cancelar</button>
+        <button onClick={guardar} disabled={!n.trim()} className="px-3 py-2 bg-amber-500 disabled:opacity-40 text-slate-900 rounded-lg text-sm font-bold">💾 Guardar</button>
+      </Fragment>
+    }>
+      <div className="space-y-3">
+        <div>
+          <label className="block text-xs font-semibold mb-1">Nombre de la versión *</label>
+          <input value={n} onChange={e => setN(e.target.value)} className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-amber-400" />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold mb-1">Notas (opcional)</label>
+          <textarea value={notas} onChange={e => setNotas(e.target.value)} rows="3" className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-amber-400" />
+        </div>
+        {(budget.versiones || []).length > 0 && (
+          <div>
+            <div className="text-xs font-bold text-gray-500 uppercase mb-1">Historial</div>
+            <div className="max-h-32 overflow-y-auto border rounded-lg divide-y">
+              {[...(budget.versiones || [])].reverse().map(v => (
+                <div key={v.id} className="px-3 py-2 text-sm flex justify-between">
+                  <div>
+                    <div className="font-medium">{v.nombre}</div>
+                    <div className="text-xs text-gray-500">{new Date(v.fecha).toLocaleString()}</div>
+                  </div>
+                  <span className="text-xs bg-gray-100 px-2 py-0.5 rounded-full">Rev {v.revision}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function ConfigField({ label, k, type, form, setForm }) {
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-gray-700 mb-1">{label}</label>
+      <input type={type || 'text'} value={form[k] || ''} onChange={e => setForm({ ...form, [k]: type === 'number' ? parseInt(e.target.value) || 0 : e.target.value })} className="w-full border border-gray-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-amber-400" />
+    </div>
+  );
+}
+
+function ConfigProyectoModal({ open, onClose, budget, setBudget }) {
+  const [form, setForm] = useState(budget);
+  useEffect(() => { if (open) setForm(budget); }, [open]);
+  if (!open) return null;
+  const handleLogo = (e, k) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    const r = new FileReader();
+    r.onload = ev => setForm({ ...form, [k]: ev.target.result });
+    r.readAsDataURL(f);
+  };
+  return (
+    <Modal open={open} onClose={onClose} title="Configuración del Proyecto" size="lg" footer={
+      <Fragment>
+        <button onClick={onClose} className="px-4 py-2 bg-white border rounded-lg text-sm">Cancelar</button>
+        <button onClick={() => { setBudget(form); onClose(); }} className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-900 rounded-lg text-sm font-bold">Guardar</button>
+      </Fragment>
+    }>
+      <div className="space-y-5">
+        <div>
+          <h4 className="font-bold text-sm text-slate-900 mb-3">Datos generales</h4>
+          <div className="grid md:grid-cols-2 gap-3">
+            <ConfigField label="Nombre del proyecto" k="nombreProyecto" form={form} setForm={setForm} />
+            <ConfigField label="Tipo (Residencial, Comercial...)" k="tipo" form={form} setForm={setForm} />
+            <ConfigField label="Realizado por (responsable)" k="realizadoPor" form={form} setForm={setForm} />
+            <ConfigField label="Fecha" k="fecha" type="date" form={form} setForm={setForm} />
+          </div>
+        </div>
+        <div>
+          <h4 className="font-bold text-sm text-slate-900 mb-3">Partes involucradas</h4>
+          <div className="grid md:grid-cols-2 gap-3">
+            <ConfigField label="Cotizante (empresa que cotiza)" k="cotizante" form={form} setForm={setForm} />
+            <ConfigField label="Ofertante" k="ofertante" form={form} setForm={setForm} />
+            <ConfigField label="Cliente" k="cliente" form={form} setForm={setForm} />
+            <ConfigField label="Ubicación" k="lugar" form={form} setForm={setForm} />
+          </div>
+        </div>
+        <div>
+          <h4 className="font-bold text-sm text-slate-900 mb-3">Económico</h4>
+          <div className="grid md:grid-cols-3 gap-3">
+            <ConfigField label="Moneda" k="moneda" form={form} setForm={setForm} />
+            <ConfigField label="Revisión" k="revision" type="number" form={form} setForm={setForm} />
+          </div>
+        </div>
+        <div>
+          <h4 className="font-bold text-sm text-slate-900 mb-3">Logos</h4>
+          <div className="grid md:grid-cols-2 gap-4">
+            {[['logoOfertante', 'Logo Ofertante'], ['logoCliente', 'Logo Cliente']].map(pair => (
+              <div key={pair[0]}>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">{pair[1]}</label>
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-3 flex items-center gap-3">
+                  {form[pair[0]] ? <img src={form[pair[0]]} alt={pair[1]} className="w-20 h-20 object-contain" /> : <div className="w-20 h-20 bg-gray-100 rounded flex items-center justify-center text-gray-400 text-xs">Sin logo</div>}
+                  <div className="flex-1">
+                    <input type="file" accept="image/*" onChange={e => handleLogo(e, pair[0])} className="block text-xs w-full" />
+                    {form[pair[0]] && <button onClick={() => setForm({ ...form, [pair[0]]: null })} className="text-xs text-red-600 mt-2">Quitar</button>}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function ParametrosGlobales({ budget, setBudget }) {
+  const [d, setD] = useState({ pctIndirectos: budget.pctIndirectos, pctImprevistos: budget.pctImprevistos, pctUtilidad: budget.pctUtilidad, pctImpuesto: budget.pctImpuesto });
+  useEffect(() => { setD({ pctIndirectos: budget.pctIndirectos, pctImprevistos: budget.pctImprevistos, pctUtilidad: budget.pctUtilidad, pctImpuesto: budget.pctImpuesto }); }, [budget.id, budget.pctIndirectos, budget.pctImprevistos, budget.pctUtilidad, budget.pctImpuesto]);
+  const dirty = d.pctIndirectos !== budget.pctIndirectos || d.pctImprevistos !== budget.pctImprevistos || d.pctUtilidad !== budget.pctUtilidad || d.pctImpuesto !== budget.pctImpuesto;
+  const Pct = ({ label, k }) => (
+    <label className="flex items-center gap-2 text-sm">
+      <span className="text-gray-600">{label}</span>
+      <div className="flex items-center bg-gray-50 border rounded-lg overflow-hidden">
+        <input type="number" step="any" value={d[k]} onChange={e => setD({ ...d, [k]: parseFloat(e.target.value) || 0 })} className="w-14 px-2 py-1 bg-transparent text-right outline-none" />
+        <span className="text-xs text-gray-500 px-2 border-l">%</span>
+      </div>
+    </label>
+  );
+  return (
+    <div className={'rounded-2xl p-4 mb-6 flex flex-wrap gap-5 items-center border ' + (dirty ? 'bg-amber-50 border-amber-300' : 'bg-white border-gray-200')}>
+      <span className="font-semibold text-slate-900 text-sm">Parámetros globales</span>
+      <Pct label="Indirectos" k="pctIndirectos" />
+      <Pct label="Imprevistos" k="pctImprevistos" />
+      <Pct label="Utilidad" k="pctUtilidad" />
+      <Pct label="Impuesto" k="pctImpuesto" />
+      <div className="ml-auto flex gap-2">
+        <button onClick={() => setD({ pctIndirectos: budget.pctIndirectos, pctImprevistos: budget.pctImprevistos, pctUtilidad: budget.pctUtilidad, pctImpuesto: budget.pctImpuesto })} disabled={!dirty} className="px-3 py-1.5 bg-white border rounded-lg text-sm disabled:opacity-40">Cancelar</button>
+        <button onClick={() => setBudget({ ...budget, ...d })} disabled={!dirty} className={'px-3 py-1.5 rounded-lg text-sm font-semibold ' + (dirty ? 'bg-amber-500 hover:bg-amber-600 text-slate-900' : 'bg-emerald-100 text-emerald-700')}>{dirty ? '💾 Guardar' : '✓ Guardado'}</button>
+      </div>
+    </div>
+  );
+}
+
+function PresupuestoTable({ budget, setBudget, onOpenFicha, params }) {
+  const upd = (path, fld, v) => {
+    const its = JSON.parse(JSON.stringify(budget.items));
+    let cur = its;
+    for (let i = 0; i < path.length - 1; i++) cur = cur[path[i]].children;
+    cur[path[path.length - 1]][fld] = v;
+    setBudget({ ...budget, items: its });
+  };
+  const add = (path, tipo) => {
+    const its = JSON.parse(JSON.stringify(budget.items));
+    if (path.length === 0) { its.push({ id: String(its.length + 1), tipo: 'capitulo', descripcion: 'Nuevo Capítulo', children: [] }); setBudget({ ...budget, items: its }); return; }
+    let cur = its;
+    for (let i = 0; i < path.length - 1; i++) cur = cur[path[i]].children;
+    const par = cur[path[path.length - 1]];
+    const ci = (par.children || []).length + 1;
+    const nid = tipo === 'actividad' ? par.id + '.' + String(ci).padStart(2, '0') : par.id + '.' + ci;
+    const ni = tipo === 'actividad' ? { id: nid, tipo: 'actividad', descripcion: 'Nueva actividad', unidad: 'und', cantidad: 1, ficha: { materiales: [], manoObra: [], herramientaEquipo: [], subcontratos: [] } } : { id: nid, tipo: 'subcapitulo', descripcion: 'Nuevo Sub-capítulo', children: [] };
+    par.children = [...(par.children || []), ni];
+    setBudget({ ...budget, items: its });
+  };
+  const del = path => {
+    if (!confirm('¿Eliminar este elemento?')) return;
+    const its = JSON.parse(JSON.stringify(budget.items));
+    if (path.length === 1) its.splice(path[0], 1);
+    else { let cur = its; for (let i = 0; i < path.length - 1; i++) cur = cur[path[i]].children; cur.splice(path[path.length - 1], 1); }
+    setBudget({ ...budget, items: its });
+  };
+  const rows = [];
+  const render = (its, path, d) => {
+    path = path || []; d = d || 0;
+    its.forEach((it, idx) => {
+      const cp = [...path, idx];
+      const c = calcItem(it, budget.catalogos, params);
+      const ind = d * 16;
+      if (it.tipo === 'capitulo') {
+        rows.push(
+          <tr key={it.id} className="bg-slate-900 text-white">
+            <td className="px-3 py-2.5 font-bold text-amber-400">{it.id}</td>
+            <td className="px-2 py-2.5" style={{ paddingLeft: 8 + ind }}><input value={it.descripcion} onChange={e => upd(cp, 'descripcion', e.target.value)} className="bg-transparent w-full font-bold focus:bg-white/10 px-1 rounded outline-none" /></td>
+            <td colSpan="3"></td>
+            <td className="px-2 py-2.5 text-right font-bold">{money(c.subtotal)}</td>
+            <td className="px-1 py-1 text-center whitespace-nowrap">
+              <button onClick={() => add(cp, 'subcapitulo')} className="text-xs bg-white/10 hover:bg-white/20 rounded px-2 py-0.5 mr-1">+Sub</button>
+              <button onClick={() => add(cp, 'actividad')} className="text-xs bg-white/10 hover:bg-white/20 rounded px-2 py-0.5 mr-1">+Act</button>
+              <button onClick={() => del(cp)} className="text-xs bg-red-500/30 hover:bg-red-500/50 rounded px-1.5 py-0.5">×</button>
+            </td>
+          </tr>
+        );
+        if (it.children && it.children.length) render(it.children, cp, d + 1);
+        rows.push(
+          <tr key={it.id + '-tot'} className="bg-gray-50 font-semibold border-b">
+            <td></td>
+            <td className="px-2 py-1.5 text-sm italic text-gray-600" style={{ paddingLeft: 8 + ind }}>SUBTOTAL Cap. {it.id}</td>
+            <td colSpan="3"></td>
+            <td className="px-2 py-1.5 text-right">{money(c.subtotal)}</td>
+            <td></td>
+          </tr>
+        );
+      } else if (it.tipo === 'subcapitulo') {
+        rows.push(
+          <tr key={it.id} className="bg-slate-700 text-white">
+            <td className="px-3 py-2 font-semibold text-amber-300">{it.id}</td>
+            <td className="px-2 py-2" style={{ paddingLeft: 8 + ind }}><input value={it.descripcion} onChange={e => upd(cp, 'descripcion', e.target.value)} className="bg-transparent w-full font-semibold focus:bg-white/10 px-1 rounded outline-none" /></td>
+            <td colSpan="3"></td>
+            <td className="px-2 py-2 text-right font-semibold">{money(c.subtotal)}</td>
+            <td className="px-1 py-1 text-center whitespace-nowrap">
+              <button onClick={() => add(cp, 'actividad')} className="text-xs bg-white/10 hover:bg-white/20 rounded px-2 py-0.5 mr-1">+Act</button>
+              <button onClick={() => del(cp)} className="text-xs bg-red-500/30 hover:bg-red-500/50 rounded px-1.5 py-0.5">×</button>
+            </td>
+          </tr>
+        );
+        if (it.children && it.children.length) render(it.children, cp, d + 1);
+      } else {
+        rows.push(
+          <tr key={it.id} className="bg-white hover:bg-amber-50/40 border-b border-gray-100">
+            <td className="px-3 py-2 text-xs text-gray-500 font-mono">{it.id}</td>
+            <td className="px-2 py-2" style={{ paddingLeft: 8 + ind }}><input value={it.descripcion} onChange={e => upd(cp, 'descripcion', e.target.value)} className="w-full text-sm focus:bg-amber-50 px-1 rounded outline-none" /></td>
+            <td><input value={it.unidad} onChange={e => upd(cp, 'unidad', e.target.value)} className="w-16 text-center text-sm focus:bg-amber-50 px-1 rounded outline-none" /></td>
+            <td><input type="number" step="any" value={it.cantidad} onChange={e => upd(cp, 'cantidad', parseFloat(e.target.value) || 0)} className="w-20 text-right text-sm focus:bg-amber-50 px-1 rounded outline-none" /></td>
+            <td className="px-2 py-2 text-right text-sm clickable-pu" onDoubleClick={() => onOpenFicha(cp)} title="Doble clic para abrir ficha"><span className="font-medium">{money(c.precioUnitario)}</span><span className="ml-1 text-amber-500 text-xs">✦</span></td>
+            <td className="px-2 py-2 text-right text-sm font-semibold">{money(c.subtotal)}</td>
+            <td className="px-1 py-1 text-center"><button onClick={() => del(cp)} className="text-xs text-red-500 hover:text-red-700">🗑️</button></td>
+          </tr>
+        );
+      }
+    });
+  };
+  render(budget.items, [], 0);
+  const total = round2(budget.items.reduce((s, it) => s + calcItem(it, budget.catalogos, params).subtotal, 0));
+  return (
+    <Fragment>
+      <div className="overflow-x-auto scrollbar">
+        <table className="w-full text-sm" style={{ minWidth: 900 }}>
+          <thead>
+            <tr className="bg-gray-50 border-b-2">
+              <th className="px-3 py-2.5 text-left w-20 text-xs uppercase text-gray-600">ID</th>
+              <th className="px-2 py-2.5 text-left text-xs uppercase text-gray-600">Descripción</th>
+              <th className="px-2 py-2.5 w-20 text-xs uppercase text-gray-600">Unidad</th>
+              <th className="px-2 py-2.5 w-24 text-xs uppercase text-gray-600">Cantidad</th>
+              <th className="px-2 py-2.5 w-28 text-xs uppercase text-gray-600">P. Unitario</th>
+              <th className="px-2 py-2.5 w-32 text-xs uppercase text-gray-600">Subtotal</th>
+              <th className="px-2 py-2.5 w-32 text-xs uppercase text-gray-600">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows}
+            <tr className="bg-gradient-to-r from-slate-900 to-slate-800 text-white">
+              <td colSpan="5" className="px-3 py-4 text-right font-bold text-sm uppercase">Total General</td>
+              <td className="px-3 py-4 text-right font-bold text-2xl text-amber-400">{money(total)}</td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div className="px-5 py-3 border-t bg-gray-50 flex justify-between items-center">
+        <button onClick={() => add([], 'capitulo')} className="px-3 py-1.5 bg-slate-900 text-white rounded-lg text-sm hover:bg-slate-800">+ Agregar Capítulo</button>
+        <span className="text-xs text-gray-500">✦ Doble clic en P. UNITARIO para abrir la ficha</span>
+      </div>
+    </Fragment>
+  );
+}
+
+function CatalogoView({ budget, setBudget, categoria }) {
+  const list = budget.catalogos[categoria.key] || [];
+  const [q, setQ] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ codigo: '', descripcion: '', unidad: 'und', costoBase: 0, proveedor: '', notas: '' });
+  const [editId, setEditId] = useState(null);
+  const filtered = list.filter(i => !q || normalize(i.descripcion).includes(normalize(q)) || normalize(i.codigo).includes(normalize(q)));
+  const usagesOf = id => {
+    let c = 0;
+    const walk = its => { for (const it of its) { if (it.tipo === 'actividad') { for (const x of it.ficha[categoria.key] || []) if (x.insumoId === id) c++; } else if (it.children) walk(it.children); } };
+    walk(budget.items);
+    return c;
+  };
+  const submit = e => {
+    e.preventDefault();
+    const desc = form.descripcion.trim();
+    if (!desc) return alert('Descripción obligatoria.');
+    const n = normalize(desc);
+    const dup = list.find(i => normalize(i.descripcion) === n && i.id !== editId);
+    if (dup) return alert('Ya existe: "' + dup.descripcion + '".');
+    const nc = { ...budget.catalogos };
+    if (editId) nc[categoria.key] = list.map(i => i.id === editId ? { ...i, ...form, descripcion: desc, costoBase: +form.costoBase || 0 } : i);
+    else nc[categoria.key] = [...list, { id: uid(), ...form, descripcion: desc, costoBase: +form.costoBase || 0 }];
+    setBudget({ ...budget, catalogos: nc });
+    setShowForm(false); setEditId(null);
+    setForm({ codigo: '', descripcion: '', unidad: 'und', costoBase: 0, proveedor: '', notas: '' });
+  };
+  return (
+    <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+      <div className="px-5 py-4 border-b flex justify-between items-center flex-wrap gap-3">
+        <h2 className="font-bold text-slate-900">{categoria.icon} Lista de {categoria.label}</h2>
+        <div className="flex gap-2">
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar..." className="px-3 py-1.5 bg-gray-50 border rounded-lg text-sm outline-none" />
+          <button onClick={() => { setShowForm(true); setEditId(null); setForm({ codigo: '', descripcion: '', unidad: 'und', costoBase: 0, proveedor: '', notas: '' }); }} className="bg-amber-500 hover:bg-amber-600 text-slate-900 px-3 py-1.5 rounded-lg text-sm font-bold">+ Nuevo</button>
+        </div>
+      </div>
+      {showForm && (
+        <form onSubmit={submit} className="bg-amber-50 border-b border-amber-200 p-4 grid md:grid-cols-6 gap-3 text-sm">
+          <div><label className="text-xs font-semibold">Código</label><input value={form.codigo} onChange={e => setForm({ ...form, codigo: e.target.value })} className="w-full border rounded-lg px-3 py-1.5 mt-0.5 outline-none focus:ring-2 focus:ring-amber-400" /></div>
+          <div className="md:col-span-2"><label className="text-xs font-semibold">Descripción *</label><input required value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} className="w-full border rounded-lg px-3 py-1.5 mt-0.5 outline-none focus:ring-2 focus:ring-amber-400" /></div>
+          <div><label className="text-xs font-semibold">Unidad</label><input value={form.unidad} onChange={e => setForm({ ...form, unidad: e.target.value })} className="w-full border rounded-lg px-3 py-1.5 mt-0.5 outline-none focus:ring-2 focus:ring-amber-400" /></div>
+          <div><label className="text-xs font-semibold">Precio Base</label><input type="number" step="any" value={form.costoBase} onChange={e => setForm({ ...form, costoBase: e.target.value })} className="w-full border rounded-lg px-3 py-1.5 mt-0.5 text-right outline-none focus:ring-2 focus:ring-amber-400" /></div>
+          <div><label className="text-xs font-semibold">Proveedor</label><input value={form.proveedor} onChange={e => setForm({ ...form, proveedor: e.target.value })} className="w-full border rounded-lg px-3 py-1.5 mt-0.5 outline-none focus:ring-2 focus:ring-amber-400" /></div>
+          <div className="md:col-span-6 flex justify-end gap-2">
+            <button type="button" onClick={() => { setShowForm(false); setEditId(null); }} className="px-3 py-1.5 bg-white border rounded-lg text-sm">Cancelar</button>
+            <button type="submit" className="px-3 py-1.5 bg-slate-900 text-white rounded-lg text-sm font-medium">{editId ? 'Actualizar' : 'Agregar'}</button>
+          </div>
+        </form>
+      )}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-b-2">
+            <tr>
+              <th className="px-3 py-2.5 text-left w-24 text-xs uppercase text-gray-600">Código</th>
+              <th className="px-3 py-2.5 text-left text-xs uppercase text-gray-600">Descripción</th>
+              <th className="px-3 py-2.5 w-20 text-xs uppercase text-gray-600">Unidad</th>
+              <th className="px-3 py-2.5 w-28 text-right text-xs uppercase text-gray-600">Precio Base</th>
+              <th className="px-3 py-2.5 w-32 text-xs uppercase text-gray-600">Proveedor</th>
+              <th className="px-3 py-2.5 w-16 text-right text-xs uppercase text-gray-600">Uso</th>
+              <th className="px-3 py-2.5 w-28 text-xs uppercase text-gray-600">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length === 0 && <tr><td colSpan="7" className="text-center py-8 text-gray-400">{list.length === 0 ? 'Sin ' + categoria.label.toLowerCase() + ' aún.' : 'Sin coincidencias.'}</td></tr>}
+            {filtered.map(i => {
+              const u = usagesOf(i.id);
+              return (
+                <tr key={i.id} className="hover:bg-amber-50/30 border-b">
+                  <td className="px-3 py-2 font-mono text-xs text-gray-500">{i.codigo}</td>
+                  <td className="px-3 py-2 font-medium">{i.descripcion}</td>
+                  <td className="px-3 py-2 text-center text-gray-600">{i.unidad}</td>
+                  <td className="px-3 py-2 text-right font-semibold">{money(i.costoBase)}</td>
+                  <td className="px-3 py-2 text-xs text-gray-500">{i.proveedor || '—'}</td>
+                  <td className="px-3 py-2 text-right"><span className={'text-xs px-2 py-0.5 rounded-full font-medium ' + (u > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500')}>{u}</span></td>
+                  <td className="px-3 py-2 text-center whitespace-nowrap">
+                    <button onClick={() => { setForm({ codigo: i.codigo || '', descripcion: i.descripcion, unidad: i.unidad, costoBase: i.costoBase, proveedor: i.proveedor || '', notas: i.notas || '' }); setEditId(i.id); setShowForm(true); }} className="text-xs text-slate-700 mr-2">✎ Editar</button>
+                    <button onClick={() => { if (u > 0) return alert('No se puede eliminar: usado en ' + u + ' ficha(s).'); if (!confirm('¿Eliminar "' + i.descripcion + '"?')) return; setBudget({ ...budget, catalogos: { ...budget.catalogos, [categoria.key]: list.filter(x => x.id !== i.id) } }); }} className="text-xs text-red-500">🗑️</button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function StatCard({ label, value, sub, accent }) {
+  return (
+    <div className={'rounded-2xl p-5 border ' + (accent ? 'bg-slate-900 text-white border-slate-800' : 'bg-white border-gray-200')}>
+      <div className={'text-xs uppercase tracking-widest font-semibold mb-3 ' + (accent ? 'text-slate-300' : 'text-gray-500')}>{label}</div>
+      <div className={'text-3xl font-bold ' + (accent ? 'text-white' : 'text-slate-900')}>{value}</div>
+      <div className={'mt-3 text-xs ' + (accent ? 'text-slate-400' : 'text-gray-500')}>{sub}</div>
+    </div>
+  );
+}
+
+function InicioPage({ proyectos, setPage, openProject }) {
+  const h = new Date().getHours();
+  const saludo = h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches';
+  const total = proyectos.reduce((s, p) => s + calcKPIs(p).total, 0);
+  const activos = proyectos.filter(p => p.estado === 'Activo').length;
+  const enRev = proyectos.filter(p => p.estado === 'En revisión').length;
+  return (
+    <div className="p-8 max-w-7xl mx-auto">
+      <div className="mb-2 text-gray-500">{saludo},</div>
+      <h1 className="text-5xl font-bold tracking-tight mb-2">Moisés 👋</h1>
+      <div className="text-gray-600 mb-8">Tenés <span className="font-semibold text-slate-900">{activos} proyectos activos</span>{enRev > 0 && <Fragment> y <span className="font-semibold text-amber-600">{enRev} en revisión</span></Fragment>}.</div>
+      <div className="grid md:grid-cols-4 gap-4 mb-10">
+        <StatCard label="Valor total cartera" value={moneyK(total)} sub={'Suma de ' + proyectos.length + ' proyectos'} accent />
+        <StatCard label="Proyectos activos" value={activos} sub="esta semana" />
+        <StatCard label="En revisión" value={enRev} sub="Promedio: 4.2 días" />
+        <StatCard label="Tasa de aprobación" value="84%" sub="Últimos 90 días" />
+      </div>
+      <h2 className="font-bold text-lg mb-3">Continuar trabajando</h2>
+      <div className="space-y-3">
+        {proyectos.slice(0, 4).map(p => {
+          const k = calcKPIs(p);
+          return (
+            <div key={p.id} onClick={() => openProject(p)} className="bg-white border border-gray-200 hover:border-amber-400 hover:shadow-md cursor-pointer rounded-2xl p-4 flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center text-2xl">📄</div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={'px-2 py-0.5 rounded-full text-xs font-medium ' + (p.estado === 'Activo' ? 'bg-emerald-50 text-emerald-700' : p.estado === 'En revisión' ? 'bg-amber-50 text-amber-700' : 'bg-gray-100 text-gray-600')}>{p.estado}</span>
+                  <span className="text-xs bg-gray-100 px-2 py-0.5 rounded-full">Rev {p.revision}</span>
+                  <span className="text-xs text-gray-400">{p.ultimaEdicion}</span>
+                </div>
+                <div className="font-semibold truncate">{p.nombreProyecto}</div>
+                <div className="text-xs text-gray-500 truncate">{p.cliente} · {p.lugar}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-xs text-gray-400 uppercase">Total</div>
+                <div className="font-bold">{money(k.total)}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ProyectosPage({ proyectos, openProject, addProject }) {
+  const [q, setQ] = useState('');
+  const [f, setF] = useState('Todos');
+  const list = proyectos.filter(p => (f === 'Todos' || p.estado === f) && (!q || normalize(p.nombreProyecto).includes(normalize(q)) || normalize(p.cliente).includes(normalize(q))));
+  return (
+    <div className="p-8 max-w-7xl mx-auto">
+      <div className="flex items-center justify-between mb-6">
+        <div><h1 className="text-3xl font-bold">Proyectos</h1><div className="text-gray-500 mt-1">{proyectos.length} en total</div></div>
+        <button onClick={addProject} className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-900 rounded-lg font-bold">+ Nuevo Proyecto</button>
+      </div>
+      <div className="bg-white border rounded-2xl p-4 mb-5 flex flex-wrap gap-3">
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar..." className="flex-1 min-w-[240px] px-4 py-2 bg-gray-50 border rounded-lg text-sm outline-none focus:bg-white focus:border-amber-400" />
+        <div className="flex gap-1">
+          {['Todos', 'Activo', 'En revisión', 'Borrador'].map(e => (
+            <button key={e} onClick={() => setF(e)} className={'px-3 py-1.5 rounded-lg text-sm font-medium ' + (f === e ? 'bg-slate-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>{e}</button>
+          ))}
+        </div>
+      </div>
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {list.map(p => {
+          const k = calcKPIs(p);
+          return (
+            <div key={p.id} onClick={() => openProject(p)} className="bg-white border hover:border-amber-400 hover:shadow-lg cursor-pointer rounded-2xl p-5">
+              <div className="flex items-center gap-2 mb-3 flex-wrap">
+                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-orange-50 text-orange-700">{p.tipo}</span>
+                <span className={'px-2 py-0.5 rounded-full text-xs font-medium ' + (p.estado === 'Activo' ? 'bg-emerald-50 text-emerald-700' : p.estado === 'En revisión' ? 'bg-amber-50 text-amber-700' : 'bg-gray-100 text-gray-600')}>{p.estado}</span>
+                <span className="text-xs bg-gray-100 px-2 py-0.5 rounded-full">Rev {p.revision}</span>
+              </div>
+              <h3 className="font-bold mb-1 truncate">{p.nombreProyecto}</h3>
+              <div className="text-sm text-gray-500 mb-1">🏢 {p.cliente}</div>
+              <div className="text-xs text-gray-400 mb-4">📍 {p.lugar}</div>
+              <div className="border-t pt-3 flex justify-between items-end">
+                <div><div className="text-xs text-gray-400 uppercase">Total</div><div className="font-bold text-lg">{money(k.total)}</div></div>
+                <div className="text-right text-xs text-gray-500"><div>{k.nCapitulos} cap.</div><div>{k.nActividades} act.</div></div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function PlantillasPage() {
+  const tipos = [
+    { k: 'presupuesto', label: 'Presupuesto', icon: '📄', desc: 'Estructura jerárquica completa.' },
+    { k: 'materiales', label: 'Lista Materiales', icon: '🧱', desc: 'Catálogo con código, descripción, precio.' },
+    { k: 'manoObra', label: 'Lista Mano de Obra', icon: '👷', desc: 'Catálogo de operarios y especialidades.' },
+    { k: 'herramientaEquipo', label: 'Lista Herramientas/Equipo', icon: '🔧', desc: 'Herramienta menor, equipo, maquinaria.' },
+    { k: 'subcontratos', label: 'Lista Subcontratos', icon: '🏢', desc: 'Servicios contratados a terceros.' }
+  ];
+  return (
+    <div className="p-8 max-w-7xl mx-auto">
+      <h1 className="text-3xl font-bold flex items-center gap-3">📚 Plantillas</h1>
+      <p className="text-gray-600 mt-2">Descargá las plantillas en Excel para importar tus datos rápido.</p>
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
+        {tipos.map(t => (
+          <div key={t.k} className="bg-white border rounded-2xl p-5 hover:shadow-lg">
+            <div className="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center mb-3 text-2xl">{t.icon}</div>
+            <h3 className="font-bold">{t.label}</h3>
+            <p className="text-sm text-gray-500 mt-1 mb-4">{t.desc}</p>
+            <button onClick={() => exportPlantilla(t.k)} className="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-2 rounded-lg text-sm font-semibold">📥 Descargar plantilla</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PlanesPage() {
+  const planes = [
+    { name: 'Básico', m: 9.99, y: 99, f: ['5 proyectos', 'Fichas ilimitadas', 'Exportación PDF', 'Soporte email'] },
+    { name: 'Profesional', m: 24.99, y: 249, pop: true, f: ['Proyectos ilimitados', 'PDF + Excel', 'Plantillas', 'Logo personalizado', 'Soporte prioritario'] },
+    { name: 'Empresarial', m: 49.99, y: 499, f: ['Todo Profesional', 'Multi-usuario (5)', 'API', 'Onboarding', 'SLA 99.9%'] }
+  ];
+  const [b, setB] = useState('m');
+  return (
+    <div className="p-8 max-w-7xl mx-auto">
+      <div className="text-center mb-8">
+        <h1 className="text-3xl font-bold">Planes y Facturación</h1>
+        <div className="inline-flex bg-white border rounded-full p-1 mt-4">
+          <button onClick={() => setB('m')} className={'px-4 py-1.5 rounded-full text-sm ' + (b === 'm' ? 'bg-slate-900 text-white' : 'text-gray-600')}>Mensual</button>
+          <button onClick={() => setB('y')} className={'px-4 py-1.5 rounded-full text-sm ' + (b === 'y' ? 'bg-slate-900 text-white' : 'text-gray-600')}>Anual (-20%)</button>
+        </div>
+      </div>
+      <div className="grid md:grid-cols-3 gap-4">
+        {planes.map(p => (
+          <div key={p.name} className={'bg-white rounded-2xl border-2 p-6 ' + (p.pop ? 'border-amber-400 ring-2 ring-amber-200' : 'border-gray-200')}>
+            {p.pop && <div className="text-xs font-bold text-amber-600 mb-2">⭐ MÁS POPULAR</div>}
+            <h3 className="font-bold text-lg">{p.name}</h3>
+            <div className="my-3"><span className="text-4xl font-bold">${b === 'm' ? p.m : p.y}</span><span className="text-gray-500 text-sm">/{b === 'm' ? 'mes' : 'año'}</span></div>
+            <ul className="space-y-2 text-sm mb-6">{p.f.map(x => <li key={x}>✓ {x}</li>)}</ul>
+            <button className="w-full bg-slate-900 text-white py-2 rounded-lg font-bold mb-2">Stripe</button>
+            <button className="w-full bg-amber-400 text-slate-900 py-2 rounded-lg font-bold">PayPal</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function GenericPage({ title, message }) {
+  return (
+    <div className="p-8 max-w-7xl mx-auto">
+      <h1 className="text-3xl font-bold">{title}</h1>
+      <div className="mt-6 bg-white border rounded-2xl p-12 text-center text-gray-500">{message}</div>
+    </div>
+  );
+}
+
+function LoginPage({ onLogin }) {
+  const [mode, setMode] = useState('login');
+  const [email, setEmail] = useState('');
+  const [pwd, setPwd] = useState('');
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-[#0f1115] p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+        <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white p-6 text-center">
+          <div className="inline-flex w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 items-center justify-center text-3xl mb-3">🏗️</div>
+          <div className="text-2xl font-extrabold">COTIZANTE</div>
+          <p className="text-slate-300 text-sm mt-1">Presupuestos de obra profesionales</p>
+        </div>
+        <div className="p-6">
+          <div className="flex border-b mb-5">
+            <button onClick={() => setMode('login')} className={'flex-1 py-2 text-sm font-medium ' + (mode === 'login' ? 'border-b-2 border-amber-500 text-slate-900' : 'text-gray-500')}>Iniciar sesión</button>
+            <button onClick={() => setMode('register')} className={'flex-1 py-2 text-sm font-medium ' + (mode === 'register' ? 'border-b-2 border-amber-500 text-slate-900' : 'text-gray-500')}>Crear cuenta</button>
+          </div>
+          <form onSubmit={e => { e.preventDefault(); onLogin({ email, name: email.split('@')[0] || 'Usuario' }); }} className="space-y-3">
+            <div><label className="block text-xs font-semibold">Email</label><input type="email" required value={email} onChange={e => setEmail(e.target.value)} className="w-full mt-1 border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-amber-400" /></div>
+            <div><label className="block text-xs font-semibold">Contraseña</label><input type="password" required value={pwd} onChange={e => setPwd(e.target.value)} className="w-full mt-1 border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-amber-400" /></div>
+            <button type="submit" className="w-full bg-amber-500 hover:bg-amber-600 text-slate-900 py-2 rounded-lg font-bold">{mode === 'login' ? 'Entrar' : 'Crear cuenta'}</button>
+          </form>
+          <p className="text-xs text-center text-gray-500 mt-4">Demo · ingresá cualquier email/contraseña</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============ APP PRINCIPAL ============
+function App() {
+  const [authed, setAuthed] = useState(false);
+  const [user, setUser] = useState(null);
+  const [proyectos, setProyectos] = useState(initialProyectos);
+  const [activeId, setActiveId] = useState(initialProyectos[0].id);
+  const [page, setPage] = useState('inicio');
+  const [tabProject, setTabProject] = useState('presupuesto');
+  const [fichaPath, setFichaPath] = useState(null);
+  const [search, setSearch] = useState('');
+  const [showConfig, setShowConfig] = useState(false);
+  const [showVersion, setShowVersion] = useState(false);
+  const [showRango, setShowRango] = useState(false);
+  const fileRef = useRef(null);
+  const importCtx = useRef(null);
+
+  const budget = proyectos.find(p => p.id === activeId);
+  const setBudget = b => setProyectos(proyectos.map(p => p.id === activeId ? b : p));
+
+  const params = useMemo(() => ({
+    pctIndirectos: budget ? budget.pctIndirectos : 10,
+    pctImprevistos: budget ? budget.pctImprevistos : 1,
+    pctUtilidad: budget ? budget.pctUtilidad : 8,
+    pctImpuesto: budget ? budget.pctImpuesto : 15
+  }), [budget]);
+
+  const fichaActividad = useMemo(() => {
+    if (!fichaPath || !budget) return null;
+    let cur = budget.items, it = null;
+    for (let i = 0; i < fichaPath.length; i++) { it = cur[fichaPath[i]]; if (i < fichaPath.length - 1) cur = it.children; }
+    return it;
+  }, [fichaPath, budget]);
+
+  const updFicha = na => {
+    if (!fichaPath) return;
+    const its = JSON.parse(JSON.stringify(budget.items));
+    let cur = its;
+    for (let i = 0; i < fichaPath.length - 1; i++) cur = cur[fichaPath[i]].children;
+    cur[fichaPath[fichaPath.length - 1]] = na;
+    setBudget({ ...budget, items: its });
+  };
+
+  const triggerImport = kind => { importCtx.current = kind; fileRef.current.accept = '.xlsx,.xls,.csv'; fileRef.current.click(); };
+  const handleImport = e => {
+    const f = e.target.files && e.target.files[0];
+    if (!f || !budget) return;
+    const k = importCtx.current;
+    if (k === 'presupuesto') importExcelPresupuesto(f, budget, setBudget);
+    else if (k && k.indexOf('cat-') === 0) importExcelCatalogo(f, budget, setBudget, k.slice(4));
+    e.target.value = '';
+  };
+
+  const openProject = p => { setActiveId(p.id); setPage('proyecto'); setTabProject('presupuesto'); };
+  const addProject = () => {
+    const np = makeBudget({ id: uid(), nombreProyecto: 'Nuevo Proyecto', cliente: '', lugar: '', revision: 1, ultimaEdicion: 'ahora', estado: 'Borrador', items: [] });
+    setProyectos([np, ...proyectos]);
+    setActiveId(np.id); setPage('proyecto'); setTabProject('presupuesto');
+  };
+
+  const searchResults = useMemo(() => {
+    if (!search.trim() || search.length < 2) return null;
+    const q = normalize(search);
+    const proys = proyectos.filter(p => normalize(p.nombreProyecto).includes(q) || normalize(p.cliente).includes(q));
+    const acts = [], insumos = [];
+    if (budget) {
+      const walk = its => its.forEach(it => { if (it.tipo === 'actividad' && (normalize(it.descripcion).includes(q) || it.id.indexOf(q) >= 0)) acts.push(it); else if (it.children) walk(it.children); });
+      walk(budget.items);
+      CATEGORIAS.forEach(cat => (budget.catalogos[cat.key] || []).forEach(i => { if (normalize(i.descripcion).includes(q) || normalize(i.codigo).includes(q)) insumos.push({ ...i, catLabel: cat.label, catKey: cat.key }); }));
+    }
+    return { proys, acts, insumos };
+  }, [search, proyectos, budget]);
+
+  if (!authed) return <LoginPage onLogin={u => { setAuthed(true); setUser({ ...u, empresa: 'EDIFICADORA S.A. de C.V.' }); }} />;
+
+  const projectActivo = page === 'proyecto' ? budget : null;
+  let crumbs = ['Inicio'];
+  if (page === 'proyectos') crumbs = ['Proyectos'];
+  else if (page === 'proyecto') crumbs = ['Proyectos', budget.nombreProyecto];
+  else if (page === 'reportes') crumbs = ['Reportes'];
+  else if (page === 'biblioteca') crumbs = ['Biblioteca'];
+  else if (page === 'plantillas') crumbs = ['Plantillas'];
+  else if (page === 'planes') crumbs = ['Planes'];
+
+  const tabsP = budget ? [
+    { k: 'presupuesto', label: 'Presupuesto', icon: '📄', badge: calcKPIs(budget).nActividades },
+    { k: 'cat-mat', label: 'Lista Materiales', icon: '🧱', badge: budget.catalogos.materiales.length },
+    { k: 'cat-mo', label: 'Lista Mano de Obra', icon: '👷', badge: budget.catalogos.manoObra.length },
+    { k: 'cat-he', label: 'Lista Herramientas/Equipo', icon: '🔧', badge: budget.catalogos.herramientaEquipo.length },
+    { k: 'cat-sub', label: 'Lista Subcontratos', icon: '🏢', badge: budget.catalogos.subcontratos.length }
+  ] : [];
+  const tabToCat = { 'cat-mat': 'materiales', 'cat-mo': 'manoObra', 'cat-he': 'herramientaEquipo', 'cat-sub': 'subcontratos' };
+
+  return (
+    <div className="flex min-h-screen">
+      <Sidebar page={page} setPage={setPage} projectActivo={projectActivo} setTabProject={setTabProject} tabProject={tabProject} user={user} onLogout={() => { setAuthed(false); setUser(null); }} projectsCount={proyectos.length} />
+      <div className="flex-1 min-w-0 flex flex-col">
+        <Topbar crumbs={crumbs} search={search} setSearch={setSearch} onHome={() => setPage('inicio')} searchResults={searchResults}
+          onResultPick={(kind, item) => {
+            setSearch('');
+            if (kind === 'proy') openProject(item);
+            else if (kind === 'act') { const path = findPathById(budget.items, item.id); if (path) { setPage('proyecto'); setTabProject('presupuesto'); setFichaPath(path); } }
+            else if (kind === 'ins') { setPage('proyecto'); const tab = Object.keys(tabToCat).find(k => tabToCat[k] === item.catKey); if (tab) setTabProject(tab); }
+          }}
+          notifNode={<NotifPopover />}
+          settingsNode={<SettingsPopover user={user} onLogout={() => { setAuthed(false); setUser(null); }} onConfig={() => budget && setShowConfig(true)} onPlanes={() => setPage('planes')} />}
+        />
+        {page === 'inicio' && <InicioPage proyectos={proyectos} setPage={setPage} openProject={openProject} />}
+        {page === 'proyectos' && <ProyectosPage proyectos={proyectos} openProject={openProject} addProject={addProject} />}
+        {page === 'reportes' && <GenericPage title="📊 Reportes" message="Pronto: gráficos comparativos y análisis de costos." />}
+        {page === 'biblioteca' && <GenericPage title="📚 Biblioteca" message="Pronto: plantillas reutilizables." />}
+        {page === 'plantillas' && <PlantillasPage />}
+        {page === 'planes' && <PlanesPage />}
+        {page === 'proyecto' && budget && (
+          <div className="p-8 max-w-7xl mx-auto w-full">
+            <div className="mb-6">
+              <div className="flex items-center gap-2 mb-3 flex-wrap">
+                <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-orange-50 text-orange-700">{budget.tipo}</span>
+                <EstadoMenu budget={budget} setBudget={setBudget} />
+                <span className="text-xs bg-gray-100 px-2.5 py-1 rounded-full">Rev {budget.revision}</span>
+                <span className="text-xs bg-gray-100 px-2.5 py-1 rounded-full">$ {budget.moneda}</span>
+                <button onClick={() => setShowConfig(true)} className="text-xs bg-slate-900 text-white px-2.5 py-1 rounded-full hover:bg-slate-800">⚙️ Configuración</button>
+              </div>
+              <h1 className="text-4xl font-bold tracking-tight">{budget.nombreProyecto}</h1>
+              <div className="flex items-center gap-4 mt-2 text-sm text-gray-600 flex-wrap">
+                <span>🏢 {budget.cliente || '—'}</span>
+                <span>📍 {budget.lugar || '—'}</span>
+                <span>📅 {budget.fecha || '—'}</span>
+              </div>
+              <div className="mt-2 text-xs text-emerald-600">● Guardado · {budget.ultimaEdicion || 'ahora'}</div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 mb-5">
+              {tabProject === 'presupuesto' && <button onClick={() => triggerImport('presupuesto')} className="px-3 py-1.5 bg-white border hover:bg-gray-50 rounded-lg text-sm">📤 Importar Presupuesto (Excel)</button>}
+              {tabProject !== 'presupuesto' && tabToCat[tabProject] && <button onClick={() => triggerImport('cat-' + tabToCat[tabProject])} className="px-3 py-1.5 bg-white border hover:bg-gray-50 rounded-lg text-sm">📤 Importar {tabsP.find(t => t.k === tabProject) ? tabsP.find(t => t.k === tabProject).label : ''}</button>}
+              <input ref={fileRef} type="file" className="hidden" onChange={handleImport} />
+              <div className="flex-1"></div>
+              <button onClick={() => setShowVersion(true)} className="px-3 py-1.5 bg-white border hover:bg-gray-50 rounded-lg text-sm">💾 Guardar versión</button>
+              {tabProject === 'presupuesto' && <DescargasMenu budget={budget} params={params} onRangoFichas={() => setShowRango(true)} />}
+              {tabProject !== 'presupuesto' && tabToCat[tabProject] && <button onClick={() => exportExcelCatalogo(budget, tabToCat[tabProject])} className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-bold">📊 Descargar Excel</button>}
+            </div>
+            <div className="border-b mb-5 flex overflow-x-auto">
+              {tabsP.map(t => (
+                <button key={t.k} onClick={() => setTabProject(t.k)} className={'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap ' + (tabProject === t.k ? 'border-amber-500 text-slate-900' : 'border-transparent text-gray-500 hover:text-slate-900')}>
+                  <span>{t.icon}</span>{t.label}
+                  <span className={'text-xs px-1.5 py-0.5 rounded-full ' + (tabProject === t.k ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-600')}>{t.badge}</span>
+                </button>
+              ))}
+            </div>
+            {tabProject === 'presupuesto' && (
+              <Fragment>
+                <ParametrosGlobales budget={budget} setBudget={setBudget} />
+                <div className="bg-white border rounded-2xl overflow-hidden">
+                  <PresupuestoTable budget={budget} setBudget={setBudget} onOpenFicha={p => setFichaPath(p)} params={params} />
+                </div>
+              </Fragment>
+            )}
+            {tabProject === 'cat-mat' && <CatalogoView budget={budget} setBudget={setBudget} categoria={CATEGORIAS[0]} />}
+            {tabProject === 'cat-mo' && <CatalogoView budget={budget} setBudget={setBudget} categoria={CATEGORIAS[1]} />}
+            {tabProject === 'cat-he' && <CatalogoView budget={budget} setBudget={setBudget} categoria={CATEGORIAS[2]} />}
+            {tabProject === 'cat-sub' && <CatalogoView budget={budget} setBudget={setBudget} categoria={CATEGORIAS[3]} />}
+          </div>
+        )}
+      </div>
+      <FichaCostoModal open={!!fichaPath} onClose={() => setFichaPath(null)} actividad={fichaActividad} budget={budget} catalogos={budget ? budget.catalogos : { materiales: [], manoObra: [], herramientaEquipo: [], subcontratos: [] }} params={params} onUpdate={updFicha} onUpdateCatalogos={nc => setBudget({ ...budget, catalogos: nc })} />
+      {budget && <ConfigProyectoModal open={showConfig} onClose={() => setShowConfig(false)} budget={budget} setBudget={setBudget} />}
+      {budget && <GuardarVersionDialog open={showVersion} onClose={() => setShowVersion(false)} budget={budget} setBudget={setBudget} />}
+      {budget && <RangoFichasDialog open={showRango} onClose={() => setShowRango(false)} budget={budget} params={params} />}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      
