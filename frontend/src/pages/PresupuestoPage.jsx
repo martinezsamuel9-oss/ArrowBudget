@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import PresupuestoTable from '../components/PresupuestoTable'
 import FichaCostoModal from '../components/FichaCostoModal'
 import ResumenCapitulos from '../components/ResumenCapitulos'
+import { exportPDFPresupuesto, exportExcelPresupuesto } from '../lib/export'
 
 // NOTA: por simplicidad esta página guarda el árbol de items en una sola columna JSON.
 // En producción se recomienda usar la estructura normalizada del esquema SQL.
@@ -91,8 +92,8 @@ export default function PresupuestoPage() {
           {saving && <span className="text-xs ml-3 opacity-70">guardando…</span>}
         </div>
         <div className="flex items-center gap-2 text-sm">
-          <button className="bg-white text-blue-900 px-3 py-1.5 rounded font-semibold">🖨️ PDF</button>
-          <button className="bg-green-600 px-3 py-1.5 rounded font-semibold">📊 Excel</button>
+          <button onClick={() => exportPDFPresupuesto(budget)} className="bg-white text-blue-900 px-3 py-1.5 rounded font-semibold">🖨️ PDF</button>
+          <button onClick={() => exportExcelPresupuesto(budget)} className="bg-green-600 px-3 py-1.5 rounded font-semibold">📊 Excel</button>
           <span className="opacity-80 ml-2">{user?.email}</span>
           <button onClick={() => { signOut(); nav('/login') }} className="underline opacity-80">salir</button>
         </div>
