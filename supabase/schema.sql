@@ -13,8 +13,8 @@ create extension if not exists "pgcrypto";
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   email text unique not null,
-  nombre text,
-  empresa text,
+  full_name text,
+  company_name text,
   telefono text,
   logo_url text,
   moneda_default text default 'USD',
@@ -114,6 +114,7 @@ create table if not exists public.presupuestos (
   pct_indirectos numeric(6,2) default 10,
   pct_imprevistos numeric(6,2) default 1,
   pct_utilidad numeric(6,2) default 8,
+  pct_impuesto numeric(6,2) default 15,
   -- Árbol de items serializado (para guardado rápido desde el frontend)
   items_json jsonb default '[]'::jsonb,
   -- Meta

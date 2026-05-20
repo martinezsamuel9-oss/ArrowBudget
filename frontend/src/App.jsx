@@ -55,7 +55,7 @@ export default function App() {
         cliente:         '',
         lugar:           '',
         moneda:          'USD',
-        estado:          'draft',
+        estado:          'borrador',
         revision:        1,
         pct_indirectos:  10,
         pct_imprevistos: 1,
