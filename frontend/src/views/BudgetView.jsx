@@ -4,6 +4,7 @@ import { I } from '../icons'
 import { StatusBadge, formatMoney, Drawer } from '../components'
 import { supabase } from '../lib/supabase'
 import { exportPDFPresupuesto, exportExcelPresupuesto } from '../lib/export'
+import FichaCostoModal from './FichaCostoModal'
 
 /* ============ BudgetView ============ */
 export function BudgetView({ project, params, setParams, onBack, onSettings, onProjectUpdate }) {
@@ -12,6 +13,7 @@ export function BudgetView({ project, params, setParams, onBack, onSettings, onP
   const [items,         setItems]         = useState(project.items || [])
   const [saving,        setSaving]        = useState(false)
   const [saveLabel,     setSaveLabel]     = useState(project.updated || 'Guardado')
+  const [fichaItem,     setFichaItem]     = useState(null)
   const [cotizante,     setCotizante]     = useState({
     name:     project.cotizante || '',
     client:   project.client   || '',
@@ -119,7 +121,16 @@ export function BudgetView({ project, params, setParams, onBack, onSettings, onP
     const siblings = items.filter(i => i.kind === 'activity' && i.parent === subId)
     const id = `act-${Date.now()}`
     const code = `${sub.code}.${String(siblings.length + 1).padStart(2, '0')}`
-    setItems(prev => [...prev, { id, kind: 'activity', code, desc: 'Nueva actividad', unit: 'und', qty: 1, price: 0, parent: subId }])
+    setItems(prev => [...prev, {
+      id, kind: 'activity', code, desc: 'Nueva actividad', unit: 'und', qty: 1, price: 0, parent: subId,
+      ficha: { materiales: [], manoObra: [], herramientaEquipo: [], subcontratos: [] },
+    }])
+  }
+
+  // Called by FichaCostoModal on save — updates the activity with new ficha + recalculated price
+  const saveFicha = (updatedActivity) => {
+    setItems(prev => prev.map(it => it.id === updatedActivity.id ? updatedActivity : it))
+    setFichaItem(null)
   }
 
   const deleteItem = (id) => {
@@ -274,6 +285,7 @@ export function BudgetView({ project, params, setParams, onBack, onSettings, onP
                 onAddAct={addActivity}
                 onDelete={deleteItem}
                 onDuplicate={duplicateItem}
+                onOpenFicha={setFichaItem}
               />
             </div>
           </>
@@ -285,6 +297,16 @@ export function BudgetView({ project, params, setParams, onBack, onSettings, onP
           </div>
         )}
       </div>
+
+      {/* Ficha de Costo Unitario modal */}
+      <FichaCostoModal
+        open={!!fichaItem}
+        onClose={() => setFichaItem(null)}
+        activity={fichaItem}
+        params={params}
+        currency={cotizante.currency || project.currency}
+        onSave={saveFicha}
+      />
 
       {/* Cotizante / project data drawer */}
       <Drawer
@@ -308,7 +330,7 @@ export function BudgetView({ project, params, setParams, onBack, onSettings, onP
 }
 
 /* ============ Budget Table ============ */
-function BudgetTable({ items, totals, currency, onUpdate, onAddSub, onAddAct, onDelete, onDuplicate }) {
+function BudgetTable({ items, totals, currency, onUpdate, onAddSub, onAddAct, onDelete, onDuplicate, onOpenFicha }) {
   return (
     <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 500px)', minHeight: 200 }}>
       <table className="bt">
@@ -371,6 +393,12 @@ function BudgetTable({ items, totals, currency, onUpdate, onAddSub, onAddAct, on
             }
             // activity
             const sub = (it.qty || 0) * (it.price || 0)
+            const hasFicha = it.ficha && (
+              (it.ficha.materiales?.length || 0) +
+              (it.ficha.manoObra?.length || 0) +
+              (it.ficha.herramientaEquipo?.length || 0) +
+              (it.ficha.subcontratos?.length || 0)
+            ) > 0
             return (
               <tr key={it.id} className="activity">
                 <td className="id">{it.code}</td>
@@ -388,11 +416,20 @@ function BudgetTable({ items, totals, currency, onUpdate, onAddSub, onAddAct, on
                 </td>
                 <td className="num">
                   <input className="cell-input num" type="number" step="0.01" value={it.price}
+                    title="Precio unitario — editable directo o calculado desde APU"
                     onChange={e => onUpdate(it.id, 'price', parseFloat(e.target.value) || 0)} />
                 </td>
                 <td className="num" style={{ fontWeight: 600 }}>{formatMoney(sub, currency)}</td>
                 <td className="actions">
                   <div className="row-actions">
+                    <button
+                      className={`btn xs ${hasFicha ? 'brand' : 'ghost'}`}
+                      title="Editar Análisis de Precio Unitario (APU)"
+                      onClick={() => onOpenFicha(it)}
+                      style={{ minWidth: 44 }}
+                    >
+                      <I.FileText size={11} /> APU
+                    </button>
                     <button className="btn xs ghost icon" title="Duplicar" onClick={() => onDuplicate(it.id)}><I.Copy size={12} /></button>
                     <button className="btn xs danger icon" title="Eliminar" onClick={() => onDelete(it.id)}><I.Trash size={12} /></button>
                   </div>
