@@ -81,43 +81,108 @@ const drawPDFHeader = (doc, budget, subtitle) => {
   return y + 4
 }
 
+// ─── Helpers: detect and normalize item format ─────────────────────────
+// Supports both:
+//   OLD: { tipo:'capitulo'|'subcapitulo'|actividad, codigo, descripcion, cantidad, unidad, children }
+//   NEW (flat): { kind:'chapter'|'subchapter'|'activity', code, desc, qty, unit, price, parent }
+
+function computeFlatSubtotals(items) {
+  const bySub = {}, byCap = {}
+  items.forEach(it => {
+    if (it.kind === 'activity') {
+      const s = (it.qty || 0) * (it.price || 0)
+      bySub[it.parent] = (bySub[it.parent] || 0) + s
+    }
+  })
+  items.forEach(it => {
+    if (it.kind === 'subchapter') {
+      byCap[it.parent] = (byCap[it.parent] || 0) + (bySub[it.id] || 0)
+    }
+  })
+  return { bySub, byCap }
+}
+
 // ─── PDF PRESUPUESTO ───────────────────────────────────────────────────
 export const exportPDFPresupuesto = (budget) => {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' })
   const ctx = { pctIndirectos: budget.pctIndirectos, pctImprevistos: budget.pctImprevistos, pctUtilidad: budget.pctUtilidad }
   const y = drawPDFHeader(doc, budget, 'PRESUPUESTO DE OBRA')
   const rows = []
-  const walk = (its, d = 0) => {
-    for (const it of its) {
-      const c = calcItem(it, ctx)
-      const ind = '  '.repeat(d)
-      if (it.tipo === 'capitulo') {
+  const isFlat = budget.items && budget.items[0] && budget.items[0].kind
+
+  if (isFlat) {
+    // NEW flat format
+    const { bySub, byCap } = computeFlatSubtotals(budget.items)
+    budget.items.forEach(it => {
+      if (it.kind === 'chapter') {
+        const total = byCap[it.id] || 0
         rows.push([
-          { content: it.codigo, styles: { fontStyle: 'bold', fillColor: [15, 17, 21], textColor: 255 } },
-          { content: ind + it.descripcion, styles: { fontStyle: 'bold', fillColor: [15, 17, 21], textColor: 255 } },
+          { content: it.code, styles: { fontStyle: 'bold', fillColor: [15, 17, 21], textColor: 255 } },
+          { content: it.desc, styles: { fontStyle: 'bold', fillColor: [15, 17, 21], textColor: 255 } },
           '', '', '',
-          { content: money(c.subtotal), styles: { fontStyle: 'bold', halign: 'right', fillColor: [15, 17, 21], textColor: 245 } }
+          { content: money(total), styles: { fontStyle: 'bold', halign: 'right', fillColor: [15, 17, 21], textColor: 245 } }
         ])
-        if (it.children) walk(it.children, d + 1)
-      } else if (it.tipo === 'subcapitulo') {
+      } else if (it.kind === 'subchapter') {
+        const total = bySub[it.id] || 0
         rows.push([
-          { content: it.codigo, styles: { fontStyle: 'bold', fillColor: [71, 85, 105], textColor: 255 } },
-          { content: ind + it.descripcion, styles: { fontStyle: 'bold', fillColor: [71, 85, 105], textColor: 255 } },
+          { content: it.code, styles: { fontStyle: 'bold', fillColor: [71, 85, 105], textColor: 255 } },
+          { content: '   ' + it.desc, styles: { fontStyle: 'bold', fillColor: [71, 85, 105], textColor: 255 } },
           '', '', '',
-          { content: money(c.subtotal), styles: { fontStyle: 'bold', halign: 'right', fillColor: [71, 85, 105], textColor: 255 } }
+          { content: money(total), styles: { fontStyle: 'bold', halign: 'right', fillColor: [71, 85, 105], textColor: 255 } }
         ])
-        if (it.children) walk(it.children, d + 1)
       } else {
-        rows.push([it.codigo, ind + it.descripcion, it.unidad, fmt(it.cantidad), money(c.precioUnitario), { content: money(c.subtotal), styles: { halign: 'right' } }])
+        const sub = (it.qty || 0) * (it.price || 0)
+        rows.push([it.code, '      ' + it.desc, it.unit || '', fmt(it.qty || 0), money(it.price || 0), { content: money(sub), styles: { halign: 'right' } }])
+      }
+    })
+    const tot = budget.items.filter(i => i.kind === 'activity').reduce((s, a) => {
+      const direct = (a.qty || 0) * (a.price || 0)
+      return s + direct
+    }, 0)
+    const indir  = tot * ((budget.pctIndirectos  || 0) / 100)
+    const imprev = (tot + indir) * ((budget.pctImprevistos || 0) / 100)
+    const sub2   = tot + indir + imprev
+    const util   = sub2 * ((budget.pctUtilidad   || 0) / 100)
+    const total  = sub2 + util
+    rows.push([
+      { content: 'TOTAL GENERAL', colSpan: 5, styles: { fillColor: [15, 17, 21], textColor: 245, fontStyle: 'bold', halign: 'right' } },
+      { content: money(total), styles: { fillColor: [15, 17, 21], textColor: 245, fontStyle: 'bold', halign: 'right' } }
+    ])
+  } else {
+    // OLD hierarchical format
+    const walk = (its, d = 0) => {
+      for (const it of its) {
+        const c = calcItem(it, ctx)
+        const ind = '  '.repeat(d)
+        if (it.tipo === 'capitulo') {
+          rows.push([
+            { content: it.codigo, styles: { fontStyle: 'bold', fillColor: [15, 17, 21], textColor: 255 } },
+            { content: ind + it.descripcion, styles: { fontStyle: 'bold', fillColor: [15, 17, 21], textColor: 255 } },
+            '', '', '',
+            { content: money(c.subtotal), styles: { fontStyle: 'bold', halign: 'right', fillColor: [15, 17, 21], textColor: 245 } }
+          ])
+          if (it.children) walk(it.children, d + 1)
+        } else if (it.tipo === 'subcapitulo') {
+          rows.push([
+            { content: it.codigo, styles: { fontStyle: 'bold', fillColor: [71, 85, 105], textColor: 255 } },
+            { content: ind + it.descripcion, styles: { fontStyle: 'bold', fillColor: [71, 85, 105], textColor: 255 } },
+            '', '', '',
+            { content: money(c.subtotal), styles: { fontStyle: 'bold', halign: 'right', fillColor: [71, 85, 105], textColor: 255 } }
+          ])
+          if (it.children) walk(it.children, d + 1)
+        } else {
+          rows.push([it.codigo, ind + it.descripcion, it.unidad, fmt(it.cantidad), money(c.precioUnitario), { content: money(c.subtotal), styles: { halign: 'right' } }])
+        }
       }
     }
+    walk(budget.items, 0)
+    const tot = budget.items.reduce((s, it) => s + calcItem(it, ctx).subtotal, 0)
+    rows.push([
+      { content: 'TOTAL GENERAL', colSpan: 5, styles: { fillColor: [15, 17, 21], textColor: 245, fontStyle: 'bold', halign: 'right' } },
+      { content: money(tot), styles: { fillColor: [15, 17, 21], textColor: 245, fontStyle: 'bold', halign: 'right' } }
+    ])
   }
-  walk(budget.items, 0)
-  const tot = budget.items.reduce((s, it) => s + calcItem(it, ctx).subtotal, 0)
-  rows.push([
-    { content: 'TOTAL GENERAL', colSpan: 5, styles: { fillColor: [15, 17, 21], textColor: 245, fontStyle: 'bold', halign: 'right' } },
-    { content: money(tot), styles: { fillColor: [15, 17, 21], textColor: 245, fontStyle: 'bold', halign: 'right' } }
-  ])
+
   autoTable(doc, {
     startY: y,
     head: [['ID', 'Descripción', 'Unidad', 'Cantidad', 'P. Unitario', 'Subtotal']],
@@ -191,47 +256,89 @@ export const exportExcelPresupuesto = async (budget) => {
     setC(ws, String.fromCharCode(65 + i) + row, h, { fill: X.headerFill, font: X.headerFont, alignment: X.ac })
   )
   ws.getRow(row).height = 22; row++
-  const walk = (its, d = 0) => {
-    for (const it of its) {
-      const c = calcItem(it, ctx)
-      const ind = '   '.repeat(d)
-      if (it.tipo === 'capitulo') {
-        setC(ws, 'A' + row, it.codigo,           { fill: X.capFill, font: X.capFont, alignment: X.ac })
-        setC(ws, 'B' + row, ind + it.descripcion, { fill: X.capFill, font: X.capFont, alignment: X.al })
-        ;['C', 'D', 'E'].forEach(cc => setC(ws, cc + row, '', { fill: X.capFill }))
-        setC(ws, 'F' + row, c.subtotal,           { fill: X.capFill, font: X.capFont, alignment: X.ar, numFmt: MFMT })
+  const isFlat = budget.items && budget.items[0] && budget.items[0].kind
+  if (isFlat) {
+    const { bySub, byCap } = computeFlatSubtotals(budget.items)
+    budget.items.forEach(it => {
+      if (it.kind === 'chapter') {
+        const total = byCap[it.id] || 0
+        setC(ws, 'A' + row, it.code,  { fill: X.capFill, font: X.capFont, alignment: X.ac })
+        setC(ws, 'B' + row, it.desc,  { fill: X.capFill, font: X.capFont, alignment: X.al })
+        ;['C','D','E'].forEach(cc => setC(ws, cc + row, '', { fill: X.capFill }))
+        setC(ws, 'F' + row, total,    { fill: X.capFill, font: X.capFont, alignment: X.ar, numFmt: MFMT })
         row++
-        if (it.children) walk(it.children, d + 1)
-        ;['A', 'B', 'C', 'D', 'E', 'F'].forEach(cc =>
-          setC(ws, cc + row, cc === 'B' ? ind + 'SUBTOTAL Cap. ' + it.codigo : cc === 'F' ? c.subtotal : '',
-            { fill: X.subtotalFill, font: { italic: true, bold: true }, alignment: cc === 'F' ? X.ar : X.al, numFmt: cc === 'F' ? MFMT : undefined })
-        )
+      } else if (it.kind === 'subchapter') {
+        const total = bySub[it.id] || 0
+        setC(ws, 'A' + row, it.code,       { fill: X.subcapFill, font: X.subcapFont, alignment: X.ac })
+        setC(ws, 'B' + row, '   ' + it.desc, { fill: X.subcapFill, font: X.subcapFont, alignment: X.al })
+        ;['C','D','E'].forEach(cc => setC(ws, cc + row, '', { fill: X.subcapFill }))
+        setC(ws, 'F' + row, total,         { fill: X.subcapFill, font: X.subcapFont, alignment: X.ar, numFmt: MFMT })
         row++
-      } else if (it.tipo === 'subcapitulo') {
-        setC(ws, 'A' + row, it.codigo,           { fill: X.subcapFill, font: X.subcapFont, alignment: X.ac })
-        setC(ws, 'B' + row, ind + it.descripcion, { fill: X.subcapFill, font: X.subcapFont, alignment: X.al })
-        ;['C', 'D', 'E'].forEach(cc => setC(ws, cc + row, '', { fill: X.subcapFill }))
-        setC(ws, 'F' + row, c.subtotal,           { fill: X.subcapFill, font: X.subcapFont, alignment: X.ar, numFmt: MFMT })
-        row++
-        if (it.children) walk(it.children, d + 1)
       } else {
-        setC(ws, 'A' + row, it.codigo,            { alignment: X.ac })
-        setC(ws, 'B' + row, ind + it.descripcion, { alignment: X.al })
-        setC(ws, 'C' + row, it.unidad || '',       { alignment: X.ac })
-        setC(ws, 'D' + row, Number(it.cantidad) || 0, { alignment: X.ar, numFmt: NFMT })
-        setC(ws, 'E' + row, c.precioUnitario,     { alignment: X.ar, numFmt: MFMT })
-        setC(ws, 'F' + row, c.subtotal,           { alignment: X.ar, numFmt: MFMT, font: { bold: true } })
+        const sub = (it.qty || 0) * (it.price || 0)
+        setC(ws, 'A' + row, it.code,             { alignment: X.ac })
+        setC(ws, 'B' + row, '      ' + it.desc,  { alignment: X.al })
+        setC(ws, 'C' + row, it.unit || '',        { alignment: X.ac })
+        setC(ws, 'D' + row, Number(it.qty) || 0,  { alignment: X.ar, numFmt: NFMT })
+        setC(ws, 'E' + row, Number(it.price) || 0,{ alignment: X.ar, numFmt: MFMT })
+        setC(ws, 'F' + row, sub,                  { alignment: X.ar, numFmt: MFMT, font: { bold: true } })
         row++
       }
+    })
+    const directTotal = budget.items.filter(i => i.kind === 'activity').reduce((s, a) => s + (a.qty||0)*(a.price||0), 0)
+    const indir  = directTotal * ((budget.pctIndirectos  || 0) / 100)
+    const imprev = (directTotal + indir) * ((budget.pctImprevistos || 0) / 100)
+    const sub2   = directTotal + indir + imprev
+    const util   = sub2 * ((budget.pctUtilidad   || 0) / 100)
+    const tot = sub2 + util
+    row++
+    ws.mergeCells('A' + row + ':E' + row)
+    setC(ws, 'A' + row, 'TOTAL GENERAL', { fill: X.totalFill, font: X.totalFont, alignment: X.ar })
+    setC(ws, 'F' + row, tot,             { fill: X.totalFill, font: X.totalFont, alignment: X.ar, numFmt: MFMT })
+    ws.getRow(row).height = 26
+  } else {
+    const walk = (its, d = 0) => {
+      for (const it of its) {
+        const c = calcItem(it, ctx)
+        const ind = '   '.repeat(d)
+        if (it.tipo === 'capitulo') {
+          setC(ws, 'A' + row, it.codigo,           { fill: X.capFill, font: X.capFont, alignment: X.ac })
+          setC(ws, 'B' + row, ind + it.descripcion, { fill: X.capFill, font: X.capFont, alignment: X.al })
+          ;['C', 'D', 'E'].forEach(cc => setC(ws, cc + row, '', { fill: X.capFill }))
+          setC(ws, 'F' + row, c.subtotal,           { fill: X.capFill, font: X.capFont, alignment: X.ar, numFmt: MFMT })
+          row++
+          if (it.children) walk(it.children, d + 1)
+          ;['A', 'B', 'C', 'D', 'E', 'F'].forEach(cc =>
+            setC(ws, cc + row, cc === 'B' ? ind + 'SUBTOTAL Cap. ' + it.codigo : cc === 'F' ? c.subtotal : '',
+              { fill: X.subtotalFill, font: { italic: true, bold: true }, alignment: cc === 'F' ? X.ar : X.al, numFmt: cc === 'F' ? MFMT : undefined })
+          )
+          row++
+        } else if (it.tipo === 'subcapitulo') {
+          setC(ws, 'A' + row, it.codigo,           { fill: X.subcapFill, font: X.subcapFont, alignment: X.ac })
+          setC(ws, 'B' + row, ind + it.descripcion, { fill: X.subcapFill, font: X.subcapFont, alignment: X.al })
+          ;['C', 'D', 'E'].forEach(cc => setC(ws, cc + row, '', { fill: X.subcapFill }))
+          setC(ws, 'F' + row, c.subtotal,           { fill: X.subcapFill, font: X.subcapFont, alignment: X.ar, numFmt: MFMT })
+          row++
+          if (it.children) walk(it.children, d + 1)
+        } else {
+          setC(ws, 'A' + row, it.codigo,            { alignment: X.ac })
+          setC(ws, 'B' + row, ind + it.descripcion, { alignment: X.al })
+          setC(ws, 'C' + row, it.unidad || '',       { alignment: X.ac })
+          setC(ws, 'D' + row, Number(it.cantidad) || 0, { alignment: X.ar, numFmt: NFMT })
+          setC(ws, 'E' + row, c.precioUnitario,     { alignment: X.ar, numFmt: MFMT })
+          setC(ws, 'F' + row, c.subtotal,           { alignment: X.ar, numFmt: MFMT, font: { bold: true } })
+          row++
+        }
+      }
     }
+    walk(budget.items, 0)
+    const tot = budget.items.reduce((s, it) => s + calcItem(it, ctx).subtotal, 0)
+    row++
+    ws.mergeCells('A' + row + ':E' + row)
+    setC(ws, 'A' + row, 'TOTAL GENERAL', { fill: X.totalFill, font: X.totalFont, alignment: X.ar })
+    setC(ws, 'F' + row, tot,             { fill: X.totalFill, font: X.totalFont, alignment: X.ar, numFmt: MFMT })
+    ws.getRow(row).height = 26
   }
-  walk(budget.items, 0)
-  const tot = budget.items.reduce((s, it) => s + calcItem(it, ctx).subtotal, 0)
-  row++
-  ws.mergeCells('A' + row + ':E' + row)
-  setC(ws, 'A' + row, 'TOTAL GENERAL', { fill: X.totalFill, font: X.totalFont, alignment: X.ar })
-  setC(ws, 'F' + row, tot,             { fill: X.totalFill, font: X.totalFont, alignment: X.ar, numFmt: MFMT })
-  ws.getRow(row).height = 26
   const buf = await wb.xlsx.writeBuffer()
   saveAs(new Blob([buf]), (budget.nombre_proyecto || 'Presupuesto').replace(/[^\w]+/g, '_') + '_Presupuesto.xlsx')
 }
