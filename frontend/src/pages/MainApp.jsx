@@ -1464,6 +1464,20 @@ export default function MainApp() {
 
   const doLogout = () => { signOut(); nav('/login') }
 
+  // KPI totals for budget view
+  const budgetKPIs = useMemo(() => {
+    if (!budget) return null
+    const direct = budget.items.reduce((s, it) => s + calcItem(it, budget.catalogos, params).subtotal, 0)
+    const indirectos  = direct * (params.pctIndirectos / 100)
+    const imprevistos = (direct + indirectos) * (params.pctImprevistos / 100)
+    const subtotal    = direct + indirectos + imprevistos
+    const utilidad    = subtotal * (params.pctUtilidad / 100)
+    const subtotalConU = subtotal + utilidad
+    const impuesto    = subtotalConU * (params.pctImpuesto / 100)
+    const total       = subtotalConU + impuesto
+    return { direct, indirectos, imprevistos, utilidad, impuesto, total }
+  }, [budget, params])
+
   // ---- LOADING ----
   if (loadingData) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--c-side)' }}>
@@ -1491,20 +1505,6 @@ export default function MainApp() {
     { k: 'cat-he',      label: 'Herramientas/Equipo',  icon: <Wrench size={14} />,   badge: (budget.catalogos.herramientaEquipo || []).length },
     { k: 'cat-sub',     label: 'Subcontratos',         icon: <Users size={14} />,    badge: (budget.catalogos.subcontratos || []).length },
   ] : []
-
-  // KPI totals for budget view
-  const budgetKPIs = useMemo(() => {
-    if (!budget) return null
-    const direct = budget.items.reduce((s, it) => s + calcItem(it, budget.catalogos, params).subtotal, 0)
-    const indirectos  = direct * (params.pctIndirectos / 100)
-    const imprevistos = (direct + indirectos) * (params.pctImprevistos / 100)
-    const subtotal    = direct + indirectos + imprevistos
-    const utilidad    = subtotal * (params.pctUtilidad / 100)
-    const subtotalConU = subtotal + utilidad
-    const impuesto    = subtotalConU * (params.pctImpuesto / 100)
-    const total       = subtotalConU + impuesto
-    return { direct, indirectos, imprevistos, utilidad, impuesto, total }
-  }, [budget, params])
 
   return (
     <div className="app">
