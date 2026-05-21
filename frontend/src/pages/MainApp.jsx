@@ -282,15 +282,15 @@ function FichaCostoModal({ open, onClose, actividad, budget, catalogos, params, 
 
 function Sidebar({ page, setPage, projectActivo, setTabProject, tabProject, user, onLogout, projectsCount }) {
   const Nav = ({ icon, label, active, badge, onClick }) => (
-    <button onClick={onClick} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition ${active ? 'bg-amber-500/15 text-amber-300 border border-amber-500/20' : 'text-slate-300 hover:bg-white/5'}`}>
+    <button onClick={onClick} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition ${active ? 'bg-[#1e72d8]/20 text-[#60b0ff] border border-[#1e72d8]/30' : 'text-slate-300 hover:bg-white/5'}`}>
       <span className="text-base">{icon}</span>
       <span className="flex-1 text-left truncate">{label}</span>
-      {badge !== undefined && <span className={`text-xs px-1.5 py-0.5 rounded-full ${active ? 'bg-amber-500/30 text-amber-200' : 'bg-white/10 text-slate-400'}`}>{badge}</span>}
+      {badge !== undefined && <span className={`text-xs px-1.5 py-0.5 rounded-full ${active ? 'bg-[#1e72d8]/30 text-[#93c5fd]' : 'bg-white/10 text-slate-400'}`}>{badge}</span>}
     </button>
   )
   return (
-    <aside className="w-64 bg-[#0f1115] text-white flex-shrink-0 flex flex-col h-screen sticky top-0 border-r border-white/5">
-      <div className="px-4 py-4 flex items-center gap-3 border-b border-white/5">
+    <aside className="w-64 bg-[#0d1b2e] text-white flex-shrink-0 flex flex-col h-screen sticky top-0 border-r border-[#1e72d8]/10">
+      <div className="px-4 py-4 flex items-center gap-3 border-b border-[#1e72d8]/15">
         <img src="/favicon.png" alt="Arrow Budget" className="w-10 h-10 rounded-lg object-contain" />
         <div>
           <div className="font-extrabold tracking-tight">ARROW BUDGET</div>
@@ -860,13 +860,13 @@ function InicioPage({ proyectos, openProject, addProject, userName }) {
       </div>
       <div className="flex items-center justify-between mb-3">
         <h2 className="font-bold text-lg">Continuar trabajando</h2>
-        <button onClick={addProject} className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-900 rounded-lg font-bold text-sm">+ Nuevo Proyecto</button>
+        <button onClick={addProject} className="px-4 py-2 bg-[#1e72d8] hover:bg-[#1558b0] text-white rounded-xl font-bold text-sm flex items-center gap-2 transition-colors"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>Nuevo Proyecto</button>
       </div>
       <div className="space-y-3">
         {proyectos.slice(0,5).map(p => {
           const k=calcKPIs(p)
           return (
-            <div key={p.id} onClick={()=>openProject(p)} className="bg-white border border-gray-200 hover:border-amber-400 hover:shadow-md cursor-pointer rounded-2xl p-4 flex items-center gap-4">
+            <div key={p.id} onClick={()=>openProject(p)} className="bg-white border border-gray-200 hover:border-[#1e72d8] hover:shadow-md cursor-pointer rounded-2xl p-4 flex items-center gap-4 transition-all">
               <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center text-2xl">📄</div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
@@ -888,7 +888,7 @@ function InicioPage({ proyectos, openProject, addProject, userName }) {
           <div className="text-center py-16 text-gray-400">
             <div className="text-4xl mb-4">📋</div>
             <div className="font-medium mb-2">No tenés proyectos aún</div>
-            <button onClick={addProject} className="mt-2 px-5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-900 rounded-lg font-bold text-sm">Crear primer proyecto</button>
+            <button onClick={addProject} className="mt-2 px-5 py-2 bg-[#1e72d8] hover:bg-[#1558b0] text-white rounded-xl font-bold text-sm transition-colors">Crear primer proyecto</button>
           </div>
         )}
       </div>
@@ -896,21 +896,27 @@ function InicioPage({ proyectos, openProject, addProject, userName }) {
   )
 }
 
-function ProyectosPage({ proyectos, openProject, addProject }) {
+function ProyectosPage({ proyectos, openProject, addProject, deleteProject }) {
   const [q, setQ] = useState('')
   const [f, setF] = useState('Todos')
   const list = proyectos.filter(p => (f==='Todos'||p.estado===f) && (!q||normalize(p.nombreProyecto).includes(normalize(q))||normalize(p.cliente).includes(normalize(q))))
   return (
     <div className="p-8 max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <div><h1 className="text-3xl font-bold">Proyectos</h1><div className="text-gray-500 mt-1">{proyectos.length} en total</div></div>
-        <button onClick={addProject} className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-900 rounded-lg font-bold">+ Nuevo Proyecto</button>
+        <div>
+          <h1 className="text-3xl font-bold text-[#0d1b2e]">Proyectos</h1>
+          <div className="text-gray-400 mt-1">{proyectos.length} en total</div>
+        </div>
+        <button onClick={addProject} className="px-4 py-2.5 bg-[#1e72d8] hover:bg-[#1558b0] text-white rounded-xl font-bold flex items-center gap-2 shadow-sm transition-colors">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+          Nuevo Proyecto
+        </button>
       </div>
-      <div className="bg-white border rounded-2xl p-4 mb-5 flex flex-wrap gap-3">
-        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar…" className="flex-1 min-w-[240px] px-4 py-2 bg-gray-50 border rounded-lg text-sm outline-none focus:bg-white focus:border-amber-400" />
-        <div className="flex gap-1">
+      <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-5 flex flex-wrap gap-3 shadow-sm">
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar proyectos…" className="flex-1 min-w-[240px] px-4 py-2 bg-gray-50 border rounded-lg text-sm outline-none focus:bg-white focus:border-[#1e72d8] focus:ring-1 focus:ring-[#1e72d8]/30 transition-all" />
+        <div className="flex gap-1.5">
           {['Todos','Activo','En revisión','Borrador'].map(e=>(
-            <button key={e} onClick={()=>setF(e)} className={`px-3 py-1.5 rounded-lg text-sm font-medium ${f===e?'bg-slate-900 text-white':'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{e}</button>
+            <button key={e} onClick={()=>setF(e)} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${f===e?'bg-[#0d1b2e] text-white shadow-sm':'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'}`}>{e}</button>
           ))}
         </div>
       </div>
@@ -918,23 +924,51 @@ function ProyectosPage({ proyectos, openProject, addProject }) {
         {list.map(p => {
           const k=calcKPIs(p)
           return (
-            <div key={p.id} onClick={()=>openProject(p)} className="bg-white border hover:border-amber-400 hover:shadow-lg cursor-pointer rounded-2xl p-5">
-              <div className="flex items-center gap-2 mb-3 flex-wrap">
-                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-orange-50 text-orange-700">{p.tipo}</span>
-                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${p.estado==='Activo'?'bg-emerald-50 text-emerald-700':p.estado==='En revisión'?'bg-amber-50 text-amber-700':'bg-gray-100 text-gray-600'}`}>{p.estado}</span>
-                <span className="text-xs bg-gray-100 px-2 py-0.5 rounded-full">Rev {p.revision}</span>
-              </div>
-              <h3 className="font-bold mb-1 truncate">{p.nombreProyecto}</h3>
-              <div className="text-sm text-gray-500 mb-1">🏢 {p.cliente||'—'}</div>
-              <div className="text-xs text-gray-400 mb-4">📍 {p.lugar||'—'}</div>
-              <div className="border-t pt-3 flex justify-between items-end">
-                <div><div className="text-xs text-gray-400 uppercase">Total</div><div className="font-bold text-lg">{money(k.total)}</div></div>
-                <div className="text-right text-xs text-gray-500"><div>{k.nCapitulos} cap.</div><div>{k.nActividades} act.</div></div>
+            <div key={p.id} className="bg-white border border-gray-200 hover:border-[#1e72d8] hover:shadow-lg rounded-2xl p-5 transition-all group relative">
+              {/* Delete button */}
+              <button
+                onClick={e => { e.stopPropagation(); deleteProject(p.id, p.nombreProyecto) }}
+                className="absolute top-3 right-3 w-7 h-7 rounded-lg bg-gray-100 hover:bg-rose-100 text-gray-400 hover:text-rose-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
+                title="Eliminar proyecto"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+              </button>
+              <div onClick={()=>openProject(p)} className="cursor-pointer">
+                <div className="flex items-center gap-2 mb-3 flex-wrap pr-6">
+                  <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100">{p.tipo}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${p.estado==='Activo'?'bg-emerald-50 text-emerald-700 border border-emerald-100':p.estado==='En revisión'?'bg-amber-50 text-amber-700 border border-amber-100':'bg-slate-100 text-slate-600 border border-slate-200'}`}>{p.estado}</span>
+                  <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full border border-gray-200">Rev {p.revision}</span>
+                </div>
+                <h3 className="font-bold text-[#0d1b2e] mb-1.5 truncate text-base">{p.nombreProyecto}</h3>
+                <div className="text-sm text-gray-500 mb-1 flex items-center gap-1.5">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className="text-gray-400"><path d="M12 7V3H2v18h20V7H12zM6 19H4v-2h2v2zm0-4H4v-2h2v2zm0-4H4V9h2v2zm0-4H4V5h2v2zm4 12H8v-2h2v2zm0-4H8v-2h2v2zm0-4H8V9h2v2zm0-4H8V5h2v2zm10 12h-8v-2h2v-2h-2v-2h2v-2h-2V9h8v10zm-2-8h-2v2h2v-2zm0 4h-2v2h2v-2z"/></svg>
+                  {p.cliente||'—'}
+                </div>
+                <div className="text-xs text-gray-400 mb-4 flex items-center gap-1.5">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" className="text-gray-300"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+                  {p.lugar||'—'}
+                </div>
+                <div className="border-t border-gray-100 pt-3 flex justify-between items-end">
+                  <div>
+                    <div className="text-[10px] text-gray-400 uppercase font-semibold tracking-wider mb-0.5">Total</div>
+                    <div className="font-bold text-xl text-[#0d1b2e]">{money(k.total)}</div>
+                  </div>
+                  <div className="text-right text-xs text-gray-400">
+                    <div className="font-medium">{k.nCapitulos} cap.</div>
+                    <div>{k.nActividades} act.</div>
+                  </div>
+                </div>
               </div>
             </div>
           )
         })}
-        {!list.length && <div className="md:col-span-3 text-center py-12 text-gray-400">Sin proyectos que coincidan.</div>}
+        {!list.length && (
+          <div className="md:col-span-3 text-center py-16">
+            <div className="text-gray-300 text-5xl mb-4">📁</div>
+            <div className="text-gray-400 font-medium">Sin proyectos que coincidan</div>
+            <div className="text-gray-300 text-sm mt-1">Intenta con otro filtro o búsqueda</div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -1080,6 +1114,14 @@ export default function MainApp() {
 
   const openProject = p => { setActiveId(p.id); setPage('proyecto'); setTabProject('presupuesto') }
 
+  const deleteProject = async (id, nombre) => {
+    if (!confirm(`¿Eliminar el proyecto "${nombre}"?\n\nEsta acción no se puede deshacer.`)) return
+    const { error } = await supabase.from('presupuestos').delete().eq('id', id)
+    if (error) { alert('Error al eliminar: ' + error.message); return }
+    setProyectos(ps => ps.filter(p => p.id !== id))
+    if (activeId === id) { setActiveId(null); setPage('proyectos') }
+  }
+
   const addProject = async () => {
     const { data } = await supabase.from('presupuestos').insert({
       user_id:        user.id,
@@ -1119,10 +1161,10 @@ export default function MainApp() {
 
   // ---- LOADING ----
   if (loadingData) return (
-    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#0f1115',color:'#fbbf24'}}>
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#0d1b2e',color:'#60b0ff'}}>
       <div style={{textAlign:'center'}}>
-        <div style={{width:48,height:48,border:'4px solid #1a1d24',borderTopColor:'#f59e0b',borderRadius:'50%',animation:'spin 1s linear infinite',margin:'0 auto 16px'}}></div>
-        <div style={{fontSize:20,fontWeight:800}}>ARROW BUDGET</div>
+        <div style={{width:48,height:48,border:'4px solid #1a3a6e',borderTopColor:'#1e72d8',borderRadius:'50%',animation:'spin 1s linear infinite',margin:'0 auto 16px'}}></div>
+        <div style={{fontSize:20,fontWeight:800,letterSpacing:2}}>ARROW BUDGET</div>
         <div style={{fontSize:12,color:'#94a3b8',marginTop:8}}>Cargando…</div>
       </div>
     </div>
@@ -1172,7 +1214,7 @@ export default function MainApp() {
         />
 
         {page==='inicio'     && <InicioPage    proyectos={proyectos} openProject={openProject} addProject={addProject} userName={userName} />}
-        {page==='proyectos'  && <ProyectosPage proyectos={proyectos} openProject={openProject} addProject={addProject} />}
+        {page==='proyectos'  && <ProyectosPage proyectos={proyectos} openProject={openProject} addProject={addProject} deleteProject={deleteProject} />}
         {page==='plantillas' && <PlantillasPage />}
         {page==='planes'     && <PlanesPage />}
 
@@ -1209,7 +1251,7 @@ export default function MainApp() {
 
             <div className="border-b mb-5 flex overflow-x-auto">
               {tabsP.map(t => (
-                <button key={t.k} onClick={() => setTabProject(t.k)} className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap ${tabProject===t.k?'border-amber-500 text-slate-900':'border-transparent text-gray-500 hover:text-slate-900'}`}>
+                <button key={t.k} onClick={() => setTabProject(t.k)} className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap ${tabProject===t.k?'border-[#1e72d8] text-[#0d1b2e]':'border-transparent text-gray-400 hover:text-[#0d1b2e]'}`}>
                   <span>{t.icon}</span>{t.label}
                   <span className={`text-xs px-1.5 py-0.5 rounded-full ${tabProject===t.k?'bg-amber-100 text-amber-800':'bg-gray-100 text-gray-600'}`}>{t.badge}</span>
                 </button>
