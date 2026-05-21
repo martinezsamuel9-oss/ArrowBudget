@@ -17,7 +17,9 @@ import {
 } from '../lib/calc'
 import {
   exportPDFPresupuesto, exportPDFFicha, exportPDFGeneral, exportPDFRangoFichas,
+  exportPDFResumenEjecutivo, exportPDFPortafolio,
   exportExcelPresupuesto, exportExcelCatalogo, exportExcelFicha, exportExcelGeneral,
+  exportExcelPortafolio,
   exportPlantilla, importExcelPresupuesto, importExcelCatalogo,
 } from '../lib/export'
 
@@ -133,6 +135,7 @@ function Sidebar({ page, setPage, projectActivo, setTabProject, tabProject, user
     { id: 'cat-sub',        label: 'Subcontratos',         Icon: Users },
   ]
   const toolNav = [
+    { id: 'reportes',   label: 'Reportes',             Icon: BarChart2 },
     { id: 'plantillas', label: 'Biblioteca',           Icon: BookOpen },
     { id: 'planes',     label: 'Planes y Facturación', Icon: CreditCard },
   ]
@@ -1290,6 +1293,205 @@ function CatalogoView({ budget, setBudget, categoria }) {
 }
 
 // ============ PLANTILLAS PAGE ============
+// ============ REPORTES PAGE ============
+function ReportesPage({ proyectos, budget, params, userEmpresa }) {
+  const [tab, setTab] = useState('proyecto')
+  const currency = budget?.moneda || 'USD'
+
+  // KPIs portafolio
+  const total      = proyectos.length
+  const activos    = proyectos.filter(p => p.estado === 'Activo').length
+  const revision   = proyectos.filter(p => p.estado === 'En revisión').length
+  const aprobados  = proyectos.filter(p => p.estado === 'Aprobado').length
+  const cartera    = proyectos.reduce((s, p) => s + (p._total || 0), 0)
+
+  const ReporteCard = ({ icon: Icon, title, desc, onPdf, onExcel, disabled }) => (
+    <div className="card" style={{ opacity: disabled ? 0.5 : 1 }}>
+      <div className="card-pad" style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+        <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--c-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Icon size={20} color="#fff" />
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--c-text)', marginBottom: 4 }}>{title}</div>
+          <div style={{ fontSize: 12, color: 'var(--c-text-3)', marginBottom: 12 }}>{desc}</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {onPdf   && <button className="btn sm primary" onClick={onPdf}   disabled={disabled}><Download size={13}/> PDF</button>}
+            {onExcel && <button className="btn sm ghost"   onClick={onExcel} disabled={disabled}><FileSpreadsheet size={13}/> Excel</button>}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+
+  return (
+    <Fragment>
+      <div className="page-head">
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--c-text)' }}>Reportes</div>
+          <div style={{ fontSize: 13, color: 'var(--c-text-3)', marginTop: 2 }}>Genera y descarga reportes de tus proyectos</div>
+        </div>
+      </div>
+
+      <div className="tabs" style={{ borderBottom: '1px solid var(--c-line)', marginBottom: 0 }}>
+        {[
+          { k: 'proyecto',   label: 'Por Proyecto',  Icon: FileText },
+          { k: 'portafolio', label: 'Portafolio',    Icon: BarChart2 },
+        ].map(({ k, label, Icon }) => (
+          <button key={k} className={`tab ${tab === k ? 'active' : ''}`} onClick={() => setTab(k)}>
+            <Icon size={14} /> {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="page-body">
+
+        {tab === 'proyecto' && (
+          <div>
+            {!budget && (
+              <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--c-text-3)' }}>
+                <FileText size={40} style={{ marginBottom: 12, opacity: 0.4 }} />
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>Sin proyecto activo</div>
+                <div style={{ fontSize: 13 }}>Abre un proyecto desde la sección Proyectos para generar reportes individuales.</div>
+              </div>
+            )}
+            {budget && (
+              <div>
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--c-text-3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 }}>
+                    Proyecto activo: <span style={{ color: 'var(--c-accent)' }}>{budget.nombreProyecto}</span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
+                    <ReporteCard
+                      icon={FileText}
+                      title="Presupuesto General"
+                      desc="Desglose completo por capítulos, subcapítulos y actividades con precios unitarios y subtotales."
+                      onPdf={()   => exportPDFPresupuesto(budget, params)}
+                      onExcel={() => exportExcelPresupuesto(budget, params)}
+                    />
+                    <ReporteCard
+                      icon={Briefcase}
+                      title="Resumen Ejecutivo"
+                      desc="Portada profesional de una página con metadatos, logos y desglose financiero completo."
+                      onPdf={() => exportPDFResumenEjecutivo(budget, params)}
+                    />
+                    <ReporteCard
+                      icon={Layers}
+                      title="Todos los APU / Fichas"
+                      desc="Exporta la ficha de costo unitario de cada actividad del presupuesto."
+                      onPdf={() => exportPDFGeneral(budget, params)}
+                      onExcel={() => exportExcelGeneral(budget, params)}
+                    />
+                    <ReporteCard
+                      icon={Package}
+                      title="Catálogo de Materiales"
+                      desc="Lista de precios de materiales con código, unidad y proveedor."
+                      onPdf={null}
+                      onExcel={() => exportExcelCatalogo(budget, 'materiales')}
+                      disabled={(budget.catalogos?.materiales || []).length === 0}
+                    />
+                    <ReporteCard
+                      icon={HardHat}
+                      title="Catálogo de Mano de Obra"
+                      desc="Lista de operarios, cuadrillas y tarifas."
+                      onPdf={null}
+                      onExcel={() => exportExcelCatalogo(budget, 'manoObra')}
+                      disabled={(budget.catalogos?.manoObra || []).length === 0}
+                    />
+                    <ReporteCard
+                      icon={Wrench}
+                      title="Catálogo de Herramientas/Equipo"
+                      desc="Listado de herramienta menor, equipo y maquinaria."
+                      onPdf={null}
+                      onExcel={() => exportExcelCatalogo(budget, 'herramientaEquipo')}
+                      disabled={(budget.catalogos?.herramientaEquipo || []).length === 0}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === 'portafolio' && (
+          <div>
+            {/* KPIs portafolio */}
+            <div className="kpi-row" style={{ marginBottom: 20 }}>
+              <div className="kpi highlight">
+                <div className="kpi-label"><DollarSign size={12} className="ico" />Cartera Total</div>
+                <div className="kpi-val">{currency === 'USD' ? '$' : 'L'} {cartera.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div className="kpi-foot"><span>Suma de {total} proyectos</span></div>
+              </div>
+              <div className="kpi">
+                <div className="kpi-label"><Activity size={12} className="ico" />Activos</div>
+                <div className="kpi-val">{activos}</div>
+                <div className="kpi-foot"><span>en ejecución</span></div>
+              </div>
+              <div className="kpi">
+                <div className="kpi-label"><Clock size={12} className="ico" />En Revisión</div>
+                <div className="kpi-val">{revision}</div>
+                <div className="kpi-foot"><span>pendientes aprobación</span></div>
+              </div>
+              <div className="kpi">
+                <div className="kpi-label"><Check size={12} className="ico" />Aprobados</div>
+                <div className="kpi-val">{aprobados}</div>
+                <div className="kpi-foot"><span>de {total} totales</span></div>
+              </div>
+            </div>
+
+            {/* Acciones portafolio */}
+            <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
+              <button className="btn primary" onClick={() => exportPDFPortafolio(proyectos, userEmpresa)}>
+                <Download size={14}/> Descargar Portafolio PDF
+              </button>
+              <button className="btn ghost" onClick={() => exportExcelPortafolio(proyectos, userEmpresa)}>
+                <FileSpreadsheet size={14}/> Descargar Portafolio Excel
+              </button>
+            </div>
+
+            {/* Tabla de proyectos */}
+            <div className="card">
+              <table className="bt">
+                <thead>
+                  <tr>
+                    <th>Proyecto</th>
+                    <th>Cliente</th>
+                    <th>Estado</th>
+                    <th>Rev.</th>
+                    <th>Fecha</th>
+                    <th style={{ textAlign: 'right' }}>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {proyectos.map(p => (
+                    <tr key={p.id} className="activity">
+                      <td style={{ fontWeight: 600 }}>{p.nombreProyecto || '—'}</td>
+                      <td style={{ color: 'var(--c-text-3)' }}>{p.cliente || '—'}</td>
+                      <td><span className={`badge ${p.estado === 'Activo' ? 'success' : p.estado === 'En revisión' ? 'warn' : p.estado === 'Aprobado' ? 'primary' : ''}`}>{p.estado}</span></td>
+                      <td style={{ textAlign: 'center' }}>Rev {p.revision || 1}</td>
+                      <td style={{ color: 'var(--c-text-3)' }}>{p.fecha || '—'}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                        {(p.moneda === 'HNL' ? 'L' : '$')} {(p._total || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: 'right', fontWeight: 700 }}>CARTERA TOTAL</td>
+                    <td style={{ textAlign: 'right', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+                      $ {cartera.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    </Fragment>
+  )
+}
+
 function PlantillasPage() {
   const tipos = [
     { k: 'presupuesto', label: 'Presupuesto', icon: '📄', desc: 'Estructura jerárquica completa.' },
@@ -1503,6 +1705,7 @@ export default function MainApp() {
   let crumbs = []
   if (page === 'proyectos')             crumbs = ['Proyectos']
   else if (page === 'proyecto' && budget) crumbs = ['Proyectos', budget.nombreProyecto]
+  else if (page === 'reportes')           crumbs = ['Reportes']
   else if (page === 'plantillas')        crumbs = ['Biblioteca']
   else if (page === 'planes')            crumbs = ['Planes']
 
@@ -1549,6 +1752,7 @@ export default function MainApp() {
         {/* ── PAGES ── */}
         {page === 'inicio'     && <InicioPage    proyectos={proyectos} openProject={openProject} addProject={addProject} setPage={setPage} userName={userName} />}
         {page === 'proyectos'  && <ProyectosPage proyectos={proyectos} openProject={openProject} addProject={addProject} deleteProject={deleteProject} />}
+        {page === 'reportes'   && <ReportesPage  proyectos={proyectos} budget={budget} params={params} userEmpresa={userEmpresa} />}
         {page === 'plantillas' && <PlantillasPage />}
         {page === 'planes'     && <PlanesPage />}
 
