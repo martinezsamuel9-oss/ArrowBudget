@@ -97,7 +97,7 @@ function Dropdown({ trigger, children, align = 'right', width = 'w-56' }) {
       <div onClick={() => setOpen(o => !o)}>{trigger}</div>
       {open && (
         <div className={`absolute z-30 mt-1 ${align === 'right' ? 'right-0' : 'left-0'} ${width} bg-white border border-gray-200 shadow-2xl rounded-lg overflow-hidden`}>
-          <div onClick={() => setOpen(false)}>{children}</div>
+          <div>{children}</div>
         </div>
       )}
     </div>
@@ -291,7 +291,7 @@ function Sidebar({ page, setPage, projectActivo, setTabProject, tabProject, user
   return (
     <aside className="w-64 bg-[#0f1115] text-white flex-shrink-0 flex flex-col h-screen sticky top-0 border-r border-white/5">
       <div className="px-4 py-4 flex items-center gap-3 border-b border-white/5">
-        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center text-slate-900 font-bold text-xl">🏗️</div>
+        <img src="/favicon.png" alt="Arrow Budget" className="w-10 h-10 rounded-lg object-contain" />
         <div>
           <div className="font-extrabold tracking-tight">ARROW BUDGET</div>
           <div className="text-xs text-slate-400">Presupuestos de Obra</div>
@@ -447,15 +447,38 @@ function DescargasMenu({ budget, params, onRangoFichas }) {
     const r=[]; const walk=its=>its.forEach(it=>{if(it.tipo==='actividad')r.push(it);else if(it.children)walk(it.children)}); walk(budget.items); return r
   }, [budget.items])
   const Row = ({ label, desc, pdf, excel }) => (
-    <div className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-amber-50 text-sm border-b last:border-b-0">
-      <div className="flex-1 min-w-0"><div className="font-medium text-slate-900 truncate">{label}</div><div className="text-[11px] text-gray-500">{desc}</div></div>
-      <button onClick={pdf}   className="w-7 h-7 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded flex items-center justify-center" title="PDF">📄</button>
-      <button onClick={excel} className="w-7 h-7 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded flex items-center justify-center" title="Excel">📊</button>
+    <div className="flex items-center justify-between gap-2 px-3 py-3 hover:bg-slate-50 text-sm border-b last:border-b-0">
+      <div className="flex-1 min-w-0">
+        <div className="font-medium text-slate-800 truncate">{label}</div>
+        <div className="text-[11px] text-gray-400 mt-0.5">{desc}</div>
+      </div>
+      <div className="flex gap-1.5 flex-shrink-0">
+        <button
+          onClick={e => { e.stopPropagation(); try { pdf() } catch(err) { console.error('PDF export error:', err); alert('Error al exportar PDF: ' + err.message) } }}
+          className="px-2.5 py-1.5 bg-rose-500 hover:bg-rose-600 active:bg-rose-700 text-white rounded text-xs font-bold flex items-center gap-1 transition-colors"
+          title="Descargar PDF"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm-1 2l5 5h-5V4zM8 13h8v1H8v-1zm0 3h8v1H8v-1zm0-6h3v1H8v-1z"/></svg>
+          PDF
+        </button>
+        <button
+          onClick={e => { e.stopPropagation(); try { excel() } catch(err) { console.error('Excel export error:', err); alert('Error al exportar Excel: ' + err.message) } }}
+          className="px-2.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white rounded text-xs font-bold flex items-center gap-1 transition-colors"
+          title="Descargar Excel"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm-1 2l5 5h-5V4zM8 12l2.5 3.5L13 12l-2.5-3.5L8 12zm2.5 1.75L9.25 12 10.5 10.25 11.75 12l-1.25 1.75zm2.5-1.75l1.25 1.75-1.25 1.75L11.5 12l1.5-1.75z"/></svg>
+          Excel
+        </button>
+      </div>
     </div>
   )
   return (
     <Dropdown align="right" width="w-72" trigger={
-      <button className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-900 rounded-lg text-sm font-bold flex items-center gap-1.5">📥 Descargas ▾</button>
+      <button className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-slate-900 rounded-lg text-sm font-bold flex items-center gap-1.5 transition-colors">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 2h14v2H5v-2z"/></svg>
+        Descargas
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5H7z"/></svg>
+      </button>
     }>
       <div className="text-xs font-bold text-gray-500 uppercase px-3 py-2 bg-gray-50 border-b">Presupuesto</div>
       <Row label="Presupuesto" desc="Tabla completa" pdf={() => exportPDFPresupuesto(budget, params)} excel={() => exportExcelPresupuesto(budget, params)} />
