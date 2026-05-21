@@ -283,7 +283,7 @@ function FichaCostoModal({ open, onClose, actividad, budget, catalogos, params, 
 function Sidebar({ page, setPage, projectActivo, setTabProject, tabProject, user, onLogout, projectsCount }) {
   const Nav = ({ icon, label, active, badge, onClick }) => (
     <button onClick={onClick} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition ${active ? 'bg-[#1e72d8]/20 text-[#60b0ff] border border-[#1e72d8]/30' : 'text-slate-300 hover:bg-white/5'}`}>
-      <span className="text-base">{icon}</span>
+      <span className={`flex-shrink-0 ${active ? 'text-[#60b0ff]' : 'text-slate-400'}`} style={{width:18,height:18,display:'flex',alignItems:'center',justifyContent:'center'}}>{icon}</span>
       <span className="flex-1 text-left truncate">{label}</span>
       {badge !== undefined && <span className={`text-xs px-1.5 py-0.5 rounded-full ${active ? 'bg-[#1e72d8]/30 text-[#93c5fd]' : 'bg-white/10 text-slate-400'}`}>{badge}</span>}
     </button>
@@ -301,8 +301,8 @@ function Sidebar({ page, setPage, projectActivo, setTabProject, tabProject, user
         <div>
           <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 px-3 mb-2">Trabajo</div>
           <div className="space-y-0.5">
-            <Nav icon="🏠" label="Inicio" active={page==='inicio'} onClick={() => setPage('inicio')} />
-            <Nav icon="📁" label="Proyectos" badge={projectsCount} active={page==='proyectos'} onClick={() => setPage('proyectos')} />
+            <Nav icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>} label="Inicio" active={page==='inicio'} onClick={() => setPage('inicio')} />
+            <Nav icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>} label="Proyectos" badge={projectsCount} active={page==='proyectos'} onClick={() => setPage('proyectos')} />
           </div>
         </div>
         {projectActivo && (
@@ -313,31 +313,34 @@ function Sidebar({ page, setPage, projectActivo, setTabProject, tabProject, user
               <div className="text-xs text-slate-500">Rev {projectActivo.revision} · {projectActivo.moneda}</div>
             </div>
             <div className="space-y-0.5">
-              <Nav icon="📄" label="Presupuesto"        active={page==='proyecto'&&tabProject==='presupuesto'} onClick={() => { setPage('proyecto'); setTabProject('presupuesto') }} />
-              <Nav icon="🧱" label="Materiales"         active={page==='proyecto'&&tabProject==='cat-mat'}     onClick={() => { setPage('proyecto'); setTabProject('cat-mat') }} />
-              <Nav icon="👷" label="Mano de Obra"       active={page==='proyecto'&&tabProject==='cat-mo'}      onClick={() => { setPage('proyecto'); setTabProject('cat-mo') }} />
-              <Nav icon="🔧" label="Herramientas/Equipo" active={page==='proyecto'&&tabProject==='cat-he'}     onClick={() => { setPage('proyecto'); setTabProject('cat-he') }} />
-              <Nav icon="🏢" label="Subcontratos"       active={page==='proyecto'&&tabProject==='cat-sub'}     onClick={() => { setPage('proyecto'); setTabProject('cat-sub') }} />
+              <Nav icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zM6 20V4h7v5h5v11H6z"/></svg>} label="Presupuesto"        active={page==='proyecto'&&tabProject==='presupuesto'} onClick={() => { setPage('proyecto'); setTabProject('presupuesto') }} />
+              <Nav icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M20 3H4v10c0 2.21 1.79 4 4 4h6c2.21 0 4-1.79 4-4v-3h2c1.11 0 2-.89 2-2V5c0-1.11-.89-2-2-2zm0 5h-2V5h2v3zM4 19h16v2H4z"/></svg>} label="Materiales"         active={page==='proyecto'&&tabProject==='cat-mat'}     onClick={() => { setPage('proyecto'); setTabProject('cat-mat') }} />
+              <Nav icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>} label="Mano de Obra"       active={page==='proyecto'&&tabProject==='cat-mo'}      onClick={() => { setPage('proyecto'); setTabProject('cat-mo') }} />
+              <Nav icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z"/></svg>} label="Herramientas/Equipo" active={page==='proyecto'&&tabProject==='cat-he'}     onClick={() => { setPage('proyecto'); setTabProject('cat-he') }} />
+              <Nav icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>} label="Subcontratos"       active={page==='proyecto'&&tabProject==='cat-sub'}     onClick={() => { setPage('proyecto'); setTabProject('cat-sub') }} />
             </div>
           </div>
         )}
         <div>
           <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 px-3 mb-2">Herramientas</div>
           <div className="space-y-0.5">
-            <Nav icon="📥" label="Plantillas"          active={page==='plantillas'} onClick={() => setPage('plantillas')} />
-            <Nav icon="💳" label="Planes y Facturación" active={page==='planes'}     onClick={() => setPage('planes')} />
+            <Nav icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/></svg>} label="Reportes"           active={false} onClick={() => {}} />
+            <Nav icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 2l-5 4.5v11l5-4.5V2zm-3 3.86l1-.9v7.14l-1 .9V5.86zM1 6v14.65l6-2.14 6 2.14 6-2.14V2l-6 2.14L7 2 1 6zm4 11.59l-2 .72V7.66l2-.71v10.64zm4 1.43l-2-.71V7.66l2 .71v10.65zm2-10.65l2-.71v10.64l-2 .71V8.37z"/></svg>} label="Biblioteca"          active={page==='plantillas'} onClick={() => setPage('plantillas')} />
+            <Nav icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg>} label="Planes y Facturación" active={page==='planes'}     onClick={() => setPage('planes')} />
           </div>
         </div>
       </div>
-      <div className="px-3 py-3 border-t border-white/5 flex items-center gap-3">
-        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-400 to-purple-600 flex items-center justify-center text-white font-bold">
+      <div className="px-3 py-3 border-t border-[#1e72d8]/10 flex items-center gap-3">
+        <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-[#1e72d8] to-[#0d1b2e] flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
           {(user?.name || 'U').slice(0,2).toUpperCase()}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-semibold truncate">{user?.name}</div>
-          <div className="text-xs text-slate-400 truncate">{user?.empresa}</div>
+          <div className="text-sm font-semibold truncate text-white">{user?.name || 'Usuario'}</div>
+          <div className="text-xs text-slate-400 truncate">{user?.empresa || ''}</div>
         </div>
-        <button onClick={onLogout} className="p-2 hover:bg-white/5 rounded-lg text-slate-400" title="Salir">↪</button>
+        <button onClick={onLogout} title="Cerrar sesión" className="p-1.5 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition-colors flex-shrink-0">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
+        </button>
       </div>
     </aside>
   )
@@ -838,59 +841,222 @@ function StatCard({ label, value, sub, accent }) {
   )
 }
 
-function InicioPage({ proyectos, openProject, addProject, userName }) {
+function InicioPage({ proyectos, openProject, addProject, setPage, userName }) {
   const h = new Date().getHours()
   const saludo = h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches'
-  const total   = proyectos.reduce((s, p) => s + calcKPIs(p).total, 0)
-  const activos = proyectos.filter(p => p.estado === 'Activo').length
-  const enRev   = proyectos.filter(p => p.estado === 'En revisión').length
+
+  const totalCartera  = proyectos.reduce((s, p) => s + calcKPIs(p).total, 0)
+  const activos       = proyectos.filter(p => p.estado === 'Activo').length
+  const enRevision    = proyectos.filter(p => p.estado === 'En revisión').length
+  const aprobados     = proyectos.filter(p => p.estado === 'Aprobado').length
+  const tasaAprobacion = proyectos.length > 0 ? Math.round((aprobados / proyectos.length) * 100) : 0
+
+  const PROJ_COLORS = ['#0d1b2e','#1e72d8','#059669','#7c3aed','#dc2626','#d97706','#0891b2']
+  const getColor = i => PROJ_COLORS[i % PROJ_COLORS.length]
+
+  const getProgress = p => {
+    let filled = 0, total = 0
+    const walk = its => its.forEach(it => {
+      if (it.tipo === 'actividad') {
+        total++
+        const f = it.ficha || {}
+        const n = (f.materiales||[]).length + (f.manoObra||[]).length + (f.herramientaEquipo||[]).length + (f.subcontratos||[]).length
+        if (n > 0) filled++
+      } else if (it.children) walk(it.children)
+    })
+    walk(p.items || [])
+    return total > 0 ? Math.round(filled / total * 100) : 0
+  }
+
+  const recent    = proyectos.slice(0, 5)
+  const favorites = [...proyectos].sort((a, b) => calcKPIs(b).total - calcKPIs(a).total).slice(0, 3)
+
   return (
     <div className="p-8 max-w-7xl mx-auto">
-      <div className="mb-2 text-gray-500">{saludo},</div>
-      <h1 className="text-5xl font-bold tracking-tight mb-2">{userName} 👋</h1>
-      <div className="text-gray-600 mb-8">
-        Tenés <span className="font-semibold text-slate-900">{activos} proyecto{activos!==1?'s':''} activo{activos!==1?'s':''}</span>
-        {enRev > 0 && <Fragment> y <span className="font-semibold text-amber-600">{enRev} en revisión</span></Fragment>}.
-      </div>
-      <div className="grid md:grid-cols-4 gap-4 mb-10">
-        <StatCard label="Valor total cartera" value={moneyK(total)} sub={`Suma de ${proyectos.length} proyecto${proyectos.length!==1?'s':''}`} accent />
-        <StatCard label="Proyectos activos"   value={activos}       sub="esta semana" />
-        <StatCard label="En revisión"          value={enRev}         sub="Pendientes de aprobación" />
-        <StatCard label="Total proyectos"      value={proyectos.length} sub="en tu cuenta" />
-      </div>
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="font-bold text-lg">Continuar trabajando</h2>
-        <button onClick={addProject} className="px-4 py-2 bg-[#1e72d8] hover:bg-[#1558b0] text-white rounded-xl font-bold text-sm flex items-center gap-2 transition-colors"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>Nuevo Proyecto</button>
-      </div>
-      <div className="space-y-3">
-        {proyectos.slice(0,5).map(p => {
-          const k=calcKPIs(p)
-          return (
-            <div key={p.id} onClick={()=>openProject(p)} className="bg-white border border-gray-200 hover:border-[#1e72d8] hover:shadow-md cursor-pointer rounded-2xl p-4 flex items-center gap-4 transition-all">
-              <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center text-2xl">📄</div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${p.estado==='Activo'?'bg-emerald-50 text-emerald-700':p.estado==='En revisión'?'bg-amber-50 text-amber-700':'bg-gray-100 text-gray-600'}`}>{p.estado}</span>
-                  <span className="text-xs bg-gray-100 px-2 py-0.5 rounded-full">Rev {p.revision}</span>
-                  <span className="text-xs text-gray-400">{p.ultimaEdicion}</span>
-                </div>
-                <div className="font-semibold truncate">{p.nombreProyecto}</div>
-                <div className="text-xs text-gray-500 truncate">{p.cliente} · {p.lugar}</div>
-              </div>
-              <div className="text-right">
-                <div className="text-xs text-gray-400 uppercase">Total</div>
-                <div className="font-bold">{money(k.total)}</div>
-              </div>
-            </div>
-          )
-        })}
-        {!proyectos.length && (
-          <div className="text-center py-16 text-gray-400">
-            <div className="text-4xl mb-4">📋</div>
-            <div className="font-medium mb-2">No tenés proyectos aún</div>
-            <button onClick={addProject} className="mt-2 px-5 py-2 bg-[#1e72d8] hover:bg-[#1558b0] text-white rounded-xl font-bold text-sm transition-colors">Crear primer proyecto</button>
+
+      {/* ── Header ── */}
+      <div className="flex items-start justify-between mb-8">
+        <div>
+          <div className="text-gray-400 text-sm mb-1">{saludo},</div>
+          <h1 className="text-4xl font-bold tracking-tight text-[#0d1b2e] mb-2">{userName} 👋</h1>
+          <div className="text-gray-500 text-sm">
+            Tienes <span className="font-semibold text-[#0d1b2e]">{activos} proyecto{activos!==1?'s':''} activo{activos!==1?'s':''}</span>
+            {enRevision > 0 && <> y <span className="font-semibold text-amber-600">{enRevision} en revisión</span></>}.
           </div>
-        )}
+        </div>
+        <div className="flex gap-2 flex-shrink-0">
+          <button onClick={() => setPage('plantillas')} className="px-4 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-xl text-sm font-medium flex items-center gap-2 transition-colors shadow-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+            Importar
+          </button>
+          <button onClick={addProject} className="px-4 py-2 bg-[#1e72d8] hover:bg-[#1558b0] text-white rounded-xl text-sm font-bold flex items-center gap-2 transition-colors shadow-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+            Nuevo Proyecto
+          </button>
+        </div>
+      </div>
+
+      {/* ── KPI Cards ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        {/* Valor total - dark card */}
+        <div className="bg-[#0d1b2e] rounded-2xl p-5 text-white col-span-1">
+          <div className="flex items-center gap-2 text-[#60b0ff] text-[10px] font-bold uppercase tracking-wider mb-3">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg>
+            Valor total cartera
+          </div>
+          <div className="text-3xl font-bold mb-1">{moneyK(totalCartera)}</div>
+          <div className="text-xs text-[#94a3b8]">Suma de {proyectos.length} proyecto{proyectos.length!==1?'s':''}</div>
+        </div>
+
+        <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
+          <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-3">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" className="text-emerald-500"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+            Proyectos activos
+          </div>
+          <div className="text-3xl font-bold text-[#0d1b2e] mb-1">{activos}</div>
+          <div className="text-xs text-emerald-600 font-medium">{enRevision} en revisión</div>
+        </div>
+
+        <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
+          <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-3">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" className="text-amber-500"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+            En revisión
+          </div>
+          <div className="text-3xl font-bold text-[#0d1b2e] mb-1">{enRevision}</div>
+          <div className="text-xs text-gray-400">Pendientes de aprobación</div>
+        </div>
+
+        <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
+          <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-3">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" className="text-[#1e72d8]"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+            Tasa de aprobación
+          </div>
+          <div className="text-3xl font-bold text-[#0d1b2e] mb-1">{tasaAprobacion}%</div>
+          <div className="text-xs text-[#1e72d8] font-medium">{aprobados} aprobado{aprobados!==1?'s':''} de {proyectos.length}</div>
+        </div>
+      </div>
+
+      {/* ── Main 2-col ── */}
+      <div className="grid lg:grid-cols-5 gap-6">
+
+        {/* Continuar trabajando */}
+        <div className="lg:col-span-3">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="font-bold text-[#0d1b2e] text-base flex items-center gap-2">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" className="text-gray-400"><path d="M22 5.18L10.59 16.6l-4.24-4.24 1.41-1.41 2.83 2.83 10-10.01L22 5.18zm-2.21 5.04c.13.57.21 1.17.21 1.78 0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8c1.58 0 3.04.46 4.28 1.25l1.44-1.44A9.9 9.9 0 0012 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10c0-1.19-.22-2.33-.6-3.39l-1.61 1.61z"/></svg>
+                Continuar trabajando
+              </h2>
+              <div className="text-xs text-gray-400 mt-0.5">Proyectos abiertos recientemente</div>
+            </div>
+            <button onClick={() => setPage('proyectos')} className="text-sm text-[#1e72d8] hover:underline font-medium flex items-center gap-1">
+              Ver todos
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
+            </button>
+          </div>
+          <div className="space-y-2">
+            {recent.length === 0 ? (
+              <div className="text-center py-14 text-gray-400 bg-white border border-dashed border-gray-300 rounded-2xl">
+                <div className="text-4xl mb-3">📋</div>
+                <div className="text-sm font-medium mb-1">No hay proyectos aún</div>
+                <div className="text-xs text-gray-300 mb-4">Crea tu primer presupuesto de obra</div>
+                <button onClick={addProject} className="px-4 py-2 bg-[#1e72d8] hover:bg-[#1558b0] text-white rounded-xl text-sm font-semibold transition-colors">
+                  + Crear proyecto
+                </button>
+              </div>
+            ) : recent.map((p, idx) => {
+              const k = calcKPIs(p)
+              const pct = getProgress(p)
+              const col = getColor(idx)
+              return (
+                <div key={p.id} onClick={() => openProject(p)} className="bg-white border border-gray-100 hover:border-[#1e72d8] hover:shadow-md cursor-pointer rounded-xl p-4 flex items-center gap-4 transition-all group">
+                  <div className="w-11 h-11 rounded-xl flex-shrink-0 flex items-center justify-center" style={{background: col}}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="white" opacity="0.9"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border ${p.estado==='Activo'?'bg-emerald-50 text-emerald-700 border-emerald-200':p.estado==='En revisión'?'bg-amber-50 text-amber-700 border-amber-200':p.estado==='Aprobado'?'bg-blue-50 text-blue-700 border-blue-200':'bg-gray-50 text-gray-500 border-gray-200'}`}>{p.estado}</span>
+                      <span className="text-[11px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">Rev {p.revision}</span>
+                      <span className="text-[11px] text-gray-400">· {p.ultimaEdicion}</span>
+                    </div>
+                    <div className="font-semibold text-[#0d1b2e] truncate text-sm">{p.nombreProyecto}</div>
+                    <div className="text-xs text-gray-400 truncate mt-0.5">
+                      {p.cliente||'Sin cliente'}{p.lugar ? ` · 📍 ${p.lugar}` : ''}
+                    </div>
+                    {k.nActividades > 0 && (
+                      <div className="mt-2.5 flex items-center gap-2">
+                        <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full" style={{width:`${pct}%`, background: col}}></div>
+                        </div>
+                        <span className="text-[10px] text-gray-400 font-medium w-8 text-right">{pct}%</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-right flex-shrink-0 pl-2">
+                    <div className="text-[10px] text-gray-400 uppercase font-semibold tracking-wider mb-0.5">TOTAL</div>
+                    <div className="font-bold text-[#0d1b2e] text-sm whitespace-nowrap">{money(k.total)}</div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Right column */}
+        <div className="lg:col-span-2 space-y-6">
+
+          {/* Favoritos */}
+          <div>
+            <h2 className="font-bold text-[#0d1b2e] text-base mb-1 flex items-center gap-2">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" className="text-amber-400"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+              Favoritos
+            </h2>
+            <div className="text-xs text-gray-400 mb-3">Proyectos más grandes</div>
+            <div className="space-y-2">
+              {favorites.length === 0 ? (
+                <div className="text-center py-6 text-gray-300 bg-white border border-dashed border-gray-200 rounded-xl text-xs">Sin proyectos aún</div>
+              ) : favorites.map((p, idx) => {
+                const k = calcKPIs(p)
+                const col = getColor(idx)
+                return (
+                  <div key={p.id} onClick={() => openProject(p)} className="bg-white border border-gray-100 hover:border-[#1e72d8] hover:shadow-sm cursor-pointer rounded-xl p-3.5 flex items-center gap-3 transition-all">
+                    <div className="w-9 h-9 rounded-xl flex-shrink-0" style={{background: col}}></div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-sm text-[#0d1b2e] truncate leading-tight">{p.nombreProyecto}</div>
+                      <div className="text-xs text-gray-400 font-mono mt-0.5">{money(k.total)}</div>
+                    </div>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" className="text-gray-300 flex-shrink-0"><path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Acciones rápidas */}
+          <div>
+            <h2 className="font-bold text-[#0d1b2e] text-base mb-1 flex items-center gap-2">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" className="text-[#1e72d8]"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>
+              Acciones rápidas
+            </h2>
+            <div className="text-xs text-gray-400 mb-3">Atajos frecuentes</div>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { label:'Nuevo Proyecto', icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>, color:'#1e72d8', bg:'bg-blue-50', action: addProject },
+                { label:'Importar Excel', icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>, color:'#059669', bg:'bg-emerald-50', action: () => setPage('plantillas') },
+                { label:'Ver Proyectos',  icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20 6h-2.18c.07-.44.18-.88.18-1.35C18 2.51 15.49 0 12.35 0c-1.7 0-3.21.72-4.27 1.86L7 3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-8-4c1.54 0 2.88.81 3.67 2H8.1l.98-1.1A3.57 3.57 0 0112 2zM4 19V5h3l-1.5 1.69A2 2 0 007 8h11v11H4z"/></svg>, color:'#7c3aed', bg:'bg-purple-50', action: () => setPage('proyectos') },
+                { label:'Planes',         icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg>, color:'#d97706', bg:'bg-amber-50', action: () => setPage('planes') },
+              ].map(({ label, icon, color, bg, action }) => (
+                <button key={label} onClick={action} className={`bg-white border border-gray-100 hover:shadow-sm rounded-xl p-3 text-left transition-all group`}>
+                  <div className={`w-8 h-8 rounded-lg ${bg} flex items-center justify-center mb-2 group-hover:scale-110 transition-transform`} style={{color}}>
+                    {icon}
+                  </div>
+                  <div className="text-xs font-semibold text-[#0d1b2e] leading-tight">{label}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+        </div>
       </div>
     </div>
   )
@@ -1213,7 +1379,7 @@ export default function MainApp() {
           saving={saving}
         />
 
-        {page==='inicio'     && <InicioPage    proyectos={proyectos} openProject={openProject} addProject={addProject} userName={userName} />}
+        {page==='inicio'     && <InicioPage    proyectos={proyectos} openProject={openProject} addProject={addProject} setPage={setPage} userName={userName} />}
         {page==='proyectos'  && <ProyectosPage proyectos={proyectos} openProject={openProject} addProject={addProject} deleteProject={deleteProject} />}
         {page==='plantillas' && <PlantillasPage />}
         {page==='planes'     && <PlanesPage />}
