@@ -505,16 +505,25 @@ function GuardarVersionDialog({ open, onClose, budget, setBudget }) {
 }
 
 // ============ CONFIG PROYECTO MODAL ============
+// Definido fuera del modal para evitar re-mount en cada keystroke
+function ConfigField({ label, k, type = 'text', form, setForm }) {
+  return (
+    <div className="field">
+      <label className="field-label">{label}</label>
+      <input
+        type={type}
+        className="input"
+        value={form[k] || ''}
+        onChange={e => setForm(prev => ({ ...prev, [k]: type === 'number' ? parseFloat(e.target.value) || 0 : e.target.value }))}
+      />
+    </div>
+  )
+}
+
 function ConfigProyectoModal({ open, onClose, budget, setBudget }) {
   const [form, setForm] = useState(budget)
   useEffect(() => { if (open) setForm(budget) }, [open])
   if (!open) return null
-  const F = ({ label, k, type = 'text' }) => (
-    <div className="field">
-      <label className="field-label">{label}</label>
-      <input type={type} className="input" value={form[k] || ''} onChange={e => setForm({ ...form, [k]: type === 'number' ? parseFloat(e.target.value) || 0 : e.target.value })} />
-    </div>
-  )
   const handleLogo = (e, k) => { const f = e.target.files && e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = ev => setForm({ ...form, [k]: ev.target.result }); r.readAsDataURL(f) }
   return (
     <Drawer open={open} onClose={onClose} title="Configuración del Proyecto" subtitle="Datos que aparecerán en la cotización" width={560}
@@ -526,28 +535,28 @@ function ConfigProyectoModal({ open, onClose, budget, setBudget }) {
         <div>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--c-text)', marginBottom: 10 }}>Datos generales</div>
           <div className="grid-2">
-            <F label="Nombre del proyecto" k="nombreProyecto" />
-            <F label="Tipo" k="tipo" />
-            <F label="Realizado por" k="realizadoPor" />
-            <F label="Fecha" k="fecha" type="date" />
+            <ConfigField label="Nombre del proyecto" k="nombreProyecto" form={form} setForm={setForm} />
+            <ConfigField label="Tipo" k="tipo" form={form} setForm={setForm} />
+            <ConfigField label="Realizado por" k="realizadoPor" form={form} setForm={setForm} />
+            <ConfigField label="Fecha" k="fecha" type="date" form={form} setForm={setForm} />
           </div>
         </div>
         <div className="divider"></div>
         <div>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--c-text)', marginBottom: 10 }}>Partes involucradas</div>
           <div className="grid-2">
-            <F label="Cotizante" k="cotizante" />
-            <F label="Ofertante" k="ofertante" />
-            <F label="Cliente" k="cliente" />
-            <F label="Ubicación" k="lugar" />
+            <ConfigField label="Cotizante" k="cotizante" form={form} setForm={setForm} />
+            <ConfigField label="Ofertante" k="ofertante" form={form} setForm={setForm} />
+            <ConfigField label="Cliente" k="cliente" form={form} setForm={setForm} />
+            <ConfigField label="Ubicación" k="lugar" form={form} setForm={setForm} />
           </div>
         </div>
         <div className="divider"></div>
         <div>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--c-text)', marginBottom: 10 }}>Económico</div>
           <div className="grid-2">
-            <F label="Moneda" k="moneda" />
-            <F label="Revisión" k="revision" type="number" />
+            <ConfigField label="Moneda" k="moneda" form={form} setForm={setForm} />
+            <ConfigField label="Revisión" k="revision" type="number" form={form} setForm={setForm} />
           </div>
         </div>
         <div className="divider"></div>
