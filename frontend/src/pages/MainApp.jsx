@@ -1672,6 +1672,45 @@ export default function MainApp() {
   const budget    = useMemo(() => proyectos.find(p => p.id === activeId) || null, [proyectos, activeId])
   const setBudget = b => setProyectos(ps => ps.map(p => p.id === b.id ? b : p))
 
+  // Sincronizar fichas de actividades con el mismo nombre al abrir un proyecto
+  useEffect(() => {
+    if (!activeId) return
+    setProyectos(ps => ps.map(p => {
+      if (p.id !== activeId) return p
+      // Buscar la ficha más completa por descripción
+      const fichaByDesc = {}
+      const walk = items => items.forEach(it => {
+        if (it.tipo === 'actividad') {
+          const desc = it.descripcion?.trim()
+          const count = (it.ficha?.materiales?.length || 0) + (it.ficha?.manoObra?.length || 0) +
+                        (it.ficha?.herramientaEquipo?.length || 0) + (it.ficha?.subcontratos?.length || 0)
+          if (desc && count > 0 && (!fichaByDesc[desc] || count > fichaByDesc[desc].count))
+            fichaByDesc[desc] = { ficha: it.ficha, count }
+        }
+        if (it.children?.length) walk(it.children)
+      })
+      walk(p.items)
+      if (!Object.keys(fichaByDesc).length) return p
+      // Aplicar la ficha más completa a todas las actividades con el mismo nombre
+      let changed = false
+      const its = JSON.parse(JSON.stringify(p.items))
+      const apply = items => items.forEach(it => {
+        if (it.tipo === 'actividad') {
+          const desc = it.descripcion?.trim()
+          const best = fichaByDesc[desc]
+          if (best) {
+            const count = (it.ficha?.materiales?.length || 0) + (it.ficha?.manoObra?.length || 0) +
+                          (it.ficha?.herramientaEquipo?.length || 0) + (it.ficha?.subcontratos?.length || 0)
+            if (count < best.count) { it.ficha = JSON.parse(JSON.stringify(best.ficha)); changed = true }
+          }
+        }
+        if (it.children?.length) apply(it.children)
+      })
+      apply(its)
+      return changed ? { ...p, items: its } : p
+    }))
+  }, [activeId])
+
   // Auto-guardado con debounce
   useEffect(() => {
     if (!budget || loadingData) return
