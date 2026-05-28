@@ -1134,37 +1134,41 @@ function Dropdown({ trigger, children, align = 'right', minWidth = 220 }) {
 }
 
 // ============ SYNC HELPER ============
-function syncFichasByName(items) {
-  // Primera pasada: encontrar la ficha más completa por descripción
-  const fichaByDesc = {}
-  const walk = its => its.forEach(it => {
+// Recorre el árbol de items y retorna un mapa { descripcion → ficha }
+// con la PRIMERA ficha no-vacía encontrada por nombre (orden top-down)
+function buildFichaMap(items) {
+  const map = {}
+  const hasContent = f => !!(f?.materiales?.length || f?.manoObra?.length || f?.herramientaEquipo?.length || f?.subcontratos?.length)
+  const walk = arr => arr.forEach(it => {
     if (it.tipo === 'actividad') {
-      const desc = it.descripcion?.trim()
-      const count = (it.ficha?.materiales?.length || 0) + (it.ficha?.manoObra?.length || 0) +
-                    (it.ficha?.herramientaEquipo?.length || 0) + (it.ficha?.subcontratos?.length || 0)
-      if (desc && count > 0 && (!fichaByDesc[desc] || count > fichaByDesc[desc].count))
-        fichaByDesc[desc] = { ficha: it.ficha, count }
+      const d = it.descripcion?.trim()
+      if (d && !map[d] && hasContent(it.ficha)) map[d] = it.ficha
     }
     if (it.children?.length) walk(it.children)
   })
   walk(items)
-  if (!Object.keys(fichaByDesc).length) return items
-  // Segunda pasada: aplicar la mejor ficha a todas las del mismo nombre con menor cantidad
+  return map
+}
+
+// Aplica el mapa de fichas a TODAS las actividades con ese nombre (sobreescribe)
+function applyFichaMap(items, map) {
   const its = JSON.parse(JSON.stringify(items))
   const apply = arr => arr.forEach(it => {
     if (it.tipo === 'actividad') {
-      const desc = it.descripcion?.trim()
-      const best = fichaByDesc[desc]
-      if (best) {
-        const count = (it.ficha?.materiales?.length || 0) + (it.ficha?.manoObra?.length || 0) +
-                      (it.ficha?.herramientaEquipo?.length || 0) + (it.ficha?.subcontratos?.length || 0)
-        if (count < best.count) it.ficha = JSON.parse(JSON.stringify(best.ficha))
-      }
+      const d = it.descripcion?.trim()
+      if (d && map[d]) it.ficha = JSON.parse(JSON.stringify(map[d]))
     }
     if (it.children?.length) apply(it.children)
   })
   apply(its)
   return its
+}
+
+// Punto de entrada para el botón Sincronizar
+function syncFichasByName(items) {
+  const map = buildFichaMap(items)
+  if (!Object.keys(map).length) return items
+  return applyFichaMap(items, map)
 }
 
 // ============ PRESUPUESTO TABLE ============
@@ -1173,9 +1177,25 @@ function PresupuestoTableComp({ budget, setBudget, onOpenFicha, params }) {
     const its = JSON.parse(JSON.stringify(budget.items))
     let cur = its; for (let i = 0; i < path.length - 1; i++) cur = cur[path[i]].children
     cur[path[path.length - 1]][fld] = v
-    // Al cambiar el nombre de una actividad, sincronizar ficha con otras del mismo nombre
-    const finalIts = fld === 'descripcion' ? syncFichasByName(its) : its
-    setBudget({ ...budget, items: finalIts })
+    if (fld === 'descripcion') {
+      // Al renombrar: si ya existe otra actividad con ese nombre y tiene ficha, adoptarla
+      const newDesc = v?.trim()
+      const pathKey = path.join('-')
+      const hasContent = f => !!(f?.materiales?.length || f?.manoObra?.length || f?.herramientaEquipo?.length || f?.subcontratos?.length)
+      let masterFicha = null
+      const findMaster = (arr, pPath) => {
+        arr.forEach((it, idx) => {
+          if (masterFicha) return
+          const curKey = [...pPath, idx].join('-')
+          if (it.tipo === 'actividad' && curKey !== pathKey && it.descripcion?.trim() === newDesc && hasContent(it.ficha))
+            masterFicha = it.ficha
+          if (it.children?.length) findMaster(it.children, [...pPath, idx])
+        })
+      }
+      findMaster(its, [])
+      if (masterFicha) cur[path[path.length - 1]].ficha = JSON.parse(JSON.stringify(masterFicha))
+    }
+    setBudget({ ...budget, items: its })
   }
   const renumber = (items, parentId = '') => {
     items.forEach((item, idx) => {
