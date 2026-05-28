@@ -705,7 +705,7 @@ function InsumoSelect({ catalogos, categoria, value, onChange, onCreateNew }) {
 }
 
 // ============ FICHA SECTION ============
-function FichaSection({ title, k, total, ficha, catalogos, onAdd, onDel, onUpd, onCreateIns }) {
+function FichaSection({ title, k, total, ficha, catalogos, onAdd, onDel, onUpd, onCreateIns, moTotal = 0 }) {
   return (
     <div style={{ marginBottom: 16, border: '1px solid var(--c-line)', borderRadius: 'var(--r-lg)', overflow: 'hidden' }}>
       <div style={{ background: 'var(--c-ink)', color: '#fff', padding: '8px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -728,6 +728,8 @@ function FichaSection({ title, k, total, ficha, catalogos, onAdd, onDel, onUpd, 
         <tbody>
           {(ficha[k] || []).map((c, i) => {
             const ins = findInsumo(catalogos, k, c.insumoId)
+            const isMoBased = k === 'herramientaEquipo' && normalize(ins?.descripcion) === 'herramienta menor'
+            const effectiveBase = isMoBased ? moTotal : (ins?.costoBase || 0)
             return (
               <tr key={c.id} className="activity">
                 <td className="id" style={{ fontSize: 11, color: 'var(--c-text-3)', fontFamily: 'var(--font-mono)' }}>{ins?.codigo || (i + 1)}</td>
@@ -737,8 +739,11 @@ function FichaSection({ title, k, total, ficha, catalogos, onAdd, onDel, onUpd, 
                 <td className="num" style={{ color: 'var(--c-text-2)', fontSize: 12 }}>{ins ? ins.unidad : '—'}</td>
                 <td className="num"><input type="number" step="any" className="cell-input num" value={c.rendimiento} onChange={e => onUpd(k, i, 'rendimiento', parseFloat(e.target.value) || 0)} /></td>
                 <td className="num"><input type="number" step="any" className="cell-input num" value={c.desperdicio} onChange={e => onUpd(k, i, 'desperdicio', parseFloat(e.target.value) || 0)} /></td>
-                <td className="num" style={{ color: 'var(--c-text-2)' }}>{ins ? money(ins.costoBase) : '—'}</td>
-                <td className="num" style={{ fontWeight: 600 }}>{money(conceptoCost(c, catalogos, k))}</td>
+                <td className="num" style={{ color: isMoBased ? 'var(--c-accent)' : 'var(--c-text-2)' }} title={isMoBased ? 'Calculado sobre el total MO' : undefined}>
+                  {ins ? money(effectiveBase) : '—'}
+                  {isMoBased && <span style={{ fontSize: 9, marginLeft: 3, color: 'var(--c-accent)' }}>MO</span>}
+                </td>
+                <td className="num" style={{ fontWeight: 600 }}>{money(conceptoCost(c, catalogos, k, { moTotal }))}</td>
                 <td style={{ textAlign: 'center' }}><button onClick={() => onDel(k, i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--c-danger)', fontSize: 16, lineHeight: 1 }}>×</button></td>
               </tr>
             )
@@ -786,7 +791,8 @@ function FichaCostoModal({ open, onClose, actividad, budget, catalogos, params, 
           {CATEGORIAS.map(cat => (
             <FichaSection key={cat.key} title={cat.label.toUpperCase()} k={cat.key}
               total={cat.key === 'materiales' ? calc.totMat : cat.key === 'manoObra' ? calc.totMo : cat.key === 'herramientaEquipo' ? calc.totHe : calc.totSub}
-              ficha={f} catalogos={catalogos} onAdd={add} onDel={del} onUpd={upd} onCreateIns={createIns} />
+              ficha={f} catalogos={catalogos} onAdd={add} onDel={del} onUpd={upd} onCreateIns={createIns}
+              moTotal={calc.totMo} />
           ))}
           <div style={{ marginTop: 16, background: 'var(--c-bg-2)', border: '1px solid var(--c-line)', borderRadius: 'var(--r-lg)', padding: 16 }}>
             <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12, color: 'var(--c-text-2)' }}>Resumen</div>

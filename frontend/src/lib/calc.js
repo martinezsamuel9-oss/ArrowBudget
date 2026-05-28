@@ -27,22 +27,30 @@ export const normalize = s => (s || '').toString().trim().toLowerCase().replace(
 export const findInsumo = (cat, k, id) =>
   (cat && cat[k] ? cat[k] : []).find(i => i.id === id)
 
-export const conceptoCost = (c, cat, k) => {
+const isHerramientaMenor = ins =>
+  normalize(ins?.descripcion) === 'herramienta menor'
+
+// opts.moTotal: si el insumo es "Herramienta Menor", usa moTotal como costoBase
+export const conceptoCost = (c, cat, k, opts = {}) => {
   const ins = findInsumo(cat, k, c.insumoId)
   if (!ins) return 0
-  return round2((+c.rendimiento || 0) * (+ins.costoBase || 0) * (1 + (+c.desperdicio || 0) / 100))
+  const base = (k === 'herramientaEquipo' && isHerramientaMenor(ins) && opts.moTotal !== undefined)
+    ? opts.moTotal
+    : (+ins.costoBase || 0)
+  return round2((+c.rendimiento || 0) * base * (1 + (+c.desperdicio || 0) / 100))
 }
 
-const sumCat = (arr, cat, k) =>
-  (arr || []).reduce((s, c) => s + conceptoCost(c, cat, k), 0)
+const sumCat = (arr, cat, k, opts = {}) =>
+  (arr || []).reduce((s, c) => s + conceptoCost(c, cat, k, opts), 0)
 
 // ============ CÁLCULOS PRINCIPALES ============
 export const calcFicha = (f, cat, p) => {
   f = f || { materiales: [], manoObra: [], herramientaEquipo: [], subcontratos: [] }
-  const totMat = round2(sumCat(f.materiales,         cat, 'materiales'))
-  const totMo  = round2(sumCat(f.manoObra,           cat, 'manoObra'))
-  const totHe  = round2(sumCat(f.herramientaEquipo,  cat, 'herramientaEquipo'))
-  const totSub = round2(sumCat(f.subcontratos,       cat, 'subcontratos'))
+  const totMat = round2(sumCat(f.materiales,        cat, 'materiales'))
+  const totMo  = round2(sumCat(f.manoObra,          cat, 'manoObra'))
+  // Herramienta: items con unidad "% (MO)" usan el total MO como costoBase
+  const totHe  = round2(sumCat(f.herramientaEquipo, cat, 'herramientaEquipo', { moTotal: totMo }))
+  const totSub = round2(sumCat(f.subcontratos,      cat, 'subcontratos'))
   const cd      = round2(totMat + totMo + totHe + totSub)
   const ind     = round2(cd * (p.pctIndirectos  / 100))
   const imp     = round2((cd + ind) * (p.pctImprevistos / 100))
