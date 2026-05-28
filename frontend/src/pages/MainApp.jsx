@@ -1699,9 +1699,23 @@ export default function MainApp() {
   const updFicha = na => {
     if (!fichaPath) return
     const its = JSON.parse(JSON.stringify(budget.items))
+    // Update the specific activity at fichaPath
     let cur = its
     for (let i = 0; i < fichaPath.length - 1; i++) cur = cur[fichaPath[i]].children
     cur[fichaPath[fichaPath.length - 1]] = na
+    // Propagate ficha to all activities with exactly the same descripcion
+    const desc = na.descripcion?.trim()
+    if (desc) {
+      const propagate = items => {
+        items.forEach(it => {
+          if (it.tipo === 'actividad' && it.descripcion?.trim() === desc) {
+            it.ficha = JSON.parse(JSON.stringify(na.ficha))
+          }
+          if (it.children?.length) propagate(it.children)
+        })
+      }
+      propagate(its)
+    }
     setBudget({ ...budget, items: its })
   }
 
