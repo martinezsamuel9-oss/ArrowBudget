@@ -1303,7 +1303,7 @@ function CatalogoView({ budget, setBudget, categoria }) {
     setBudget({ ...budget, catalogos: nc }); setShowForm(false); setEditId(null); setForm({ codigo: '', descripcion: '', unidad: 'und', costoBase: 0, proveedor: '', notas: '' })
   }
   return (
-    <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+    <div className="card" style={{ padding: 0 }}>
       <div className="card-header">
         <div className="card-title">{categoria.icon} Lista de {categoria.label}</div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -1923,7 +1923,7 @@ export default function MainApp() {
                     </div>
                   </div>
                   {/* Table */}
-                  <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                  <div className="card" style={{ padding: 0 }}>
                     <PresupuestoTableComp budget={budget} setBudget={setBudget} onOpenFicha={p => setFichaPath(p)} params={params} />
                   </div>
                 </Fragment>
