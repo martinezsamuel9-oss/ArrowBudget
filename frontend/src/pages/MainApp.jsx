@@ -1140,22 +1140,36 @@ function PresupuestoTableComp({ budget, setBudget, onOpenFicha, params }) {
     let cur = its; for (let i = 0; i < path.length - 1; i++) cur = cur[path[i]].children
     cur[path[path.length - 1]][fld] = v; setBudget({ ...budget, items: its })
   }
+  const renumber = (items, parentId = '') => {
+    items.forEach((item, idx) => {
+      const pos = idx + 1
+      if (!parentId) {
+        item.id = String(pos)
+      } else if (item.tipo === 'actividad') {
+        item.id = `${parentId}.${String(pos).padStart(2, '0')}`
+      } else {
+        item.id = `${parentId}.${pos}`
+      }
+      if (item.children?.length) renumber(item.children, item.id)
+    })
+  }
   const add = (path, tipo) => {
     const its = JSON.parse(JSON.stringify(budget.items))
-    if (!path.length) { its.push({ id: String(its.length + 1), tipo: 'capitulo', descripcion: 'Nuevo Capítulo', children: [] }); setBudget({ ...budget, items: its }); return }
+    if (!path.length) { its.push({ id: String(its.length + 1), tipo: 'capitulo', descripcion: 'Nuevo Capítulo', children: [] }); renumber(its); setBudget({ ...budget, items: its }); return }
     let cur = its; for (let i = 0; i < path.length - 1; i++) cur = cur[path[i]].children
     const par = cur[path[path.length - 1]]; const ci = (par.children || []).length + 1
     const nid = tipo === 'actividad' ? par.id + '.' + String(ci).padStart(2, '0') : par.id + '.' + ci
     const ni = tipo === 'actividad'
       ? { id: nid, tipo: 'actividad', descripcion: 'Nueva actividad', unidad: 'und', cantidad: 1, ficha: { materiales: [], manoObra: [], herramientaEquipo: [], subcontratos: [] } }
       : { id: nid, tipo: 'subcapitulo', descripcion: 'Nuevo Sub-capítulo', children: [] }
-    par.children = [...(par.children || []), ni]; setBudget({ ...budget, items: its })
+    par.children = [...(par.children || []), ni]; renumber(its); setBudget({ ...budget, items: its })
   }
   const del = path => {
     if (!confirm('¿Eliminar este elemento?')) return
     const its = JSON.parse(JSON.stringify(budget.items))
     if (path.length === 1) its.splice(path[0], 1)
     else { let cur = its; for (let i = 0; i < path.length - 1; i++) cur = cur[path[i]].children; cur.splice(path[path.length - 1], 1) }
+    renumber(its)
     setBudget({ ...budget, items: its })
   }
 
@@ -1869,7 +1883,7 @@ export default function MainApp() {
             </div>
 
             {/* Body */}
-            <div className="page-body">
+            <div className="page-body" style={{ minHeight: 0 }}>
               {tabProject === 'presupuesto' && (
                 <Fragment>
                   {/* KPIs */}
