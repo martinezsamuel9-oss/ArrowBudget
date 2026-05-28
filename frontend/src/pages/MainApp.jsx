@@ -586,18 +586,50 @@ function ConfigProyectoModal({ open, onClose, budget, setBudget }) {
 }
 
 // ============ INSUMO SELECT ============
+// Dropdown con position:fixed para escapar de cualquier overflow:hidden padre
 function InsumoSelect({ catalogos, categoria, value, onChange, onCreateNew }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
-  const ref = useRef(null)
-  useClickOutside(ref, () => setOpen(false))
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 320 })
+  const triggerRef = useRef(null)
+  const dropRef = useRef(null)
+
+  // Calcula posición del trigger al abrir
+  const handleOpen = () => {
+    if (!open && triggerRef.current) {
+      const r = triggerRef.current.getBoundingClientRect()
+      const dropH = 320 // altura aprox del dropdown
+      const spaceBelow = window.innerHeight - r.bottom
+      const top = spaceBelow < dropH && r.top > dropH
+        ? r.top - dropH - 4   // abre hacia arriba si no hay espacio abajo
+        : r.bottom + 4
+      setPos({ top, left: r.left, width: Math.max(r.width, 320) })
+    }
+    setOpen(o => !o)
+  }
+
+  // Cerrar al hacer clic fuera
+  useEffect(() => {
+    if (!open) return
+    const handler = e => {
+      if (triggerRef.current?.contains(e.target)) return
+      if (dropRef.current?.contains(e.target)) return
+      setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
   const sel = (catalogos[categoria] || []).find(i => i.id === value)
   const qn = normalize(q)
   const list = (catalogos[categoria] || []).filter(i => !qn || normalize(i.descripcion).includes(qn) || normalize(i.codigo).includes(qn))
   const exact = (catalogos[categoria] || []).find(i => normalize(i.codigo) === qn)
+
   return (
-    <div ref={ref} style={{ position: 'relative', width: '100%' }}>
-      <button onClick={() => setOpen(o => !o)} style={{ width: '100%', textAlign: 'left', padding: '4px 8px', background: 'none', border: 'none', cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13 }}>
+    <div ref={triggerRef} style={{ position: 'relative', width: '100%' }}>
+      <button
+        onClick={handleOpen}
+        style={{ width: '100%', textAlign: 'left', padding: '4px 8px', background: 'none', border: 'none', cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13 }}>
         {sel ? (
           <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             {sel.codigo && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, background: 'var(--c-bg)', color: 'var(--c-text-3)', padding: '1px 5px', borderRadius: 3 }}>{sel.codigo}</span>}
@@ -605,16 +637,42 @@ function InsumoSelect({ catalogos, categoria, value, onChange, onCreateNew }) {
           </span>
         ) : <span style={{ color: 'var(--c-text-4)', fontStyle: 'italic', fontSize: 12 }}>— seleccionar —</span>}
       </button>
+
       {open && (
-        <div style={{ position: 'absolute', zIndex: 50, left: 0, marginTop: 2, width: 320, background: 'var(--c-surface)', border: '1px solid var(--c-line)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-xl)', overflow: 'hidden' }}>
-          <input autoFocus value={q} onChange={e => setQ(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && exact) { onChange(exact.id); setOpen(false); setQ('') } }}
-            placeholder="Buscar por descripción o código…" className="input" style={{ border: 0, borderBottom: '1px solid var(--c-line)', borderRadius: 0 }} />
-          {exact && <div style={{ padding: '6px 12px', background: 'var(--c-accent-soft)', color: '#B45309', fontSize: 12, borderBottom: '1px solid var(--c-line)' }}>↵ Asignar código <strong>{exact.codigo}</strong></div>}
-          <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+        <div
+          ref={dropRef}
+          style={{
+            position: 'fixed',
+            zIndex: 9999,
+            top: pos.top,
+            left: pos.left,
+            width: pos.width,
+            background: 'var(--c-surface)',
+            border: '1px solid var(--c-line)',
+            borderRadius: 'var(--r-lg)',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.22)',
+            overflow: 'hidden',
+          }}>
+          <input
+            autoFocus
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && exact) { onChange(exact.id); setOpen(false); setQ('') } if (e.key === 'Escape') setOpen(false) }}
+            placeholder="Buscar por descripción o código…"
+            className="input"
+            style={{ border: 0, borderBottom: '1px solid var(--c-line)', borderRadius: 0 }}
+          />
+          {exact && (
+            <div style={{ padding: '6px 12px', background: 'var(--c-accent-soft)', color: '#B45309', fontSize: 12, borderBottom: '1px solid var(--c-line)' }}>
+              ↵ Asignar código <strong>{exact.codigo}</strong>
+            </div>
+          )}
+          <div style={{ maxHeight: 240, overflowY: 'auto' }}>
             {!list.length && <div style={{ padding: 12, fontSize: 12, color: 'var(--c-text-3)' }}>Sin coincidencias.</div>}
             {list.map(i => (
-              <div key={i.id} onClick={() => { onChange(i.id); setOpen(false); setQ('') }}
+              <div
+                key={i.id}
+                onClick={() => { onChange(i.id); setOpen(false); setQ('') }}
                 style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--c-line-2)', fontSize: 13 }}
                 onMouseEnter={e => e.currentTarget.style.background = 'var(--c-bg)'}
                 onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
@@ -627,7 +685,8 @@ function InsumoSelect({ catalogos, categoria, value, onChange, onCreateNew }) {
             ))}
           </div>
           {q.trim() && !exact && (
-            <button onClick={() => { onCreateNew(q.trim()); setOpen(false); setQ('') }}
+            <button
+              onClick={() => { onCreateNew(q.trim()); setOpen(false); setQ('') }}
               style={{ width: '100%', padding: '8px 12px', background: 'var(--c-success-soft)', color: 'var(--c-success)', border: 'none', borderTop: '1px solid var(--c-line)', cursor: 'pointer', fontSize: 12, fontWeight: 600, textAlign: 'left' }}>
               + Crear "{q.trim()}" en catálogo
             </button>
