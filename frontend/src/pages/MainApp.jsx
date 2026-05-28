@@ -1883,50 +1883,55 @@ export default function MainApp() {
             </div>
 
             {/* Body */}
-            <div className="page-body" style={{ minHeight: 0 }}>
+            <div className="page-body" style={{ minHeight: 0, ...(tabProject === 'presupuesto' ? { overflow: 'hidden', padding: 0 } : {}) }}>
               {tabProject === 'presupuesto' && (
-                <Fragment>
-                  {/* KPIs */}
-                  {budgetKPIs && (
-                    <div className="kpi-row">
-                      <div className="kpi">
-                        <div className="kpi-label"><HardHat size={12} className="ico" /> Costo Directo</div>
-                        <div className="kpi-val">{money(budgetKPIs.direct)}</div>
-                        <div className="kpi-foot">Materiales + Mano de obra + Equipo</div>
+                <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+                  {/* ── Fixed top: KPIs + Params + Toolbar ── */}
+                  <div style={{ flexShrink: 0, padding: '20px 24px 0', display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    {/* KPIs */}
+                    {budgetKPIs && (
+                      <div className="kpi-row">
+                        <div className="kpi">
+                          <div className="kpi-label"><HardHat size={12} className="ico" /> Costo Directo</div>
+                          <div className="kpi-val">{money(budgetKPIs.direct)}</div>
+                          <div className="kpi-foot">Materiales + Mano de obra + Equipo</div>
+                        </div>
+                        <div className="kpi">
+                          <div className="kpi-label"><Layers size={12} className="ico" /> Indirectos + Imprevistos</div>
+                          <div className="kpi-val">{money(budgetKPIs.indirectos + budgetKPIs.imprevistos)}</div>
+                          <div className="kpi-foot">{params.pctIndirectos}% + {params.pctImprevistos}%</div>
+                        </div>
+                        <div className="kpi">
+                          <div className="kpi-label"><TrendingUp size={12} className="ico" /> Utilidad</div>
+                          <div className="kpi-val">{money(budgetKPIs.utilidad)}</div>
+                          <div className="kpi-foot">{params.pctUtilidad}% sobre subtotal</div>
+                        </div>
+                        <div className="kpi highlight">
+                          <div className="kpi-label"><DollarSign size={12} className="ico" /> Total General</div>
+                          <div className="kpi-val">{money(budgetKPIs.total)}</div>
+                          <div className="kpi-foot">Incluye impuesto {params.pctImpuesto}%</div>
+                        </div>
                       </div>
-                      <div className="kpi">
-                        <div className="kpi-label"><Layers size={12} className="ico" /> Indirectos + Imprevistos</div>
-                        <div className="kpi-val">{money(budgetKPIs.indirectos + budgetKPIs.imprevistos)}</div>
-                        <div className="kpi-foot">{params.pctIndirectos}% + {params.pctImprevistos}%</div>
-                      </div>
-                      <div className="kpi">
-                        <div className="kpi-label"><TrendingUp size={12} className="ico" /> Utilidad</div>
-                        <div className="kpi-val">{money(budgetKPIs.utilidad)}</div>
-                        <div className="kpi-foot">{params.pctUtilidad}% sobre subtotal</div>
-                      </div>
-                      <div className="kpi highlight">
-                        <div className="kpi-label"><DollarSign size={12} className="ico" /> Total General</div>
-                        <div className="kpi-val">{money(budgetKPIs.total)}</div>
-                        <div className="kpi-foot">Incluye impuesto {params.pctImpuesto}%</div>
+                    )}
+                    {/* Params */}
+                    <ParametrosGlobales budget={budget} setBudget={setBudget} />
+                    {/* Toolbar */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div className="sec-title" style={{ flex: 1 }}>
+                        <Layers size={15} /> Desglose por capítulos
+                        <span className="badge" style={{ marginLeft: 8 }}>
+                          {calcKPIs(budget).nCapitulos} cap. · {calcKPIs(budget).nActividades} act.
+                        </span>
                       </div>
                     </div>
-                  )}
-                  {/* Params */}
-                  <ParametrosGlobales budget={budget} setBudget={setBudget} />
-                  {/* Toolbar */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div className="sec-title" style={{ flex: 1 }}>
-                      <Layers size={15} /> Desglose por capítulos
-                      <span className="badge" style={{ marginLeft: 8 }}>
-                        {calcKPIs(budget).nCapitulos} cap. · {calcKPIs(budget).nActividades} act.
-                      </span>
+                  </div>
+                  {/* ── Scrollable table ── */}
+                  <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 24px 32px' }}>
+                    <div className="card" style={{ padding: 0 }}>
+                      <PresupuestoTableComp budget={budget} setBudget={setBudget} onOpenFicha={p => setFichaPath(p)} params={params} />
                     </div>
                   </div>
-                  {/* Table */}
-                  <div className="card" style={{ padding: 0 }}>
-                    <PresupuestoTableComp budget={budget} setBudget={setBudget} onOpenFicha={p => setFichaPath(p)} params={params} />
-                  </div>
-                </Fragment>
+                </div>
               )}
               {tabProject === 'cat-mat' && <CatalogoView budget={budget} setBudget={setBudget} categoria={CATEGORIAS[0]} />}
               {tabProject === 'cat-mo'  && <CatalogoView budget={budget} setBudget={setBudget} categoria={CATEGORIAS[1]} />}
