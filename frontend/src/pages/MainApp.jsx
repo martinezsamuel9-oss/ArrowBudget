@@ -8,7 +8,7 @@ import {
   ArrowRight, Star, Sparkles, Clock, DollarSign, Activity, TrendingUp,
   MapPin, Building2, ArrowUpRight, Layers, Grid, List, Filter,
   MoreHorizontal, ChevronRight, X, Check, Briefcase, Calendar,
-  FileSpreadsheet, Copy, Edit2, Trash2, Download, ChevronDown, Crown, Coins,
+  FileSpreadsheet, Copy, Edit2, Trash2, Download, ChevronDown, Crown, Coins, RefreshCw,
 } from 'lucide-react'
 import {
   round2, fmt, money, moneyK, uid, normalize,
@@ -1133,12 +1133,49 @@ function Dropdown({ trigger, children, align = 'right', minWidth = 220 }) {
   )
 }
 
+// ============ SYNC HELPER ============
+function syncFichasByName(items) {
+  // Primera pasada: encontrar la ficha más completa por descripción
+  const fichaByDesc = {}
+  const walk = its => its.forEach(it => {
+    if (it.tipo === 'actividad') {
+      const desc = it.descripcion?.trim()
+      const count = (it.ficha?.materiales?.length || 0) + (it.ficha?.manoObra?.length || 0) +
+                    (it.ficha?.herramientaEquipo?.length || 0) + (it.ficha?.subcontratos?.length || 0)
+      if (desc && count > 0 && (!fichaByDesc[desc] || count > fichaByDesc[desc].count))
+        fichaByDesc[desc] = { ficha: it.ficha, count }
+    }
+    if (it.children?.length) walk(it.children)
+  })
+  walk(items)
+  if (!Object.keys(fichaByDesc).length) return items
+  // Segunda pasada: aplicar la mejor ficha a todas las del mismo nombre con menor cantidad
+  const its = JSON.parse(JSON.stringify(items))
+  const apply = arr => arr.forEach(it => {
+    if (it.tipo === 'actividad') {
+      const desc = it.descripcion?.trim()
+      const best = fichaByDesc[desc]
+      if (best) {
+        const count = (it.ficha?.materiales?.length || 0) + (it.ficha?.manoObra?.length || 0) +
+                      (it.ficha?.herramientaEquipo?.length || 0) + (it.ficha?.subcontratos?.length || 0)
+        if (count < best.count) it.ficha = JSON.parse(JSON.stringify(best.ficha))
+      }
+    }
+    if (it.children?.length) apply(it.children)
+  })
+  apply(its)
+  return its
+}
+
 // ============ PRESUPUESTO TABLE ============
 function PresupuestoTableComp({ budget, setBudget, onOpenFicha, params }) {
   const upd = (path, fld, v) => {
     const its = JSON.parse(JSON.stringify(budget.items))
     let cur = its; for (let i = 0; i < path.length - 1; i++) cur = cur[path[i]].children
-    cur[path[path.length - 1]][fld] = v; setBudget({ ...budget, items: its })
+    cur[path[path.length - 1]][fld] = v
+    // Al cambiar el nombre de una actividad, sincronizar ficha con otras del mismo nombre
+    const finalIts = fld === 'descripcion' ? syncFichasByName(its) : its
+    setBudget({ ...budget, items: finalIts })
   }
   const renumber = (items, parentId = '') => {
     items.forEach((item, idx) => {
@@ -1677,37 +1714,8 @@ export default function MainApp() {
     if (!activeId) return
     setProyectos(ps => ps.map(p => {
       if (p.id !== activeId) return p
-      // Buscar la ficha más completa por descripción
-      const fichaByDesc = {}
-      const walk = items => items.forEach(it => {
-        if (it.tipo === 'actividad') {
-          const desc = it.descripcion?.trim()
-          const count = (it.ficha?.materiales?.length || 0) + (it.ficha?.manoObra?.length || 0) +
-                        (it.ficha?.herramientaEquipo?.length || 0) + (it.ficha?.subcontratos?.length || 0)
-          if (desc && count > 0 && (!fichaByDesc[desc] || count > fichaByDesc[desc].count))
-            fichaByDesc[desc] = { ficha: it.ficha, count }
-        }
-        if (it.children?.length) walk(it.children)
-      })
-      walk(p.items)
-      if (!Object.keys(fichaByDesc).length) return p
-      // Aplicar la ficha más completa a todas las actividades con el mismo nombre
-      let changed = false
-      const its = JSON.parse(JSON.stringify(p.items))
-      const apply = items => items.forEach(it => {
-        if (it.tipo === 'actividad') {
-          const desc = it.descripcion?.trim()
-          const best = fichaByDesc[desc]
-          if (best) {
-            const count = (it.ficha?.materiales?.length || 0) + (it.ficha?.manoObra?.length || 0) +
-                          (it.ficha?.herramientaEquipo?.length || 0) + (it.ficha?.subcontratos?.length || 0)
-            if (count < best.count) { it.ficha = JSON.parse(JSON.stringify(best.ficha)); changed = true }
-          }
-        }
-        if (it.children?.length) apply(it.children)
-      })
-      apply(its)
-      return changed ? { ...p, items: its } : p
+      const synced = syncFichasByName(p.items)
+      return synced !== p.items ? { ...p, items: synced } : p
     }))
   }, [activeId])
 
@@ -1976,6 +1984,13 @@ export default function MainApp() {
                           {calcKPIs(budget).nCapitulos} cap. · {calcKPIs(budget).nActividades} act.
                         </span>
                       </div>
+                      <button
+                        className="btn sm ghost"
+                        title="Propaga el precio de cada actividad a todas las que tienen el mismo nombre"
+                        onClick={() => setBudget({ ...budget, items: syncFichasByName(budget.items) })}
+                      >
+                        <RefreshCw size={13} /> Sincronizar precios
+                      </button>
                     </div>
                   </div>
                   {/* ── Scrollable table ── */}
