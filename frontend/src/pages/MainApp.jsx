@@ -8,7 +8,7 @@ import {
   ArrowRight, Star, Sparkles, Clock, DollarSign, Activity, TrendingUp,
   MapPin, Building2, ArrowUpRight, Layers, Grid, List, Filter,
   MoreHorizontal, ChevronRight, X, Check, Briefcase, Calendar,
-  FileSpreadsheet, Copy, Edit2, Trash2, Download, ChevronDown, Crown, Coins, RefreshCw,
+  FileSpreadsheet, Copy, Edit2, Trash2, Download, ChevronDown, Crown, Coins, RefreshCw, AlertTriangle,
 } from 'lucide-react'
 import {
   round2, fmt, money, moneyK, uid, normalize,
@@ -548,8 +548,8 @@ function ConfigProyectoModal({ open, onClose, budget, setBudget }) {
         <div>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--c-text)', marginBottom: 10 }}>Partes involucradas</div>
           <div className="grid-2">
-            <ConfigField label="Cotizante" k="cotizante" form={form} setForm={setForm} />
-            <ConfigField label="Ofertante" k="ofertante" form={form} setForm={setForm} />
+            <ConfigField label="Elaboró" k="cotizante" form={form} setForm={setForm} />
+            <ConfigField label="Revisó / Aprobó" k="ofertante" form={form} setForm={setForm} />
             <ConfigField label="Cliente" k="cliente" form={form} setForm={setForm} />
             <ConfigField label="Ubicación" k="lugar" form={form} setForm={setForm} />
           </div>
@@ -564,9 +564,19 @@ function ConfigProyectoModal({ open, onClose, budget, setBudget }) {
         </div>
         <div className="divider"></div>
         <div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--c-text)', marginBottom: 10 }}>Parámetros globales</div>
+          <div className="grid-2">
+            <ConfigField label="Indirectos (%)" k="pctIndirectos" type="number" form={form} setForm={setForm} />
+            <ConfigField label="Imprevistos (%)" k="pctImprevistos" type="number" form={form} setForm={setForm} />
+            <ConfigField label="Utilidad (%)" k="pctUtilidad" type="number" form={form} setForm={setForm} />
+            <ConfigField label="Impuesto (%)" k="pctImpuesto" type="number" form={form} setForm={setForm} />
+          </div>
+        </div>
+        <div className="divider"></div>
+        <div>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--c-text)', marginBottom: 10 }}>Logos</div>
           <div className="grid-2">
-            {[['logoOfertante', 'Logo Ofertante'], ['logoCliente', 'Logo Cliente']].map(([k, lbl]) => (
+            {[['logoOfertante', 'Logo Revisó / Aprobó'], ['logoCliente', 'Logo Cliente']].map(([k, lbl]) => (
               <div key={k} className="field">
                 <label className="field-label">{lbl}</label>
                 <div style={{ border: '2px dashed var(--c-line)', borderRadius: 'var(--r-md)', padding: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -630,12 +640,9 @@ function InsumoSelect({ catalogos, categoria, value, onChange, onCreateNew }) {
       <button
         onClick={handleOpen}
         style={{ width: '100%', textAlign: 'left', padding: '4px 8px', background: 'none', border: 'none', cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13 }}>
-        {sel ? (
-          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            {sel.codigo && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, background: 'var(--c-bg)', color: 'var(--c-text-3)', padding: '1px 5px', borderRadius: 3 }}>{sel.codigo}</span>}
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{sel.descripcion}</span>
-          </span>
-        ) : <span style={{ color: 'var(--c-text-4)', fontStyle: 'italic', fontSize: 12 }}>— seleccionar —</span>}
+        {sel
+          ? <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{sel.descripcion}</span>
+          : <span style={{ color: 'var(--c-text-4)', fontStyle: 'italic', fontSize: 12 }}>— seleccionar —</span>}
       </button>
 
       {open && (
@@ -708,7 +715,7 @@ function FichaSection({ title, k, total, ficha, catalogos, onAdd, onDel, onUpd, 
       <table className="bt" style={{ fontSize: 12 }}>
         <thead>
           <tr>
-            <th style={{ width: 28 }}>#</th>
+            <th style={{ width: 80 }}>#</th>
             <th>Insumo</th>
             <th style={{ width: 70 }}>Unidad</th>
             <th className="num" style={{ width: 80 }}>Rend.</th>
@@ -723,7 +730,7 @@ function FichaSection({ title, k, total, ficha, catalogos, onAdd, onDel, onUpd, 
             const ins = findInsumo(catalogos, k, c.insumoId)
             return (
               <tr key={c.id} className="activity">
-                <td className="id" style={{ textAlign: 'center', fontSize: 11 }}>{i + 1}</td>
+                <td className="id" style={{ fontSize: 11, color: 'var(--c-text-3)', fontFamily: 'var(--font-mono)' }}>{ins?.codigo || (i + 1)}</td>
                 <td style={{ padding: 0 }}>
                   <InsumoSelect catalogos={catalogos} categoria={k} value={c.insumoId} onChange={v => onUpd(k, i, 'insumoId', v)} onCreateNew={d => onCreateIns(k, i, d)} />
                 </td>
@@ -1352,8 +1359,8 @@ function CatalogoView({ budget, setBudget, categoria }) {
   const usagesOf = id => { let c = 0; const walk = its => { for (const it of its) { if (it.tipo === 'actividad') { for (const x of it.ficha[categoria.key] || []) if (x.insumoId === id) c++ } else if (it.children) walk(it.children) } }; walk(budget.items); return c }
   const submit = e => {
     e.preventDefault(); const desc = form.descripcion.trim(); if (!desc) return alert('Descripción obligatoria.')
-    const n = normalize(desc); const dup = list.find(i => normalize(i.descripcion) === n && i.id !== editId)
-    if (dup) return alert(`Ya existe: "${dup.descripcion}".`)
+    const n = normalize(desc); const dup = list.find(i => normalize(i.descripcion) === n && i.unidad === form.unidad && i.id !== editId)
+    if (dup) return alert(`Ya existe: "${dup.descripcion}" (${dup.unidad}). Dos insumos pueden tener el mismo nombre si tienen diferente unidad.`)
     const nc = { ...budget.catalogos }
     if (editId) nc[categoria.key] = list.map(i => i.id === editId ? { ...i, ...form, descripcion: desc, costoBase: +form.costoBase || 0 } : i)
     else nc[categoria.key] = [...list, { id: uid(), ...form, descripcion: desc, costoBase: +form.costoBase || 0 }]
@@ -1399,9 +1406,12 @@ function CatalogoView({ budget, setBudget, categoria }) {
               return (
                 <tr key={i.id}>
                   <td className="id">{i.codigo}</td>
-                  <td style={{ fontWeight: 500 }}>{i.descripcion}</td>
+                  <td style={{ fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {(!i.costoBase || i.costoBase === 0) && <AlertTriangle size={13} style={{ color: 'var(--c-danger)', flexShrink: 0 }} title="Sin costo asignado" />}
+                    {i.descripcion}
+                  </td>
                   <td style={{ textAlign: 'center', color: 'var(--c-text-2)' }}>{i.unidad}</td>
-                  <td className="num" style={{ fontWeight: 600 }}>{money(i.costoBase)}</td>
+                  <td className="num" style={{ fontWeight: 600, color: (!i.costoBase || i.costoBase === 0) ? 'var(--c-danger)' : undefined }}>{money(i.costoBase)}</td>
                   <td style={{ fontSize: 12, color: 'var(--c-text-3)' }}>{i.proveedor || '—'}</td>
                   <td className="num"><span className={`badge ${u > 0 ? 'success' : ''}`}>{u}</span></td>
                   <td className="actions">
@@ -1927,8 +1937,6 @@ export default function MainApp() {
                   <button className="icon-btn" style={{ width: 26, height: 26, marginLeft: 4 }} title="Configuración" onClick={() => setShowConfig(true)}><Edit2 size={13} /></button>
                 </h1>
                 <div className="page-head-meta">
-                  {budget.cliente && <span style={{ fontSize: 13, color: 'var(--c-text-2)', display: 'flex', alignItems: 'center', gap: 4 }}><Briefcase size={13} /> {budget.cliente}</span>}
-                  {budget.lugar   && <span style={{ fontSize: 13, color: 'var(--c-text-2)', display: 'flex', alignItems: 'center', gap: 4 }}><MapPin size={13} />    {budget.lugar}</span>}
                   {budget.fecha   && <span style={{ fontSize: 13, color: 'var(--c-text-2)', display: 'flex', alignItems: 'center', gap: 4 }}><Calendar size={13} />  {budget.fecha}</span>}
                   <span className="save-state">
                     {saving ? <><span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--c-warn)', display: 'inline-block' }}></span> Guardando…</> : <><span className="pulse"></span> Guardado · {budget.ultimaEdicion}</>}
@@ -1994,8 +2002,6 @@ export default function MainApp() {
                         </div>
                       </div>
                     )}
-                    {/* Params */}
-                    <ParametrosGlobales budget={budget} setBudget={setBudget} />
                     {/* Toolbar */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <div className="sec-title" style={{ flex: 1 }}>
