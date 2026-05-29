@@ -756,8 +756,8 @@ function FichaSection({ title, k, total, ficha, catalogos, onAdd, onDel, onUpd, 
                   <InsumoSelect catalogos={catalogos} categoria={k} value={c.insumoId} onChange={v => onUpd(k, i, 'insumoId', v)} onCreateNew={d => onCreateIns(k, i, d)} />
                 </td>
                 <td className="num" style={{ color: 'var(--c-text-2)', fontSize: 12 }}>{ins ? ins.unidad : '—'}</td>
-                <td className="num"><input type="number" step="any" className="cell-input num" value={c.rendimiento} onChange={e => onUpd(k, i, 'rendimiento', parseFloat(e.target.value) || 0)} /></td>
-                <td className="num"><input type="number" step="any" className="cell-input num" value={c.desperdicio} onChange={e => onUpd(k, i, 'desperdicio', parseFloat(e.target.value) || 0)} /></td>
+                <td className="num"><input type="number" step="any" className="cell-input num" value={c.rendimiento} onFocus={e => e.target.select()} onChange={e => onUpd(k, i, 'rendimiento', parseFloat(e.target.value) || 0)} /></td>
+                <td className="num"><input type="number" step="any" className="cell-input num" value={c.desperdicio} onFocus={e => e.target.select()} onChange={e => onUpd(k, i, 'desperdicio', parseFloat(e.target.value) || 0)} /></td>
                 <td className="num" style={{ color: isMoBased ? 'var(--c-accent)' : 'var(--c-text-2)' }} title={isMoBased ? 'Calculado sobre el total MO' : undefined}>
                   {ins ? money(effectiveBase) : '—'}
                   {isMoBased && <span style={{ fontSize: 9, marginLeft: 3, color: 'var(--c-accent)' }}>MO</span>}
@@ -1440,11 +1440,11 @@ function CatalogoView({ budget, setBudget, categoria }) {
                   <td style={{ textAlign: 'center', color: 'var(--c-text-2)' }}>{i.unidad}</td>
                   <td className="num" style={{ fontWeight: 600, color: (!i.costoBase || i.costoBase === 0) ? 'var(--c-danger)' : undefined }}>{money(i.costoBase)}</td>
                   <td style={{ fontSize: 12, color: 'var(--c-text-3)' }}>{i.proveedor || '—'}</td>
-                  <td className="num">
-                    <span className={`badge ${u > 0 ? 'success' : ''}`} title={`Usado en ${u} ficha(s)`}>
-                      {u > 0 ? fmt(cantTotal) : '—'}
-                    </span>
-                    {u > 0 && <span style={{ fontSize: 10, color: 'var(--c-text-3)', marginLeft: 3 }}>{i.unidad}</span>}
+                  <td className="num" title={u > 0 ? `Usado en ${u} ficha(s)` : undefined}>
+                    {u > 0
+                      ? <><span style={{ fontWeight: 600 }}>{fmt(cantTotal)}</span><span style={{ marginLeft: 4, color: 'var(--c-text-2)', fontWeight: 400 }}>{i.unidad}</span></>
+                      : <span style={{ color: 'var(--c-text-3)' }}>—</span>
+                    }
                   </td>
                   <td className="actions">
                     <button className="btn xs ghost" onClick={() => { setForm({ codigo: i.codigo || '', descripcion: i.descripcion, unidad: i.unidad, costoBase: i.costoBase, proveedor: i.proveedor || '', notas: i.notas || '' }); setEditId(i.id); setShowForm(true) }}>
