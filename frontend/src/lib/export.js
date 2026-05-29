@@ -567,6 +567,154 @@ export async function exportPlantilla(tipo) {
   saveAs(new Blob([buf]),`Plantilla_${tipo}.xlsx`)
 }
 
+// ============ PLANTILLA FICHAS APU ============
+export async function exportPlantillaFicha() {
+  const wb = new ExcelJS.Workbook()
+
+  // ── Hoja de datos ──────────────────────────────────────────────
+  const ws = wb.addWorksheet('Fichas APU')
+  ws.columns = [{width:14},{width:46},{width:12},{width:12},{width:22},{width:14},{width:40},{width:14},{width:14},{width:16}]
+
+  ws.mergeCells('A1:J1')
+  setC(ws,'A1','PLANTILLA DE FICHAS APU (COSTOS UNITARIOS)',{fill:X.titleFill,font:X.titleFont,alignment:X.ac}); ws.getRow(1).height=28
+  ws.mergeCells('A2:J2')
+  setC(ws,'A2','Cada fila = un concepto (insumo) dentro de la ficha. Repita las columnas A-D iguales para todos los conceptos de la misma actividad.',{font:{italic:true,color:{argb:'FF64748B'}},alignment:X.ac})
+
+  const hdrs = ['ID Actividad','Descripción Actividad','Unidad Act.','Cantidad','Categoría','Cód. Insumo','Descripción Insumo','Unidad Insumo','Rendimiento','Desperdicio %']
+  hdrs.forEach((h,i)=>setC(ws,String.fromCharCode(65+i)+'4',h,{fill:X.headerFill,font:X.headerFont,alignment:X.ac}))
+  ws.getRow(4).height=22
+
+  const fill1 = {type:'pattern',pattern:'solid',fgColor:{argb:'FFEEF2FF'}}
+  const fill2 = {type:'pattern',pattern:'solid',fgColor:{argb:'FFFFF7ED'}}
+  const sample = [
+    ['1.01','FUNDICIÓN ZAPATA AISLADA Z-1 1.20x1.20 e=35cm','m³',8,'materiales','MAT-011','CONCRETO 210 kg/cm2','m³',1,5],
+    ['1.01','FUNDICIÓN ZAPATA AISLADA Z-1 1.20x1.20 e=35cm','m³',8,'materiales','MAT-015','VARILLA ACERO CORRUGADA 3/8"','LANCE',8,5],
+    ['1.01','FUNDICIÓN ZAPATA AISLADA Z-1 1.20x1.20 e=35cm','m³',8,'materiales','MAT-021','ALAMBRE DE AMARRE','LB',1.5,0],
+    ['1.01','FUNDICIÓN ZAPATA AISLADA Z-1 1.20x1.20 e=35cm','m³',8,'manoObra','MO-002','ALBAÑIL','JRD',0.25,0],
+    ['1.01','FUNDICIÓN ZAPATA AISLADA Z-1 1.20x1.20 e=35cm','m³',8,'manoObra','MO-001','PEÓN','JRD',0.5,0],
+    ['1.01','FUNDICIÓN ZAPATA AISLADA Z-1 1.20x1.20 e=35cm','m³',8,'herramientaEquipo','HE-001','HERRAMIENTA MENOR','% (MO)',0.05,0],
+    ['1.02','RELLENO Y COMPACTACIÓN CON MATERIAL SELECTO','m³',120,'manoObra','MO-001','PEÓN','JRD',0.18,0],
+    ['1.02','RELLENO Y COMPACTACIÓN CON MATERIAL SELECTO','m³',120,'herramientaEquipo','HE-003','COMPACTADORA VIBRATORIA','HRA',0.5,0],
+    ['1.02','RELLENO Y COMPACTACIÓN CON MATERIAL SELECTO','m³',120,'subcontratos','SC-001','ALQUILER COMPACTADOR','DÍA',0.05,0],
+  ]
+  sample.forEach((r,ri)=>{
+    const row = 5+ri; const fill = r[0]==='1.01' ? fill1 : fill2
+    r.forEach((v,ci)=>{
+      setC(ws,String.fromCharCode(65+ci)+row,v,{fill,alignment:ci===0?X.ac:(typeof v==='number'?X.ar:X.al),
+        font:ci===0?{bold:true,name:'Consolas',size:10}:undefined,
+        numFmt:(ci>=8)?NFMT:(ci===3)?NFMT:undefined})
+    })
+  })
+
+  // ── Hoja de instrucciones ──────────────────────────────────────
+  const wi = wb.addWorksheet('Instrucciones')
+  wi.columns = [{width:28},{width:66}]
+  const inst = [
+    ['INSTRUCCIONES',''],['',''],
+    ['Columna','Descripción'],
+    ['ID Actividad','ID de la actividad en el presupuesto (ej: 1.01, 1.1.02)'],
+    ['Descripción Actividad','Nombre completo de la actividad'],
+    ['Unidad Act.','Unidad de la actividad (m³, ml, m², und, etc.)'],
+    ['Cantidad','Cantidad de la actividad en el presupuesto'],
+    ['Categoría','materiales | manoObra | herramientaEquipo | subcontratos'],
+    ['Cód. Insumo','Código del insumo (se busca primero por código, luego por descripción)'],
+    ['Descripción Insumo','Nombre del insumo. Si no existe se crea automáticamente con precio $0.00'],
+    ['Unidad Insumo','Unidad del insumo (m³, kg, JRD, und, % (MO), etc.)'],
+    ['Rendimiento','Cantidad de insumo por unidad de actividad (número decimal)'],
+    ['Desperdicio %','Porcentaje de desperdicio: 5 = 5%. Usar 0 si no aplica.'],
+    ['',''],
+    ['NOTAS',''],
+    ['','Repita las columnas A-D en cada fila de la misma actividad.'],
+    ['','Herramienta Menor: Categoría=herramientaEquipo, Unidad=% (MO), Rendimiento=0.05 para 5%.'],
+    ['','El ID de la actividad debe existir en el presupuesto activo para que se importe.'],
+    ['','Si crea nuevos insumos, actualice su precio en el Catálogo después de importar.'],
+  ]
+  inst.forEach((r,ri)=>{
+    const isTitle = r[0]==='INSTRUCCIONES'||r[0]==='Columna'||r[0]==='NOTAS'
+    ;['A','B'].forEach((col,ci)=>setC(wi,col+(ri+1),r[ci],{fill:isTitle?X.headerFill:undefined,font:isTitle?X.headerFont:{name:'Calibri',size:11},border:undefined,alignment:X.al}))
+  })
+
+  const buf = await wb.xlsx.writeBuffer()
+  saveAs(new Blob([buf]),'Plantilla_Fichas_APU.xlsx')
+}
+
+// ============ IMPORTAR FICHAS APU ============
+export async function importExcelFichas(file, budget, setBudget) {
+  if (!budget) return alert('No hay proyecto activo. Abre un proyecto antes de importar.')
+  const buf = await file.arrayBuffer()
+  const wb = XLSX.read(buf)
+  const ws = wb.Sheets[wb.SheetNames[0]]
+  const rows = XLSX.utils.sheet_to_json(ws,{header:1,defval:''})
+
+  // Buscar fila de encabezado
+  let h = rows.findIndex(r=>r.some(c=>/activ|categor/i.test(String(c))))
+  if (h<0) h = rows.findIndex(r=>r.some(c=>/^\s*id\s*$/i.test(String(c))))
+  if (h<0) h = 3
+
+  const dataRows = []
+  for (let i=h+1;i<rows.length;i++){
+    const r=rows[i]; const actId=String(r[0]||'').trim(); if(!actId) continue
+    dataRows.push({ actId, catRaw:String(r[4]||'').trim().toLowerCase(),
+      insCod:String(r[5]||'').trim(), insDesc:String(r[6]||'').trim(),
+      insUnid:String(r[7]||'und').trim(), rend:parseFloat(r[8])||0, desp:parseFloat(r[9])||0 })
+  }
+  if (!dataRows.length) return alert('No se encontraron filas válidas. Verifica que usas la plantilla correcta.')
+
+  const resolveKat = raw => {
+    if (/mat/i.test(raw)) return 'materiales'
+    if (/mano|obra|\bmo\b/i.test(raw)) return 'manoObra'
+    if (/herr|equip|\bhe\b/i.test(raw)) return 'herramientaEquipo'
+    if (/sub/i.test(raw)) return 'subcontratos'
+    return null
+  }
+
+  const grouped = {}
+  dataRows.forEach(r=>{ if(!grouped[r.actId]) grouped[r.actId]=[]; grouped[r.actId].push(r) })
+  const actIds = Object.keys(grouped)
+  if (!confirm(`Se encontraron ${actIds.length} actividad(es): ${actIds.join(', ')}.\n¿Importar y reemplazar sus fichas actuales?`)) return
+
+  const newCat = {
+    materiales:        [...(budget.catalogos?.materiales||[])],
+    manoObra:          [...(budget.catalogos?.manoObra||[])],
+    herramientaEquipo: [...(budget.catalogos?.herramientaEquipo||[])],
+    subcontratos:      [...(budget.catalogos?.subcontratos||[])],
+  }
+  const findOrCreate = (k,cod,desc,unid) => {
+    const list=newCat[k]
+    if (cod){ const byCod=list.find(i=>i.codigo&&normalize(i.codigo)===normalize(cod)); if(byCod) return byCod.id }
+    if (desc){ const byDesc=list.find(i=>normalize(i.descripcion)===normalize(desc)); if(byDesc) return byDesc.id }
+    if (!desc) return null
+    const ni={id:uid(),codigo:cod||'',descripcion:desc,unidad:unid||'und',costoBase:0,proveedor:'',notas:''}
+    list.push(ni); return ni.id
+  }
+
+  const cloneItems = its => its.map(it=>({...it,
+    ficha:it.ficha?{materiales:[...it.ficha.materiales],manoObra:[...it.ficha.manoObra],herramientaEquipo:[...it.ficha.herramientaEquipo],subcontratos:[...it.ficha.subcontratos]}:undefined,
+    children:it.children?cloneItems(it.children):undefined,
+  }))
+  const findAct = (its,id)=>{ for(const it of its){ if(it.id===id) return it; if(it.children){const f=findAct(it.children,id);if(f)return f} } return null }
+
+  const newItems = cloneItems(budget.items)
+  let imported=0, notFound=[]
+
+  for (const [actId,rws] of Object.entries(grouped)){
+    const act=findAct(newItems,actId)
+    if (!act){ notFound.push(actId); continue }
+    const nf={materiales:[],manoObra:[],herramientaEquipo:[],subcontratos:[]}
+    for (const r of rws){
+      const k=resolveKat(r.catRaw); if(!k) continue
+      const insId=findOrCreate(k,r.insCod,r.insDesc,r.insUnid); if(!insId) continue
+      nf[k].push({id:uid(),insumoId:insId,rendimiento:r.rend,desperdicio:r.desp})
+    }
+    act.ficha=nf; imported++
+  }
+
+  setBudget({...budget,catalogos:newCat,items:newItems})
+  let msg=`Importación completada: ${imported} ficha(s) actualizada(s).`
+  if (notFound.length) msg+=`\nActividades no encontradas (verifique el ID): ${notFound.join(', ')}.`
+  alert(msg)
+}
+
 export async function importExcelPresupuesto(file, budget, setBudget) {
   const buf=await file.arrayBuffer(); const wb=XLSX.read(buf)
   const ws=wb.Sheets[wb.SheetNames[0]]

@@ -20,7 +20,7 @@ import {
   exportPDFResumenEjecutivo, exportPDFPortafolio,
   exportExcelPresupuesto, exportExcelCatalogo, exportExcelFicha, exportExcelGeneral,
   exportExcelRangoFichas, exportExcelPortafolio,
-  exportPlantilla, importExcelPresupuesto, importExcelCatalogo,
+  exportPlantilla, exportPlantillaFicha, importExcelPresupuesto, importExcelCatalogo, importExcelFichas,
 } from '../lib/export'
 
 // ============ SUPABASE MAPPING ============
@@ -1664,13 +1664,14 @@ function ReportesPage({ proyectos, budget, params, userEmpresa }) {
   )
 }
 
-function PlantillasPage() {
+function PlantillasPage({ budget, setBudget }) {
+  const fileRef = useRef(null)
   const tipos = [
-    { k: 'presupuesto', label: 'Presupuesto', icon: '📄', desc: 'Estructura jerárquica completa.' },
-    { k: 'materiales', label: 'Materiales', icon: '🧱', desc: 'Catálogo de materiales con código y precio.' },
-    { k: 'manoObra', label: 'Mano de Obra', icon: '👷', desc: 'Catálogo de operarios y tarifas.' },
-    { k: 'herramientaEquipo', label: 'Herramientas/Equipo', icon: '🔧', desc: 'Herramienta y maquinaria.' },
-    { k: 'subcontratos', label: 'Subcontratos', icon: '🏢', desc: 'Servicios contratados a terceros.' },
+    { k: 'presupuesto',       label: 'Presupuesto',          icon: '📄', desc: 'Estructura jerárquica: capítulos, subcapítulos y actividades con unidad y cantidad.' },
+    { k: 'materiales',        label: 'Materiales',           icon: '🧱', desc: 'Catálogo de materiales con código, unidad y precio base.' },
+    { k: 'manoObra',          label: 'Mano de Obra',         icon: '👷', desc: 'Catálogo de operarios y cuadrillas con tarifa por unidad.' },
+    { k: 'herramientaEquipo', label: 'Herramientas/Equipo',  icon: '🔧', desc: 'Herramienta menor, equipo y maquinaria con costo por unidad.' },
+    { k: 'subcontratos',      label: 'Subcontratos',         icon: '🏢', desc: 'Servicios contratados a terceros con precio global o por unidad.' },
   ]
   return (
     <Fragment>
@@ -1682,15 +1683,36 @@ function PlantillasPage() {
       <div className="page-body">
         <div className="proj-grid">
           {tipos.map(t => (
-            <div key={t.k} className="card card-pad">
+            <div key={t.k} className="card card-pad" style={{ display: 'flex', flexDirection: 'column' }}>
               <div style={{ width: 44, height: 44, borderRadius: 10, background: 'var(--c-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, marginBottom: 12 }}>{t.icon}</div>
               <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{t.label}</div>
-              <div style={{ fontSize: 13, color: 'var(--c-text-3)', marginBottom: 16 }}>{t.desc}</div>
+              <div style={{ fontSize: 13, color: 'var(--c-text-3)', flex: 1, marginBottom: 16 }}>{t.desc}</div>
               <button className="btn primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => exportPlantilla(t.k)}>
                 <Download size={14} /> Descargar plantilla
               </button>
             </div>
           ))}
+
+          {/* ── Tarjeta especial: Fichas APU ── */}
+          <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column' }}>
+            <div style={{ width: 44, height: 44, borderRadius: 10, background: 'var(--c-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, marginBottom: 12 }}>📋</div>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Fichas APU</div>
+            <div style={{ fontSize: 13, color: 'var(--c-text-3)', flex: 1, marginBottom: 16 }}>
+              Importa una o varias fichas de costo unitario (APU) al proyecto activo desde una hoja de cálculo.
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <button className="btn primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => exportPlantillaFicha()}>
+                <Download size={14} /> Descargar plantilla
+              </button>
+              <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }}
+                onChange={async e => { const f = e.target.files?.[0]; if (f) { await importExcelFichas(f, budget, setBudget); e.target.value = '' } }} />
+              <button className="btn ghost" style={{ width: '100%', justifyContent: 'center' }}
+                onClick={() => { if (!budget) return alert('Abre un proyecto primero para importar fichas.'); fileRef.current?.click() }}
+                title={budget ? `Importar al proyecto: ${budget.nombreProyecto}` : 'Sin proyecto activo'}>
+                <Upload size={14} /> Importar fichas{budget ? ` → ${budget.nombreProyecto}` : ''}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </Fragment>
@@ -1949,7 +1971,7 @@ export default function MainApp() {
         {page === 'inicio'     && <InicioPage    proyectos={proyectos} openProject={openProject} addProject={addProject} setPage={setPage} userName={userName} />}
         {page === 'proyectos'  && <ProyectosPage proyectos={proyectos} openProject={openProject} addProject={addProject} deleteProject={deleteProject} />}
         {page === 'reportes'   && <ReportesPage  proyectos={proyectos} budget={budget} params={params} userEmpresa={userEmpresa} />}
-        {page === 'plantillas' && <PlantillasPage />}
+        {page === 'plantillas' && <PlantillasPage budget={budget} setBudget={setBudget} />}
         {page === 'planes'     && <PlanesPage />}
 
         {/* ── PROYECTO VIEW ── */}
