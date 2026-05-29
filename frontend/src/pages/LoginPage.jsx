@@ -153,6 +153,7 @@ export default function LoginPage() {
 
   return (
     <div className="login-screen">
+      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', width:'100%' }}>
       <div className="login-card" style={{ maxWidth: mode === 'register' ? 480 : 420 }}>
 
         {/* Header */}
@@ -361,6 +362,7 @@ export default function LoginPage() {
         <a href="/terminos.html" target="_blank" style={{ color: 'var(--c-text-2)', textDecoration: 'none' }}>Términos</a>
         &nbsp;·&nbsp;
         <a href="/eliminar-cuenta.html" target="_blank" style={{ color: 'var(--c-text-2)', textDecoration: 'none' }}>Eliminar cuenta</a>
+      </div>
       </div>
     </div>
   )
