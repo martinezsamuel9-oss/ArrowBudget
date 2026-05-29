@@ -258,15 +258,15 @@ export default function LoginPage() {
               {/* Términos */}
               <label style={{ display:'flex', alignItems:'flex-start', gap:10, cursor:'pointer', userSelect:'none' }}>
                 <input type="checkbox" checked={terminos} onChange={e => setTerminos(e.target.checked)}
-                  style={{ marginTop:2, width:16, height:16, accentColor:'var(--c-primary)', flexShrink:0 }} />
+                  style={{ marginTop:3, width:16, height:16, accentColor:'var(--c-primary)', flexShrink:0 }} />
                 <span style={{ fontSize:13, color:'#64748b', lineHeight:1.5 }}>
-                  Acepto los{' '}
-                  <a href="#" style={{ color:'var(--c-primary)', fontWeight:500 }} onClick={e => e.preventDefault()}>
+                  He leído y acepto los{' '}
+                  <a href="/terminos.html" target="_blank" rel="noopener noreferrer" style={{ color:'var(--c-primary)', fontWeight:500 }}>
                     Términos y Condiciones
                   </a>{' '}y la{' '}
-                  <a href="#" style={{ color:'var(--c-primary)', fontWeight:500 }} onClick={e => e.preventDefault()}>
+                  <a href="/privacidad.html" target="_blank" rel="noopener noreferrer" style={{ color:'var(--c-primary)', fontWeight:500 }}>
                     Política de Privacidad
-                  </a>
+                  </a>{' '}de Arrow Budget.
                 </span>
               </label>
 
