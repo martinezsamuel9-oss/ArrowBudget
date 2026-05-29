@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Eliminar Cuenta — Arrow Budget</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; color: #1e293b; line-height: 1.7; }
+    header { background: #0f1115; padding: 0 24px; }
+    .header-inner { max-width: 800px; margin: 0 auto; display: flex; align-items: center; gap: 12px; padding: 18px 0; }
+    .logo { width: 36px; height: 36px; border-radius: 8px; object-fit: contain; }
+    .brand { color: #fff; font-size: 18px; font-weight: 800; letter-spacing: 1px; }
+    .brand span { color: #f59e0b; }
+    .container { max-width: 680px; margin: 0 auto; padding: 48px 24px 80px; }
+    h1 { font-size: 28px; font-weight: 800; color: #0f1115; margin-bottom: 6px; }
+    .meta { font-size: 13px; color: #64748b; margin-bottom: 40px; border-bottom: 1px solid #e2e8f0; padding-bottom: 20px; }
+    h2 { font-size: 17px; font-weight: 700; color: #0f1115; margin: 36px 0 10px; }
+    p { font-size: 15px; color: #334155; margin-bottom: 12px; }
+    ul { padding-left: 20px; margin-bottom: 16px; }
+    li { font-size: 15px; color: #334155; margin-bottom: 6px; }
+    a { color: #2563eb; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .warning-box { background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 18px 20px; margin-bottom: 32px; }
+    .warning-box .warn-title { font-size: 15px; font-weight: 700; color: #991b1b; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+    .warning-box ul { margin: 0; }
+    .warning-box li { color: #7f1d1d; font-size: 14px; }
+
+    .steps { counter-reset: step; margin-bottom: 32px; }
+    .step { display: flex; gap: 16px; margin-bottom: 20px; align-items: flex-start; }
+    .step-num { counter-increment: step; min-width: 32px; height: 32px; border-radius: 50%; background: #0f1115; color: #f59e0b; font-weight: 800; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
+    .step-num::before { content: counter(step); }
+    .step-body { flex: 1; }
+    .step-body strong { display: block; font-size: 15px; color: #0f1115; margin-bottom: 4px; }
+    .step-body p { margin: 0; font-size: 14px; color: #475569; }
+
+    .form-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 28px; margin-top: 8px; }
+    .form-group { margin-bottom: 18px; }
+    label { display: block; font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 6px; }
+    input[type="email"], textarea, select { width: 100%; padding: 10px 14px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; font-family: inherit; color: #1e293b; background: #f8fafc; outline: none; transition: border-color 0.15s; }
+    input[type="email"]:focus, textarea:focus, select:focus { border-color: #f59e0b; background: #fff; box-shadow: 0 0 0 3px rgba(245,158,11,0.1); }
+    textarea { resize: vertical; min-height: 90px; }
+    .checkbox-row { display: flex; gap: 10px; align-items: flex-start; }
+    .checkbox-row input[type="checkbox"] { margin-top: 3px; width: 16px; height: 16px; accent-color: #dc2626; flex-shrink: 0; }
+    .checkbox-row label { font-size: 13px; color: #374151; font-weight: 400; cursor: pointer; }
+    .btn-delete { width: 100%; padding: 13px; background: #dc2626; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; margin-top: 8px; transition: background 0.15s; }
+    .btn-delete:hover { background: #b91c1c; }
+    .btn-delete:disabled { background: #9ca3af; cursor: not-allowed; }
+
+    .success-msg { display: none; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 20px; text-align: center; }
+    .success-msg .icon { font-size: 32px; margin-bottom: 8px; }
+    .success-msg h3 { font-size: 16px; font-weight: 700; color: #166534; margin-bottom: 4px; }
+    .success-msg p { font-size: 14px; color: #166534; margin: 0; }
+
+    .alternative { background: #f1f5f9; border-radius: 10px; padding: 20px 22px; margin-top: 40px; }
+    .alternative h3 { font-size: 15px; font-weight: 700; color: #0f1115; margin-bottom: 8px; }
+    .alternative p { font-size: 14px; color: #475569; margin: 0; }
+
+    footer { background: #0f1115; color: #64748b; text-align: center; font-size: 13px; padding: 20px 24px; }
+    footer a { color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <img src="/favicon.png" alt="Arrow Budget" class="logo" />
+      <div class="brand">ARROW <span>BUDGET</span></div>
+    </div>
+  </header>
+
+  <div class="container">
+    <h1>Eliminar Cuenta</h1>
+    <p class="meta">Lamentamos que quieras irte. Si tienes algún problema, primero contáctanos — podemos ayudarte.</p>
+
+    <div class="warning-box">
+      <div class="warn-title">⚠️ Esta acción es permanente e irreversible</div>
+      <ul>
+        <li>Todos tus proyectos y presupuestos serán eliminados permanentemente.</li>
+        <li>Tus catálogos de materiales, mano de obra y fichas APU se perderán.</li>
+        <li>No podrás recuperar ningún dato una vez confirmada la solicitud.</li>
+        <li>Tu cuenta será desactivada en un plazo máximo de 30 días.</li>
+      </ul>
+    </div>
+
+    <h2>Cómo procesar tu solicitud</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num"></div>
+        <div class="step-body">
+          <strong>Exporta tus datos antes de continuar</strong>
+          <p>Ingresa a tu cuenta, descarga los reportes Excel o PDF de los proyectos que necesites conservar.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num"></div>
+        <div class="step-body">
+          <strong>Completa el formulario a continuación</strong>
+          <p>Ingresa tu correo registrado y el motivo de la eliminación para verificar tu identidad.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num"></div>
+        <div class="step-body">
+          <strong>Confirma tu solicitud</strong>
+          <p>Recibirás un correo de confirmación. Tu cuenta será eliminada en un plazo de 30 días hábiles.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-card">
+      <div id="form-area">
+        <div class="form-group">
+          <label for="email">Correo electrónico de tu cuenta *</label>
+          <input type="email" id="email" placeholder="tu@correo.com" required />
+        </div>
+        <div class="form-group">
+          <label for="motivo">Motivo de la eliminación</label>
+          <select id="motivo">
+            <option value="">Selecciona un motivo (opcional)</option>
+            <option value="ya_no_uso">Ya no uso el servicio</option>
+            <option value="funciones">No tiene las funciones que necesito</option>
+            <option value="precio">El precio no se ajusta a mi presupuesto</option>
+            <option value="privacidad">Preocupaciones de privacidad</option>
+            <option value="alternativa">Encontré una alternativa</option>
+            <option value="otro">Otro motivo</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="comentario">Comentario adicional (opcional)</label>
+          <textarea id="comentario" placeholder="¿Hay algo que pudiéramos mejorar?"></textarea>
+        </div>
+        <div class="form-group checkbox-row">
+          <input type="checkbox" id="confirmar" onchange="toggleBtn()" />
+          <label for="confirmar">Entiendo que esta acción es permanente y que todos mis proyectos y datos serán eliminados de forma irrecuperable.</label>
+        </div>
+        <button class="btn-delete" id="btnDelete" disabled onclick="submitForm()">Solicitar eliminación de cuenta</button>
+      </div>
+
+      <div class="success-msg" id="success">
+        <div class="icon">✅</div>
+        <h3>Solicitud recibida</h3>
+        <p>Hemos recibido tu solicitud de eliminación. Te enviaremos un correo de confirmación a la dirección indicada. Tu cuenta será eliminada en un plazo máximo de 30 días.</p>
+      </div>
+    </div>
+
+    <div class="alternative">
+      <h3>¿Prefieres contactarnos directamente?</h3>
+      <p>Envía un correo a <a href="mailto:soporte@innova504.com">soporte@innova504.com</a> con el asunto "Solicitud de eliminación de cuenta" e indica el correo asociado a tu cuenta. Procesamos todas las solicitudes en un plazo máximo de 30 días hábiles.</p>
+    </div>
+  </div>
+
+  <footer>
+    &copy; 2026 Arrow Budget · Innova 504 &nbsp;|&nbsp;
+    <a href="/privacidad.html">Privacidad</a> &nbsp;·&nbsp;
+    <a href="/terminos.html">Términos</a> &nbsp;·&nbsp;
+    <a href="/eliminar-cuenta.html">Eliminar cuenta</a>
+  </footer>
+
+  <script>
+    function toggleBtn() {
+      const cb = document.getElementById('confirmar')
+      const email = document.getElementById('email')
+      const btn = document.getElementById('btnDelete')
+      btn.disabled = !(cb.checked && email.value.trim())
+    }
+
+    document.getElementById('email').addEventListener('input', toggleBtn)
+
+    function submitForm() {
+      const email = document.getElementById('email').value.trim()
+      const motivo = document.getElementById('motivo').value
+      const comentario = document.getElementById('comentario').value.trim()
+
+      if (!email) return
+
+      // Build mailto link as fallback (server-side endpoint can be added later)
+      const subject = encodeURIComponent('Solicitud de eliminación de cuenta — ' + email)
+      const body = encodeURIComponent(
+        'Correo de cuenta: ' + email + '\n' +
+        'Motivo: ' + (motivo || 'No especificado') + '\n' +
+        (comentario ? 'Comentario: ' + comentario : '')
+      )
+
+      // Show success state
+      document.getElementById('form-area').style.display = 'none'
+      document.getElementById('success').style.display = 'block'
+
+      // Open mailto as confirmation channel
+      window.location.href = 'mailto:soporte@innova504.com?subject=' + subject + '&body=' + body
+    }
+  </script>
+</body>
+</html>
