@@ -1382,6 +1382,7 @@ function CatalogoView({ budget, setBudget, categoria }) {
   const [editId, setEditId] = useState(null)
   const filtered = list.filter(i => !q || normalize(i.descripcion).includes(normalize(q)) || normalize(i.codigo).includes(normalize(q)))
   const usagesOf = id => { let c = 0; const walk = its => { for (const it of its) { if (it.tipo === 'actividad') { for (const x of it.ficha[categoria.key] || []) if (x.insumoId === id) c++ } else if (it.children) walk(it.children) } }; walk(budget.items); return c }
+  const cantTotalOf = id => { let t = 0; const walk = its => { for (const it of its) { if (it.tipo === 'actividad') { for (const x of it.ficha[categoria.key] || []) if (x.insumoId === id) t += (+it.cantidad || 0) * (+x.rendimiento || 0) } else if (it.children) walk(it.children) } }; walk(budget.items); return round2(t) }
   const submit = e => {
     e.preventDefault(); const desc = form.descripcion.trim(); if (!desc) return alert('Descripción obligatoria.')
     const n = normalize(desc); const dup = list.find(i => normalize(i.descripcion) === n && i.unidad === form.unidad && i.id !== editId)
@@ -1422,12 +1423,13 @@ function CatalogoView({ budget, setBudget, categoria }) {
           <thead><tr>
             <th style={{ width: 90 }}>Código</th><th>Descripción</th>
             <th style={{ width: 80 }}>Unidad</th><th className="num" style={{ width: 110 }}>Precio Base</th>
-            <th style={{ width: 120 }}>Proveedor</th><th className="num" style={{ width: 60 }}>Uso</th><th style={{ width: 110 }}></th>
+            <th style={{ width: 120 }}>Proveedor</th><th className="num" style={{ width: 100 }}>Cant. Total</th><th style={{ width: 110 }}></th>
           </tr></thead>
           <tbody>
             {!filtered.length && <tr><td colSpan={7} className="empty">{!list.length ? `Sin ${categoria.label.toLowerCase()} aún.` : 'Sin coincidencias.'}</td></tr>}
             {filtered.map(i => {
               const u = usagesOf(i.id)
+              const cantTotal = cantTotalOf(i.id)
               return (
                 <tr key={i.id}>
                   <td className="id">{i.codigo}</td>
@@ -1438,12 +1440,17 @@ function CatalogoView({ budget, setBudget, categoria }) {
                   <td style={{ textAlign: 'center', color: 'var(--c-text-2)' }}>{i.unidad}</td>
                   <td className="num" style={{ fontWeight: 600, color: (!i.costoBase || i.costoBase === 0) ? 'var(--c-danger)' : undefined }}>{money(i.costoBase)}</td>
                   <td style={{ fontSize: 12, color: 'var(--c-text-3)' }}>{i.proveedor || '—'}</td>
-                  <td className="num"><span className={`badge ${u > 0 ? 'success' : ''}`}>{u}</span></td>
+                  <td className="num">
+                    <span className={`badge ${u > 0 ? 'success' : ''}`} title={`Usado en ${u} ficha(s)`}>
+                      {u > 0 ? fmt(cantTotal) : '—'}
+                    </span>
+                    {u > 0 && <span style={{ fontSize: 10, color: 'var(--c-text-3)', marginLeft: 3 }}>{i.unidad}</span>}
+                  </td>
                   <td className="actions">
                     <button className="btn xs ghost" onClick={() => { setForm({ codigo: i.codigo || '', descripcion: i.descripcion, unidad: i.unidad, costoBase: i.costoBase, proveedor: i.proveedor || '', notas: i.notas || '' }); setEditId(i.id); setShowForm(true) }}>
                       <Edit2 size={11} /> Editar
                     </button>
-                    <button className="btn xs danger icon" style={{ marginLeft: 4 }} onClick={() => { if (u > 0) return alert(`Usado en ${u} ficha(s).`); if (!confirm(`¿Eliminar "${i.descripcion}"?`)) return; setBudget({ ...budget, catalogos: { ...budget.catalogos, [categoria.key]: list.filter(x => x.id !== i.id) } }) }}>
+                    <button className="btn xs danger icon" style={{ marginLeft: 4 }} onClick={() => { if (u > 0) return alert(`Usado en ${u} ficha(s). No se puede eliminar.`); if (!confirm(`¿Eliminar "${i.descripcion}"?`)) return; setBudget({ ...budget, catalogos: { ...budget.catalogos, [categoria.key]: list.filter(x => x.id !== i.id) } }) }}>
                       <Trash2 size={11} />
                     </button>
                   </td>
