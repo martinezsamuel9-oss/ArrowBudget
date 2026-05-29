@@ -16,7 +16,7 @@ import {
   findOrCreateInsumo, findPathById, CATEGORIAS, EMPTY_CATALOGOS,
 } from '../lib/calc'
 import {
-  exportPDFPresupuesto, exportPDFFicha, exportPDFGeneral, exportPDFRangoFichas,
+  exportPDFCatalogo, exportPDFPresupuesto, exportPDFFicha, exportPDFGeneral, exportPDFRangoFichas,
   exportPDFResumenEjecutivo, exportPDFPortafolio,
   exportExcelPresupuesto, exportExcelCatalogo, exportExcelFicha, exportExcelGeneral,
   exportExcelRangoFichas, exportExcelPortafolio,
@@ -1478,15 +1478,15 @@ function ReportesPage({ proyectos, budget, params, userEmpresa }) {
   const cartera    = proyectos.reduce((s, p) => s + (p._total || 0), 0)
 
   const ReporteCard = ({ icon: Icon, title, desc, onPdf, onExcel, disabled }) => (
-    <div className="card" style={{ opacity: disabled ? 0.5 : 1 }}>
-      <div className="card-pad" style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+    <div className="card" style={{ opacity: disabled ? 0.5 : 1, display: 'flex', flexDirection: 'column' }}>
+      <div className="card-pad" style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flex: 1 }}>
         <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--c-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           <Icon size={20} color="#fff" />
         </div>
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 90 }}>
           <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--c-text)', marginBottom: 4 }}>{title}</div>
-          <div style={{ fontSize: 12, color: 'var(--c-text-3)', marginBottom: 12 }}>{desc}</div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ fontSize: 12, color: 'var(--c-text-3)', flex: 1 }}>{desc}</div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--c-line)' }}>
             {onPdf   && <button className="btn sm primary" onClick={onPdf}   disabled={disabled}><Download size={13}/> PDF</button>}
             {onExcel && <button className="btn sm ghost"   onClick={onExcel} disabled={disabled}><FileSpreadsheet size={13}/> Excel</button>}
           </div>
@@ -1556,24 +1556,24 @@ function ReportesPage({ proyectos, budget, params, userEmpresa }) {
                     <ReporteCard
                       icon={Package}
                       title="Catálogo de Materiales"
-                      desc="Lista de precios de materiales con código, unidad y proveedor."
-                      onPdf={null}
+                      desc="Lista de materiales con código, unidad, cantidad total proyectada y costo."
+                      onPdf={()   => exportPDFCatalogo(budget, 'materiales')}
                       onExcel={() => exportExcelCatalogo(budget, 'materiales')}
                       disabled={(budget.catalogos?.materiales || []).length === 0}
                     />
                     <ReporteCard
                       icon={HardHat}
                       title="Catálogo de Mano de Obra"
-                      desc="Lista de operarios, cuadrillas y tarifas."
-                      onPdf={null}
+                      desc="Lista de operarios y cuadrillas con tarifa, cantidad total y costo proyectado."
+                      onPdf={()   => exportPDFCatalogo(budget, 'manoObra')}
                       onExcel={() => exportExcelCatalogo(budget, 'manoObra')}
                       disabled={(budget.catalogos?.manoObra || []).length === 0}
                     />
                     <ReporteCard
                       icon={Wrench}
                       title="Catálogo de Herramientas/Equipo"
-                      desc="Listado de herramienta menor, equipo y maquinaria."
-                      onPdf={null}
+                      desc="Listado de herramienta menor, equipo y maquinaria con cantidad y costo total."
+                      onPdf={()   => exportPDFCatalogo(budget, 'herramientaEquipo')}
                       onExcel={() => exportExcelCatalogo(budget, 'herramientaEquipo')}
                       disabled={(budget.catalogos?.herramientaEquipo || []).length === 0}
                     />

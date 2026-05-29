@@ -170,6 +170,70 @@ const drawApuFooter = (doc, budget, pageNum, totalPages) => {
   doc.setTextColor(0)
 }
 
+// ============ PDF CATÁLOGO ============
+export const exportPDFCatalogo = (budget, catKey) => {
+  const cat = CATEGORIAS.find(c => c.key === catKey)
+  if (!cat) return
+  const ML = 14
+  const cantTotalOf = id => {
+    let t = 0
+    const walk = its => { for (const it of its) { if (it.tipo === 'actividad') { for (const x of (it.ficha?.[catKey]||[])) if (x.insumoId === id) t += (+it.cantidad||0) * (+x.rendimiento||0) } else if (it.children) walk(it.children) } }
+    walk(budget.items || [])
+    return round2(t)
+  }
+  const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'letter' })
+  const w = doc.internal.pageSize.getWidth()
+  const h = doc.internal.pageSize.getHeight()
+  // Header
+  doc.setFillColor(15,17,21); doc.rect(0,0,w,20,'F')
+  doc.setTextColor(245,158,11); doc.setFontSize(11); doc.setFont(undefined,'bold')
+  doc.text(`LISTA DE ${cat.label.toUpperCase()}`, w/2, 11, { align:'center' })
+  doc.setTextColor(220,220,220); doc.setFontSize(7.5); doc.setFont(undefined,'normal')
+  doc.text(budget.nombreProyecto||'', w/2, 17, { align:'center' })
+  doc.setTextColor(0)
+  // Tabla
+  const rows = (budget.catalogos[catKey]||[]).map(ins => {
+    const cant = cantTotalOf(ins.id)
+    return [
+      ins.codigo||'', ins.descripcion, ins.unidad,
+      cant > 0 ? fmt(cant) : '—',
+      money(ins.costoBase),
+      cant > 0 ? money(round2(cant*(+ins.costoBase||0))) : '—',
+    ]
+  })
+  doc.autoTable({
+    startY: 24,
+    margin: { left: ML, right: ML },
+    head: [[
+      { content:'Código',      styles:{halign:'center'} },
+      { content:'Descripción', styles:{halign:'left'  } },
+      { content:'Unidad',      styles:{halign:'center'} },
+      { content:'Cant. Total', styles:{halign:'right' } },
+      { content:'Precio Base', styles:{halign:'right' } },
+      { content:'Costo Total', styles:{halign:'right' } },
+    ]],
+    body: rows,
+    styles: { fontSize: 8, cellPadding: 2, textColor:[15,17,21] },
+    headStyles: { fillColor:[30,41,59], textColor:255, fontStyle:'bold', fontSize:8 },
+    alternateRowStyles: { fillColor:[248,250,252] },
+    columnStyles: {
+      0:{ cellWidth:18, halign:'center' },
+      2:{ cellWidth:14, halign:'center' },
+      3:{ cellWidth:22, halign:'right'  },
+      4:{ cellWidth:24, halign:'right'  },
+      5:{ cellWidth:26, halign:'right'  },
+    },
+    theme: 'plain',
+  })
+  // Footer
+  doc.setDrawColor(203,213,225); doc.setLineWidth(0.3); doc.line(ML,h-10,w-ML,h-10)
+  doc.setTextColor(148,163,184); doc.setFontSize(7); doc.setFont(undefined,'normal')
+  doc.text(`Arrow Budget · ${new Date().toLocaleDateString('es-HN')}`, ML, h-5)
+  doc.text(`${(budget.catalogos[catKey]||[]).length} registros`, w-ML, h-5, { align:'right' })
+  doc.setTextColor(0)
+  doc.save(`${(budget.nombreProyecto||'Cat').replace(/[^\w]+/g,'_')}_${cat.label.replace(/\s+/g,'_')}.pdf`)
+}
+
 export const exportPDFPresupuesto = (budget, params) => {
   const doc = new jsPDF({orientation:'landscape',unit:'mm',format:'letter'})
   const y = drawPDFHeader(doc, budget, 'PRESUPUESTO DE OBRA')
