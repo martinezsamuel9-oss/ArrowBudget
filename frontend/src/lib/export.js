@@ -347,20 +347,37 @@ export async function exportExcelPresupuesto(budget, params) {
 
 export async function exportExcelCatalogo(budget, catKey) {
   const cat=CATEGORIAS.find(c=>c.key===catKey)
+  // Calcula la cantidad total consumida por un insumo: Σ (actividad.cantidad × rendimiento)
+  const cantTotalOf = id => {
+    let t = 0
+    const walk = its => { for (const it of its) { if (it.tipo === 'actividad') { for (const x of (it.ficha?.[catKey]||[])) if (x.insumoId === id) t += (+it.cantidad||0) * (+x.rendimiento||0) } else if (it.children) walk(it.children) } }
+    walk(budget.items || [])
+    return round2(t)
+  }
   const wb=new ExcelJS.Workbook(); const ws=wb.addWorksheet(cat.label)
-  ws.columns=[{width:14},{width:40},{width:12},{width:16},{width:24},{width:30}]
+  ws.columns=[{width:14},{width:45},{width:12},{width:18},{width:18},{width:22}]
   ws.mergeCells('A1:F1')
   setC(ws,'A1',`LISTA DE ${cat.label.toUpperCase()} — ${budget.nombreProyecto}`,{fill:X.titleFill,font:X.titleFont,alignment:X.ac})
   ws.getRow(1).height=26
-  ;['Código','Descripción','Unidad','Precio Base','Proveedor','Notas'].forEach((h,i)=>setC(ws,String.fromCharCode(65+i)+'3',h,{fill:X.headerFill,font:X.headerFont,alignment:X.ac}))
+  ;['Código','Descripción','Unidad','Cant. Total','Precio Base','Costo Total'].forEach((h,i)=>setC(ws,String.fromCharCode(65+i)+'3',h,{fill:X.headerFill,font:X.headerFont,alignment:X.ac}))
   ws.getRow(3).height=22
   ;(budget.catalogos[catKey]||[]).forEach((ins,idx)=>{
     const r=4+idx
+    const cant=cantTotalOf(ins.id)
+    const costoTotal=round2(cant*(+ins.costoBase||0))
     setC(ws,'A'+r,ins.codigo||'',{alignment:X.ac,font:{name:'Consolas',size:10}})
     setC(ws,'B'+r,ins.descripcion,{alignment:X.al}); setC(ws,'C'+r,ins.unidad,{alignment:X.ac})
-    setC(ws,'D'+r,round2(ins.costoBase),{alignment:X.ar,numFmt:MFMT,font:{bold:true}})
-    setC(ws,'E'+r,ins.proveedor||'',{alignment:X.al}); setC(ws,'F'+r,ins.notas||'',{alignment:X.al})
+    setC(ws,'D'+r,cant,{alignment:X.ar,numFmt:NFMT})
+    setC(ws,'E'+r,round2(ins.costoBase),{alignment:X.ar,numFmt:MFMT})
+    setC(ws,'F'+r,costoTotal,{alignment:X.ar,numFmt:MFMT,font:{bold:true}})
   })
+  // Total row
+  const total=round2((budget.catalogos[catKey]||[]).reduce((s,ins)=>s+round2(cantTotalOf(ins.id)*(+ins.costoBase||0)),0))
+  const tot=4+(budget.catalogos[catKey]||[]).length+1
+  ws.mergeCells(`A${tot}:E${tot}`)
+  setC(ws,'A'+tot,'TOTAL',{fill:X.totalFill,font:X.totalFont,alignment:X.ar})
+  setC(ws,'F'+tot,total,{fill:X.totalFill,font:X.totalFont,alignment:X.ar,numFmt:MFMT})
+  ws.getRow(tot).height=24
   const buf=await wb.xlsx.writeBuffer()
   saveAs(new Blob([buf]),(budget.nombreProyecto||'Cat').replace(/[^\w]+/g,'_')+'_'+cat.label.replace(/\s+/g,'_')+'.xlsx')
 }
@@ -530,7 +547,18 @@ export const exportPDFResumenEjecutivo = (budget, params) => {
   const w = doc.internal.pageSize.getWidth()
   const h = doc.internal.pageSize.getHeight()
 
-  // Calcular totales con calcItem (igual que en la app)
+  // ── Paleta monocromática ──────────────────────────────────────
+  const C = {
+    ink:    [15,  17,  21],   // negro casi puro
+    dark:   [30,  41,  59],   // gris oscuro (cabeceras de tabla)
+    mid:    [71,  85, 105],   // gris medio
+    muted:  [148,163,184],    // gris apagado
+    rule:   [203,213,225],    // línea divisoria
+    bg:     [248,250,252],    // fondo alterno filas
+    white:  [255,255,255],
+  }
+
+  // ── Calcular totales ──────────────────────────────────────────
   const directReal  = round2(budget.items.reduce((s, it) => s + calcItem(it, budget.catalogos, params).subtotal, 0))
   const indirectos  = round2(directReal * (params.pctIndirectos / 100))
   const imprevistos = round2((directReal + indirectos) * (params.pctImprevistos / 100))
@@ -540,52 +568,54 @@ export const exportPDFResumenEjecutivo = (budget, params) => {
   const impuesto    = round2(subtotalU * (params.pctImpuesto / 100))
   const total       = round2(subtotalU + impuesto)
 
-  // ── Header oscuro ──────────────────────────────────────────────
-  doc.setFillColor(10, 20, 40); doc.rect(0, 0, w, 68, 'F')
-  try { if (budget.logoOfertante) doc.addImage(budget.logoOfertante, 'PNG', 14, 10, 26, 26) } catch {}
-  try { if (budget.logoCliente)   doc.addImage(budget.logoCliente,   'PNG', w - 40, 10, 26, 26) } catch {}
+  // ── Header (barra oscura) ─────────────────────────────────────
+  const hdrH = 56
+  doc.setFillColor(...C.ink); doc.rect(0, 0, w, hdrH, 'F')
 
-  doc.setTextColor(245, 158, 11); doc.setFontSize(8); doc.setFont(undefined, 'bold')
-  doc.text('RESUMEN EJECUTIVO DE PRESUPUESTO', w / 2, 14, { align: 'center' })
-  doc.setTextColor(255); doc.setFontSize(18); doc.setFont(undefined, 'bold')
-  doc.text(budget.nombreProyecto || 'Sin nombre', w / 2, 26, { align: 'center' })
-  doc.setFontSize(9); doc.setFont(undefined, 'normal'); doc.setTextColor(180, 200, 230)
-  doc.text(budget.lugar || '', w / 2, 33, { align: 'center' })
+  // Logos
+  try { if (budget.logoOfertante) doc.addImage(budget.logoOfertante, 'PNG', 12, 8, 24, 24) } catch {}
+  try { if (budget.logoCliente)   doc.addImage(budget.logoCliente,   'PNG', w-36, 8, 24, 24) } catch {}
 
-  // Pills
-  const pills = [`Rev. ${budget.revision || 1}`, budget.estado || 'Borrador', budget.moneda || 'USD', budget.tipo || ''].filter(Boolean)
-  let px = w / 2 - (pills.length * 23) / 2
-  pills.forEach(pill => {
-    doc.setFillColor(37, 99, 235); doc.roundedRect(px, 38, 21, 6, 2, 2, 'F')
-    doc.setTextColor(255); doc.setFontSize(6.5); doc.setFont(undefined, 'bold')
-    doc.text(pill, px + 10.5, 42.5, { align: 'center' })
-    px += 24
-  })
+  // Título y proyecto
+  doc.setTextColor(...C.muted); doc.setFontSize(7); doc.setFont(undefined, 'bold')
+  doc.text('RESUMEN EJECUTIVO DE PRESUPUESTO', w / 2, 11, { align: 'center' })
+  doc.setTextColor(...C.white); doc.setFontSize(17); doc.setFont(undefined, 'bold')
+  doc.text(budget.nombreProyecto || 'Sin nombre', w / 2, 23, { align: 'center' })
+  doc.setFontSize(8); doc.setFont(undefined, 'normal'); doc.setTextColor(...C.muted)
+  doc.text(budget.lugar || '', w / 2, 30, { align: 'center' })
 
-  // Línea dorada + info partes
-  doc.setDrawColor(245, 158, 11); doc.setLineWidth(0.6); doc.line(14, 51, w - 14, 51)
-  doc.setFontSize(7.5); doc.setFont(undefined, 'normal'); doc.setTextColor(170, 190, 215)
-  const left  = [`Cotizante:  ${budget.cotizante   || '—'}`, `Ofertante:  ${budget.ofertante   || '—'}`, `Realizado:  ${budget.realizadoPor || '—'}`]
-  const right = [`Cliente:    ${budget.cliente      || '—'}`, `Fecha:      ${budget.fecha        || '—'}`]
-  left.forEach((t, i)  => doc.text(t, 14,    55 + i * 4))
-  right.forEach((t, i) => doc.text(t, w / 2, 55 + i * 4))
+  // Línea de estado (sin pills de colores)
+  const meta = [`Rev. ${budget.revision || 1}`, budget.estado || 'Borrador', budget.moneda || 'USD', budget.tipo || ''].filter(Boolean).join('  ·  ')
+  doc.setFontSize(7.5); doc.setTextColor(...C.muted)
+  doc.text(meta, w / 2, 36, { align: 'center' })
 
-  // ── KPI boxes ─────────────────────────────────────────────────
-  let y = 74
-  const boxes = [
-    { label: 'COSTO DIRECTO',     value: money(directReal),           color: [30, 64, 175] },
-    { label: 'INDIRECTOS + IMPR.', value: money(indirectos + imprevistos), color: [79, 70, 229] },
-    { label: 'UTILIDAD',          value: money(utilidad),             color: [5, 150, 105] },
-    { label: 'TOTAL C/IMPUESTO',  value: money(total),                color: [180, 83, 9]  },
+  // Divisor
+  doc.setDrawColor(...C.mid); doc.setLineWidth(0.3); doc.line(12, 40, w - 12, 40)
+
+  // Partes
+  doc.setFontSize(7.5); doc.setFont(undefined, 'normal'); doc.setTextColor(...C.muted)
+  const infoL = [['Cotizante:', budget.cotizante||'—'],['Ofertante:', budget.ofertante||'—'],['Realizado:', budget.realizadoPor||'—']]
+  const infoR = [['Cliente:', budget.cliente||'—'],['Fecha:', budget.fecha||'—'],['Tipo:', budget.tipo||'—']]
+  infoL.forEach(([lbl,val],i)=>{ doc.setFont(undefined,'bold'); doc.text(lbl,12,44+i*4); doc.setFont(undefined,'normal'); doc.text(val,34,44+i*4) })
+  infoR.forEach(([lbl,val],i)=>{ doc.setFont(undefined,'bold'); doc.text(lbl,w/2+2,44+i*4); doc.setFont(undefined,'normal'); doc.text(val,w/2+20,44+i*4) })
+  doc.setTextColor(0)
+
+  // ── KPI strip (4 cajas monocromáticas) ───────────────────────
+  let y = hdrH + 6
+  const kpis = [
+    { label: 'COSTO DIRECTO',      value: money(directReal)            },
+    { label: 'INDIRECTOS + IMPR.', value: money(indirectos+imprevistos) },
+    { label: 'UTILIDAD',           value: money(utilidad)              },
+    { label: 'TOTAL GENERAL',      value: money(total)                 },
   ]
   const bw = (w - 28 - 9) / 4
-  boxes.forEach((b, i) => {
+  kpis.forEach((b, i) => {
     const bx = 14 + i * (bw + 3)
-    doc.setFillColor(...b.color); doc.roundedRect(bx, y, bw, 20, 2, 2, 'F')
-    doc.setTextColor(255); doc.setFontSize(6.5); doc.setFont(undefined, 'bold')
+    doc.setFillColor(...C.dark); doc.roundedRect(bx, y, bw, 20, 1.5, 1.5, 'F')
+    doc.setTextColor(...C.muted); doc.setFontSize(6); doc.setFont(undefined, 'bold')
     doc.text(b.label, bx + bw / 2, y + 6, { align: 'center' })
-    doc.setFontSize(9.5)
-    doc.text(b.value, bx + bw / 2, y + 14, { align: 'center' })
+    doc.setTextColor(...C.white); doc.setFontSize(10); doc.setFont(undefined, 'bold')
+    doc.text(b.value, bx + bw / 2, y + 15, { align: 'center' })
   })
   y += 26
 
@@ -594,50 +624,53 @@ export const exportPDFResumenEjecutivo = (budget, params) => {
     startY: y,
     head: [['Concepto', '%', `Monto (${budget.moneda || 'USD'})`]],
     body: [
-      ['Costo Directo',              '—',                       money(directReal)],
-      [`Indirectos`,                 `${params.pctIndirectos}%`,  money(indirectos)],
-      [`Imprevistos`,                `${params.pctImprevistos}%`, money(imprevistos)],
-      ['Subtotal',                   '—',                       money(subtotal)],
-      [`Utilidad`,                   `${params.pctUtilidad}%`,   money(utilidad)],
-      ['Subtotal antes de impuestos','—',                        money(subtotalU)],
+      ['Costo Directo',              '—',                        money(directReal)],
+      ['Indirectos',                 `${params.pctIndirectos}%`, money(indirectos)],
+      ['Imprevistos',                `${params.pctImprevistos}%`,money(imprevistos)],
+      ['Subtotal',                   '—',                        money(subtotal)],
+      ['Utilidad',                   `${params.pctUtilidad}%`,   money(utilidad)],
+      ['Subtotal antes de impuestos','—',                         money(subtotalU)],
       [`Impuesto (ISV/IVA)`,         `${params.pctImpuesto}%`,   money(impuesto)],
       [
-        { content: 'TOTAL GENERAL', styles: { fontStyle: 'bold', fillColor: [10,20,40], textColor: 245 } },
-        { content: '—',             styles: { fontStyle: 'bold', fillColor: [10,20,40], textColor: 245, halign:'center' } },
-        { content: money(total),    styles: { fontStyle: 'bold', fillColor: [10,20,40], textColor: 245, halign:'right' } },
+        { content:'TOTAL GENERAL', styles:{ fontStyle:'bold', fillColor:C.ink, textColor:255 } },
+        { content:'—',             styles:{ fontStyle:'bold', fillColor:C.ink, textColor:255, halign:'center' } },
+        { content:money(total),    styles:{ fontStyle:'bold', fillColor:C.ink, textColor:255, halign:'right' } },
       ],
     ],
-    styles: { fontSize: 9, cellPadding: 2.5 },
-    headStyles: { fillColor: [15, 23, 42], textColor: 245, fontStyle: 'bold' },
-    columnStyles: { 0: { cellWidth: 100 }, 1: { halign: 'center', cellWidth: 20 }, 2: { halign: 'right' } },
-    theme: 'striped',
+    styles:      { fontSize: 9, cellPadding: 2.5, textColor: C.ink },
+    headStyles:  { fillColor: C.dark, textColor: 255, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: C.bg },
+    columnStyles:{ 0:{ cellWidth:100 }, 1:{ halign:'center', cellWidth:20 }, 2:{ halign:'right' } },
+    theme: 'plain',
   })
   y = doc.lastAutoTable.finalY + 8
 
   // ── Tabla resumen capítulos ───────────────────────────────────
   const capRows = budget.items.filter(it => it.tipo === 'capitulo').map(cap => {
     const capSub = round2(calcItem(cap, budget.catalogos, params).subtotal)
-    const nActs = (function count(its) { return its.reduce((s, x) => s + (x.tipo === 'actividad' ? 1 : count(x.children || [])), 0) })(cap.children || [])
-    return [cap.id, cap.descripcion, nActs + ' actividad(es)', money(capSub)]
+    const nActs  = (function count(its){ return its.reduce((s,x)=>s+(x.tipo==='actividad'?1:count(x.children||[])),0) })(cap.children||[])
+    const pct    = total > 0 ? ((capSub/total)*100).toFixed(1)+'%' : '—'
+    return [cap.id, cap.descripcion, nActs+' act.', pct, money(capSub)]
   })
   if (capRows.length) {
     doc.autoTable({
       startY: y,
-      head: [['ID', 'Capítulo', 'Actividades', 'Subtotal']],
-      body: capRows,
-      styles: { fontSize: 8, cellPadding: 2 },
-      headStyles: { fillColor: [15, 23, 42], textColor: 245 },
-      columnStyles: { 2: { halign: 'center' }, 3: { halign: 'right' } },
-      theme: 'striped',
+      head: [['ID','Capítulo','Acts.','% Total','Subtotal']],
+      body:  capRows,
+      styles:      { fontSize: 8, cellPadding: 2, textColor: C.ink },
+      headStyles:  { fillColor: C.dark, textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: C.bg },
+      columnStyles:{ 0:{ cellWidth:14,halign:'center' }, 2:{ halign:'center',cellWidth:16 }, 3:{ halign:'center',cellWidth:20 }, 4:{ halign:'right' } },
+      theme: 'plain',
     })
   }
 
   // ── Footer ────────────────────────────────────────────────────
-  doc.setFillColor(10, 20, 40); doc.rect(0, h - 14, w, 14, 'F')
-  doc.setTextColor(140, 160, 190); doc.setFontSize(7); doc.setFont(undefined, 'normal')
-  doc.text(`Generado por Arrow Budget · ${new Date().toLocaleDateString('es-HN')}`, 14, h - 5)
-  doc.text(`Documento confidencial — ${budget.cotizante || ''}`, w / 2, h - 5, { align: 'center' })
-  doc.text('Página 1', w - 14, h - 5, { align: 'right' })
+  doc.setDrawColor(...C.rule); doc.setLineWidth(0.3); doc.line(12, h-10, w-12, h-10)
+  doc.setTextColor(...C.muted); doc.setFontSize(7); doc.setFont(undefined, 'normal')
+  doc.text(`Arrow Budget · ${new Date().toLocaleDateString('es-HN')}`, 12, h-5)
+  doc.text(`Documento confidencial — ${budget.cotizante||''}`, w/2, h-5, { align:'center' })
+  doc.text('Pág. 1', w-12, h-5, { align:'right' })
 
   doc.save((budget.nombreProyecto || 'Proyecto').replace(/[^\w]+/g, '_') + '_ResumenEjecutivo.pdf')
 }
