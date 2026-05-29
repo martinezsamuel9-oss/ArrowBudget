@@ -19,7 +19,7 @@ import {
   exportPDFPresupuesto, exportPDFFicha, exportPDFGeneral, exportPDFRangoFichas,
   exportPDFResumenEjecutivo, exportPDFPortafolio,
   exportExcelPresupuesto, exportExcelCatalogo, exportExcelFicha, exportExcelGeneral,
-  exportExcelPortafolio,
+  exportExcelRangoFichas, exportExcelPortafolio,
   exportPlantilla, importExcelPresupuesto, importExcelCatalogo,
 } from '../lib/export'
 
@@ -53,10 +53,10 @@ const mapDb = row => ({
   tipo:          row.tipo          || 'Residencial',
   estado:        DB2UI[row.estado] || 'Borrador',
   ultimaEdicion: relTime(row.updated_at),
-  pctIndirectos: +(row.pct_indirectos  || 10),
-  pctImprevistos:+(row.pct_imprevistos || 1),
-  pctUtilidad:   +(row.pct_utilidad    || 8),
-  pctImpuesto:   +(row.pct_impuesto    || 15),
+  pctIndirectos: row.pct_indirectos  != null ? +row.pct_indirectos  : 10,
+  pctImprevistos:row.pct_imprevistos != null ? +row.pct_imprevistos : 1,
+  pctUtilidad:   row.pct_utilidad    != null ? +row.pct_utilidad    : 8,
+  pctImpuesto:   row.pct_impuesto    != null ? +row.pct_impuesto    : 15,
   logoOfertante: row.logo_ofertante || null,
   logoCliente:   row.logo_cliente   || null,
   versiones:     row.versiones_json || [],
@@ -435,7 +435,7 @@ function RangoFichasDialog({ open, onClose, budget, params, empresa = {} }) {
     <Modal open={open} onClose={onClose} title={`Seleccionar fichas (${sel.size}/${acts.length})`}
       footer={<>
         <button onClick={onClose} className="btn ghost">Cancelar</button>
-        <button onClick={async () => { for (const id of sel) { const a = acts.find(x => x.id === id); if (a) { await exportExcelFicha(budget, a, params); await new Promise(r => setTimeout(r, 250)) } } onClose() }} disabled={!sel.size} className="btn" style={{ opacity: sel.size ? 1 : 0.4, background: 'var(--c-success)', borderColor: 'var(--c-success)', color: '#fff' }}>
+        <button onClick={async () => { await exportExcelRangoFichas(budget, params, [...sel]); onClose() }} disabled={!sel.size} className="btn" style={{ opacity: sel.size ? 1 : 0.4, background: 'var(--c-success)', borderColor: 'var(--c-success)', color: '#fff' }}>
           <FileSpreadsheet size={13} /> Excel ({sel.size})
         </button>
         <button onClick={() => { exportPDFRangoFichas(budget, params, [...sel], empresa); onClose() }} disabled={!sel.size} className="btn" style={{ opacity: sel.size ? 1 : 0.4, background: 'var(--c-danger)', borderColor: 'var(--c-danger)', color: '#fff' }}>

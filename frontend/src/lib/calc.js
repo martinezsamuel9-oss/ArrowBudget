@@ -30,7 +30,8 @@ export const findInsumo = (cat, k, id) =>
 const isHerramientaMenor = ins =>
   normalize(ins?.descripcion) === 'herramienta menor'
 
-// opts.moTotal: si el insumo es "Herramienta Menor", usa moTotal como costoBase
+// opts.moTotal: si el insumo es "Herramienta Menor", rendimiento = % directo del MO total
+// Ej: rendimiento=5 → 5% de moTotal → base = moTotal/100 para que rend*base = rend% × moTotal
 export const conceptoCost = (c, cat, k, opts = {}) => {
   const ins = findInsumo(cat, k, c.insumoId)
   if (!ins) return 0

@@ -375,14 +375,62 @@ export async function exportExcelFicha(budget, act, params) {
   saveAs(new Blob([buf]),`Ficha_${act.id}.xlsx`)
 }
 
+// Todas las fichas seleccionadas en UN solo workbook, una hoja por actividad
+export async function exportExcelRangoFichas(budget, params, ids) {
+  const acts=[]; const collect=its=>{for(const it of its){if(it.tipo==='actividad'&&ids.includes(it.id))acts.push(it);else if(it.children)collect(it.children)}}
+  collect(budget.items)
+  if(!acts.length) return alert('No hay actividades seleccionadas.')
+
+  const wb=new ExcelJS.Workbook()
+
+  for(const act of acts){
+    const sheetName=`${act.id} ${act.descripcion}`.slice(0,31).replace(/[\\\/\*\?\:\[\]]/g,'_')
+    const ws=wb.addWorksheet(sheetName)
+    ws.columns=[{width:6},{width:38},{width:14},{width:12},{width:12},{width:12},{width:18}]
+    ws.mergeCells('A1:G1')
+    setC(ws,'A1','FICHA DE COSTO UNITARIO',{fill:X.titleFill,font:X.titleFont,alignment:X.ac}); ws.getRow(1).height=26
+    ws.mergeCells('A2:G2')
+    setC(ws,'A2',`${act.id} — ${act.descripcion}`,{font:{bold:true,size:12},alignment:X.ac})
+    setC(ws,'A3','Cantidad:',{font:{bold:true}}); setC(ws,'B3',`${fmt(act.cantidad)} ${act.unidad}`)
+    setC(ws,'D3','Proyecto:',{font:{bold:true}}); setC(ws,'E3',budget.nombreProyecto||'')
+    const calc=calcFicha(act.ficha,budget.catalogos,params)
+    let row=5
+    const sect=(title,k,total,moTotal=0)=>{
+      ws.mergeCells(`A${row}:G${row}`)
+      setC(ws,'A'+row,title,{fill:X.headerFill,font:X.headerFont,alignment:{vertical:'middle',horizontal:'left'}}); row++
+      ;['#','Insumo','Código','Unidad','Rend.','Desp.%','Subtotal'].forEach((h,i)=>setC(ws,String.fromCharCode(65+i)+row,h,{fill:X.headerFill,font:X.headerFont,alignment:X.ac})); row++
+      ;(act.ficha[k]||[]).forEach((c,i)=>{
+        const ins=findInsumo(budget.catalogos,k,c.insumoId); if(!ins)return
+        setC(ws,'A'+row,i+1,{alignment:X.ac}); setC(ws,'B'+row,ins.descripcion,{alignment:X.al})
+        setC(ws,'C'+row,ins.codigo||'',{alignment:X.ac,font:{name:'Consolas',size:10}}); setC(ws,'D'+row,ins.unidad,{alignment:X.ac})
+        setC(ws,'E'+row,round2(c.rendimiento),{alignment:X.ar,numFmt:NFMT}); setC(ws,'F'+row,round2(c.desperdicio),{alignment:X.ar,numFmt:'0.00"%"'})
+        setC(ws,'G'+row,conceptoCost(c,budget.catalogos,k,{moTotal}),{alignment:X.ar,numFmt:MFMT,font:{bold:true}}); row++
+      })
+      ws.mergeCells(`A${row}:F${row}`)
+      setC(ws,'A'+row,'SUBTOTAL '+title,{fill:X.subtotalFill,font:{bold:true},alignment:X.ar})
+      setC(ws,'G'+row,total,{fill:X.subtotalFill,font:{bold:true},alignment:X.ar,numFmt:MFMT}); row+=2
+    }
+    sect('MATERIALES','materiales',calc.totMat)
+    sect('MANO DE OBRA','manoObra',calc.totMo)
+    sect('HERRAMIENTA + EQUIPO','herramientaEquipo',calc.totHe,calc.totMo)
+    sect('SUBCONTRATO','subcontratos',calc.totSub)
+    ;[['Costo Directo',calc.costoDirecto],[`Indirectos (${params.pctIndirectos}%)`,calc.indirectos],[`Imprevistos (${params.pctImprevistos}%)`,calc.imprevistos],[`Utilidad (${params.pctUtilidad}%)`,calc.utilidad],['Subtotal antes de impuestos',calc.subtotalSinImpuesto],[`Impuesto (${params.pctImpuesto}%)`,calc.impuesto]].forEach(([l,v])=>{
+      ws.mergeCells(`A${row}:F${row}`); setC(ws,'A'+row,l,{alignment:X.ar,font:{bold:true}}); setC(ws,'G'+row,v,{alignment:X.ar,numFmt:MFMT}); row++
+    })
+    ws.mergeCells(`A${row}:F${row}`)
+    setC(ws,'A'+row,'PRECIO UNITARIO TOTAL',{fill:X.totalFill,font:X.totalFont,alignment:X.ar})
+    setC(ws,'G'+row,calc.precioUnitario,{fill:X.totalFill,font:X.totalFont,alignment:X.ar,numFmt:MFMT}); ws.getRow(row).height=26
+  }
+
+  const buf=await wb.xlsx.writeBuffer()
+  saveAs(new Blob([buf]),(budget.nombreProyecto||'Fichas').replace(/[^\w]+/g,'_')+'_APU.xlsx')
+}
+
 export async function exportExcelGeneral(budget, params) {
   await exportExcelPresupuesto(budget, params)
-  for(const cat of CATEGORIAS){
-    if((budget.catalogos[cat.key]||[]).length){ await new Promise(r=>setTimeout(r,300)); await exportExcelCatalogo(budget,cat.key) }
-  }
   const acts=[]; const collect=its=>{for(const it of its){if(it.tipo==='actividad')acts.push(it);else if(it.children)collect(it.children)}}
   collect(budget.items)
-  for(const act of acts){ await new Promise(r=>setTimeout(r,300)); await exportExcelFicha(budget,act,params) }
+  if(acts.length) await exportExcelRangoFichas(budget,params,acts.map(a=>a.id))
 }
 
 export async function exportPlantilla(tipo) {
