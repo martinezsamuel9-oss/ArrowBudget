@@ -814,25 +814,25 @@ function FichaCostoModal({ open, onClose, actividad, budget, catalogos, params, 
               moTotal={calc.totMo} />
           ))}
           <div style={{ marginTop: 16, background: 'var(--c-bg-2)', border: '1px solid var(--c-line)', borderRadius: 'var(--r-lg)', padding: 16 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12, color: 'var(--c-text-2)' }}>Resumen</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '4px 12px', fontSize: 13 }}>
-              {[['Materiales', calc.totMat], ['Mano de Obra', calc.totMo], ['Herramientas y Equipo', calc.totHe], ['Subcontratos', calc.totSub]].map(([lbl, val]) => (
-                <Fragment key={lbl}>
-                  <span style={{ color: 'var(--c-text-2)' }}>{lbl}</span>
-                  <span style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{money(val)}</span>
-                </Fragment>
-              ))}
-              <span style={{ fontWeight: 700, borderTop: '1px solid var(--c-line)', paddingTop: 6, marginTop: 2 }}>COSTO DIRECTO</span>
-              <span style={{ textAlign: 'right', fontWeight: 700, borderTop: '1px solid var(--c-line)', paddingTop: 6, marginTop: 2, fontFamily: 'var(--font-mono)' }}>{money(calc.costoDirecto)}</span>
-              <span style={{ color: 'var(--c-text-2)' }}>Indirectos ({params.pctIndirectos}%)</span>
-              <span style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{money(calc.indirectos)}</span>
-              <span style={{ color: 'var(--c-text-2)' }}>Imprevistos ({params.pctImprevistos}%)</span>
-              <span style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{money(calc.imprevistos)}</span>
-              <span style={{ color: 'var(--c-text-2)' }}>Utilidad ({params.pctUtilidad}%)</span>
-              <span style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{money(calc.utilidad)}</span>
-              <span style={{ color: 'var(--c-text-2)' }}>Impuesto ({params.pctImpuesto}%)</span>
-              <span style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{money(calc.impuesto)}</span>
-            </div>
+            <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8, color: 'var(--c-text-2)' }}>Resumen</div>
+            {/* Filas con línea guía entre label y valor */}
+            {[
+              { lbl: 'Materiales',           val: calc.totMat,       bold: false, sep: false },
+              { lbl: 'Mano de Obra',         val: calc.totMo,        bold: false, sep: false },
+              { lbl: 'Herramientas y Equipo',val: calc.totHe,        bold: false, sep: false },
+              { lbl: 'Subcontratos',         val: calc.totSub,       bold: false, sep: true  },
+              { lbl: 'COSTO DIRECTO',        val: calc.costoDirecto, bold: true,  sep: false },
+              { lbl: `Indirectos (${params.pctIndirectos}%)`,  val: calc.indirectos,          bold: false, sep: false },
+              { lbl: `Imprevistos (${params.pctImprevistos}%)`,val: calc.imprevistos,         bold: false, sep: false },
+              { lbl: `Utilidad (${params.pctUtilidad}%)`,      val: calc.utilidad,            bold: false, sep: false },
+              { lbl: `Impuesto (${params.pctImpuesto}%)`,      val: calc.impuesto,            bold: false, sep: false },
+            ].map(({ lbl, val, bold, sep }) => (
+              <div key={lbl} style={{ display: 'flex', alignItems: 'baseline', gap: 4, fontSize: 13, paddingTop: sep ? 6 : 2, paddingBottom: sep ? 6 : 2, borderBottom: sep ? '1px solid var(--c-line)' : 'none' }}>
+                <span style={{ color: bold ? 'var(--c-text)' : 'var(--c-text-2)', fontWeight: bold ? 700 : 400, whiteSpace: 'nowrap' }}>{lbl}</span>
+                <span style={{ flex: 1, borderBottom: '1px dotted var(--c-line)', marginBottom: 3, minWidth: 20 }} />
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: bold ? 700 : 400, textAlign: 'right', whiteSpace: 'nowrap' }}>{money(val)}</span>
+              </div>
+            ))}
             <div style={{ marginTop: 12, background: 'var(--c-ink)', color: '#fff', borderRadius: 'var(--r-md)', padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontWeight: 700, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Precio Unitario Total</span>
               <span style={{ fontWeight: 700, fontSize: 22, color: 'var(--c-accent)', fontFamily: 'var(--font-mono)' }}>{money(calc.precioUnitario)}</span>
