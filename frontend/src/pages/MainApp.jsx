@@ -60,7 +60,9 @@ const mapDb = row => ({
   logoOfertante: row.logo_ofertante || null,
   logoCliente:   row.logo_cliente   || null,
   versiones:     row.versiones_json || [],
-  catalogos:     row.catalogos_json || { ...EMPTY_CATALOGOS },
+  catalogos:     (() => { const c = row.catalogos_json || {}; return { materiales: c.materiales||[], manoObra: c.manoObra||[], herramientaEquipo: c.herramientaEquipo||[], subcontratos: c.subcontratos||[] } })(),
+  apuHeaderBg:   (row.catalogos_json?._apu?.headerBg)  || '#0f1115',
+  apuHeaderText: (row.catalogos_json?._apu?.headerText) || '#f59e0b',
   items:         row.items_json     || [],
 })
 
@@ -83,7 +85,7 @@ const toDb = b => ({
   logo_ofertante:  b.logoOfertante,
   logo_cliente:    b.logoCliente,
   versiones_json:  b.versiones,
-  catalogos_json:  b.catalogos,
+  catalogos_json:  { ...b.catalogos, _apu: { headerBg: b.apuHeaderBg||'#0f1115', headerText: b.apuHeaderText||'#f59e0b' } },
   items_json:      b.items,
   updated_at:      new Date().toISOString(),
 })
@@ -386,7 +388,7 @@ function EstadoMenu({ budget, setBudget }) {
 }
 
 // ============ DESCARGAS MENU ============
-function DescargasMenu({ budget, params, onRangoFichas }) {
+function DescargasMenu({ budget, params, onRangoFichas, empresa = {} }) {
   const Row = ({ label, desc, pdf, excel }) => (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '10px 14px', borderBottom: '1px solid var(--c-line-2)' }}>
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -416,13 +418,13 @@ function DescargasMenu({ budget, params, onRangoFichas }) {
       <div style={{ padding: '8px 14px 6px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--c-text-3)', background: 'var(--c-bg-2)', borderBottom: '1px solid var(--c-line)', borderTop: '1px solid var(--c-line)' }}>Fichas de costo</div>
       <Row label="Rango de fichas" desc="Seleccionar varias actividades" pdf={onRangoFichas} excel={onRangoFichas} />
       <div style={{ padding: '8px 14px 6px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--c-text-3)', background: 'var(--c-bg-2)', borderBottom: '1px solid var(--c-line)', borderTop: '1px solid var(--c-line)' }}>General</div>
-      <Row label="Reporte general" desc="Presupuesto + todas las fichas" pdf={() => exportPDFGeneral(budget, params)} excel={() => exportExcelGeneral(budget, params)} />
+      <Row label="Reporte general" desc="Presupuesto + todas las fichas" pdf={() => exportPDFGeneral(budget, params, empresa)} excel={() => exportExcelGeneral(budget, params)} />
     </Dropdown>
   )
 }
 
 // ============ RANGO FICHAS DIALOG ============
-function RangoFichasDialog({ open, onClose, budget, params }) {
+function RangoFichasDialog({ open, onClose, budget, params, empresa = {} }) {
   const [sel, setSel] = useState(() => new Set())
   const acts = useMemo(() => {
     const r = []; const walk = its => its.forEach(it => { if (it.tipo === 'actividad') r.push(it); else if (it.children) walk(it.children) }); walk(budget.items); return r
@@ -436,7 +438,7 @@ function RangoFichasDialog({ open, onClose, budget, params }) {
         <button onClick={async () => { for (const id of sel) { const a = acts.find(x => x.id === id); if (a) { await exportExcelFicha(budget, a, params); await new Promise(r => setTimeout(r, 250)) } } onClose() }} disabled={!sel.size} className="btn" style={{ opacity: sel.size ? 1 : 0.4, background: 'var(--c-success)', borderColor: 'var(--c-success)', color: '#fff' }}>
           <FileSpreadsheet size={13} /> Excel ({sel.size})
         </button>
-        <button onClick={() => { exportPDFRangoFichas(budget, params, [...sel]); onClose() }} disabled={!sel.size} className="btn" style={{ opacity: sel.size ? 1 : 0.4, background: 'var(--c-danger)', borderColor: 'var(--c-danger)', color: '#fff' }}>
+        <button onClick={() => { exportPDFRangoFichas(budget, params, [...sel], empresa); onClose() }} disabled={!sel.size} className="btn" style={{ opacity: sel.size ? 1 : 0.4, background: 'var(--c-danger)', borderColor: 'var(--c-danger)', color: '#fff' }}>
           <FileText size={13} /> PDF ({sel.size})
         </button>
       </>}>
@@ -574,9 +576,26 @@ function ConfigProyectoModal({ open, onClose, budget, setBudget }) {
         </div>
         <div className="divider"></div>
         <div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--c-text)', marginBottom: 10 }}>Colores del encabezado APU</div>
+          <div className="grid-2">
+            {[['apuHeaderBg', 'Fondo del header', '#0f1115'], ['apuHeaderText', 'Color de texto/acento', '#f59e0b']].map(([k, lbl, def]) => (
+              <div key={k} className="field">
+                <label className="field-label">{lbl}</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <input type="color" value={form[k] || def} onChange={e => setForm(prev => ({ ...prev, [k]: e.target.value }))}
+                    style={{ width: 42, height: 32, border: '1px solid var(--c-line)', borderRadius: 6, cursor: 'pointer', padding: 2 }} />
+                  <input className="input" value={form[k] || def} onChange={e => setForm(prev => ({ ...prev, [k]: e.target.value }))}
+                    style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }} maxLength={7} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="divider"></div>
+        <div>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--c-text)', marginBottom: 10 }}>Logos</div>
           <div className="grid-2">
-            {[['logoOfertante', 'Logo Revisó / Aprobó'], ['logoCliente', 'Logo Cliente']].map(([k, lbl]) => (
+            {[['logoOfertante', 'Logo Empresa (APU)'], ['logoCliente', 'Logo Cliente']].map(([k, lbl]) => (
               <div key={k} className="field">
                 <label className="field-label">{lbl}</label>
                 <div style={{ border: '2px dashed var(--c-line)', borderRadius: 'var(--r-md)', padding: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -760,7 +779,7 @@ function FichaSection({ title, k, total, ficha, catalogos, onAdd, onDel, onUpd, 
 }
 
 // ============ FICHA COSTO MODAL ============
-function FichaCostoModal({ open, onClose, actividad, budget, catalogos, params, onUpdate, onUpdateCatalogos }) {
+function FichaCostoModal({ open, onClose, actividad, budget, catalogos, params, onUpdate, onUpdateCatalogos, empresa = {} }) {
   if (!open || !actividad) return null
   const f = actividad.ficha || { materiales: [], manoObra: [], herramientaEquipo: [], subcontratos: [] }
   const calc = calcFicha(f, catalogos, params)
@@ -822,7 +841,7 @@ function FichaCostoModal({ open, onClose, actividad, budget, catalogos, params, 
         </div>
         <div style={{ background: 'var(--c-bg-2)', borderTop: '1px solid var(--c-line)', padding: '12px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => budget && exportPDFFicha(budget, actividad, params)} className="btn" style={{ background: 'var(--c-danger)', borderColor: 'var(--c-danger)', color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}><FileText size={13} /> PDF</button>
+            <button onClick={() => budget && exportPDFFicha(budget, actividad, params, empresa)} className="btn" style={{ background: 'var(--c-danger)', borderColor: 'var(--c-danger)', color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}><FileText size={13} /> PDF</button>
             <button onClick={() => budget && exportExcelFicha(budget, actividad, params)} className="btn" style={{ background: 'var(--c-success)', borderColor: 'var(--c-success)', color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}><FileSpreadsheet size={13} /> Excel</button>
           </div>
           <button onClick={onClose} className="btn primary">Cerrar</button>
@@ -1524,7 +1543,7 @@ function ReportesPage({ proyectos, budget, params, userEmpresa }) {
                       icon={Layers}
                       title="Todos los APU / Fichas"
                       desc="Exporta la ficha de costo unitario de cada actividad del presupuesto."
-                      onPdf={() => exportPDFGeneral(budget, params)}
+                      onPdf={() => exportPDFGeneral(budget, params, { nombre: userEmpresa, logo: budget?.logoOfertante, headerBg: budget?.apuHeaderBg, headerText: budget?.apuHeaderText })}
                       onExcel={() => exportExcelGeneral(budget, params)}
                     />
                     <ReporteCard
@@ -1958,7 +1977,7 @@ export default function MainApp() {
                 )}
                 <input ref={fileRef} type="file" style={{ display: 'none' }} onChange={handleImport} />
                 <button className="btn sm" onClick={() => setShowVersion(true)}>💾 Versión</button>
-                {tabProject === 'presupuesto' && <DescargasMenu budget={budget} params={params} onRangoFichas={() => setShowRango(true)} />}
+                {tabProject === 'presupuesto' && <DescargasMenu budget={budget} params={params} onRangoFichas={() => setShowRango(true)} empresa={{ nombre: userEmpresa, logo: budget.logoOfertante, headerBg: budget.apuHeaderBg, headerText: budget.apuHeaderText }} />}
                 {tabProject !== 'presupuesto' && tabToCat[tabProject] && (
                   <button className="btn sm" style={{ background: 'var(--c-success)', borderColor: 'var(--c-success)', color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}
                     onClick={() => exportExcelCatalogo(budget, tabToCat[tabProject])}>
@@ -2049,10 +2068,11 @@ export default function MainApp() {
         catalogos={budget?.catalogos || EMPTY_CATALOGOS}
         params={params} onUpdate={updFicha}
         onUpdateCatalogos={nc => setBudget({ ...budget, catalogos: nc })}
+        empresa={{ nombre: userEmpresa, logo: budget?.logoOfertante, headerBg: budget?.apuHeaderBg, headerText: budget?.apuHeaderText }}
       />
       {budget && <ConfigProyectoModal  open={showConfig}  onClose={() => setShowConfig(false)}  budget={budget} setBudget={setBudget} />}
       {budget && <GuardarVersionDialog open={showVersion} onClose={() => setShowVersion(false)} budget={budget} setBudget={setBudget} />}
-      {budget && <RangoFichasDialog    open={showRango}   onClose={() => setShowRango(false)}   budget={budget} params={params} />}
+      {budget && <RangoFichasDialog    open={showRango}   onClose={() => setShowRango(false)}   budget={budget} params={params} empresa={{ nombre: userEmpresa, logo: budget.logoOfertante, headerBg: budget.apuHeaderBg, headerText: budget.apuHeaderText }} />}
     </div>
   )
 }

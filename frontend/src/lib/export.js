@@ -79,6 +79,67 @@ const drawPDFHeader = (doc, budget, subtitle='PRESUPUESTO DE OBRA') => {
   return y+4
 }
 
+// ============ APU HEADER / FOOTER HELPERS ============
+const hexToRgb = hex => {
+  const h = (hex||'').replace('#','').replace(/[^0-9a-fA-F]/g,'')
+  if (h.length < 6) return null
+  return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)]
+}
+
+// draws the compact APU page header; returns the Y coordinate where content should start
+const drawApuHeader = (doc, budget, empresa = {}, opts = {}) => {
+  const w = doc.internal.pageSize.getWidth()
+  const { showPartyInfo = true } = opts
+  const bgRgb    = hexToRgb(empresa.headerBg)    || [15,17,21]
+  const textRgb  = hexToRgb(empresa.headerText)  || [245,158,11]
+  const headerH  = 28
+
+  doc.setFillColor(...bgRgb); doc.rect(0,0,w,headerH,'F')
+  // Logo empresa
+  if (empresa.logo) { try { doc.addImage(empresa.logo,'PNG',6,4,20,20) } catch{} }
+  // Titles
+  doc.setTextColor(...textRgb); doc.setFontSize(13); doc.setFont(undefined,'bold')
+  doc.text('FICHA DE COSTO UNITARIO', w/2, 11, {align:'center'})
+  doc.setTextColor(255,255,255); doc.setFontSize(9); doc.setFont(undefined,'normal')
+  doc.text(empresa.nombre||'', w/2, 18, {align:'center'})
+  doc.setFontSize(7.5); doc.setTextColor(190,190,190)
+  doc.text(budget.nombreProyecto||'', w/2, 24, {align:'center'})
+  doc.setTextColor(0)
+
+  let y = headerH + 3
+
+  if (showPartyInfo) {
+    doc.setFontSize(7.5)
+    const pairs = [
+      ['Elaboró:',       budget.cotizante   ||'—',  'Cliente:',    budget.cliente  ||'—'],
+      ['Revisó/Aprobó:', budget.ofertante   ||'—',  'Ubicación:',  budget.lugar    ||'—'],
+      ['Realizado por:', budget.realizadoPor||'—',  'Tipo:',       budget.tipo     ||'—'],
+    ]
+    const cx1=10, cx2=w/2+4
+    for (const [l1,v1,l2,v2] of pairs) {
+      doc.setFont(undefined,'bold');   doc.text(l1, cx1, y)
+      doc.setFont(undefined,'normal'); doc.text(v1, cx1+27, y)
+      doc.setFont(undefined,'bold');   doc.text(l2, cx2, y)
+      doc.setFont(undefined,'normal'); doc.text(v2, cx2+24, y)
+      y += 4.5
+    }
+    doc.setDrawColor(...textRgb); doc.setLineWidth(0.4); doc.line(10,y,w-10,y)
+    y += 3
+  }
+  return y
+}
+
+// footer: rev info on left, page number on right
+const drawApuFooter = (doc, budget, pageNum, totalPages) => {
+  const w = doc.internal.pageSize.getWidth()
+  const h = doc.internal.pageSize.getHeight()
+  doc.setFillColor(15,17,21); doc.rect(0,h-10,w,10,'F')
+  doc.setTextColor(180,180,180); doc.setFontSize(7); doc.setFont(undefined,'normal')
+  doc.text(`Rev ${budget.revision||1} · ${budget.estado||'Borrador'} · ${budget.moneda||'USD'} · ${budget.fecha||''}`, 10, h-4)
+  doc.text(`Pág. ${pageNum} de ${totalPages}`, w-10, h-4, {align:'right'})
+  doc.setTextColor(0)
+}
+
 export const exportPDFPresupuesto = (budget, params) => {
   const doc = new jsPDF({orientation:'landscape',unit:'mm',format:'letter'})
   const y = drawPDFHeader(doc, budget, 'PRESUPUESTO DE OBRA')
@@ -105,52 +166,112 @@ export const exportPDFPresupuesto = (budget, params) => {
   doc.save((budget.nombreProyecto||'Presupuesto').replace(/[^\w]+/g,'_')+'_Presupuesto.pdf')
 }
 
-export const exportPDFFicha = (budget, act, params) => {
+// empresa = { nombre, logo, headerBg, headerText }
+export const exportPDFFicha = (budget, act, params, empresa = {}) => {
   const doc = new jsPDF({orientation:'portrait',unit:'mm',format:'letter'})
-  let y = drawPDFHeader(doc, budget, 'FICHA DE COSTO UNITARIO')
-  doc.setFontSize(11); doc.setFont(undefined,'bold')
-  doc.text(`${act.id} — ${act.descripcion}`, 10, y); y+=5
-  doc.setFontSize(9); doc.setFont(undefined,'normal')
-  doc.text(`Cantidad: ${fmt(act.cantidad)} ${act.unidad}`, 10, y); y+=4
+  const h   = doc.internal.pageSize.getHeight()
   const calc = calcFicha(act.ficha, budget.catalogos, params)
-  const sect = (title, k, total) => {
+  let y = drawApuHeader(doc, budget, empresa, { showPartyInfo: true })
+
+  // Activity title bar
+  doc.setFontSize(10); doc.setFont(undefined,'bold'); doc.setTextColor(0)
+  doc.text(`${act.id} — ${act.descripcion}`, 10, y); y+=5
+  doc.setFontSize(8.5); doc.setFont(undefined,'normal'); doc.setTextColor(80,80,80)
+  doc.text(`Cantidad: ${fmt(act.cantidad)} ${act.unidad}`, 10, y); doc.setTextColor(0); y+=5
+
+  const sectApu = (title, k, total, moTotal = 0) => {
     const rs = (act.ficha[k]||[]).map((c,i)=>{
       const ins = findInsumo(budget.catalogos,k,c.insumoId)
-      return ins ? [i+1,ins.codigo,ins.descripcion,ins.unidad,fmt(c.rendimiento),fmt(c.desperdicio)+'%',money(ins.costoBase),money(conceptoCost(c,budget.catalogos,k))] : null
+      if (!ins) return null
+      const isMoBased = k==='herramientaEquipo' && normalize(ins?.descripcion)==='herramienta menor'
+      const effectiveBase = isMoBased ? moTotal : (+ins.costoBase||0)
+      return [ins.codigo||String(i+1), ins.descripcion, ins.unidad, fmt(c.rendimiento), fmt(c.desperdicio)+'%', money(effectiveBase), money(conceptoCost(c,budget.catalogos,k,{moTotal}))]
     }).filter(Boolean)
-    if (!rs.length) rs.push([{content:'(sin conceptos)',colSpan:8,styles:{halign:'center',fontStyle:'italic',textColor:150}}])
-    rs.push([{content:'SUBTOTAL '+title,colSpan:7,styles:{halign:'right',fontStyle:'bold',fillColor:[226,232,240]}},{content:money(total),styles:{halign:'right',fontStyle:'bold',fillColor:[226,232,240]}}])
-    doc.autoTable({startY:y,head:[[{content:title,colSpan:8,styles:{fillColor:[30,41,59],textColor:255,halign:'left',fontStyle:'bold'}}],['#','Cód.','Insumo','Und','Rend.','Desp.','C.Base','Subtotal']],body:rs,styles:{fontSize:8,cellPadding:1.2},headStyles:{fillColor:[71,85,105],textColor:255}})
+    if (!rs.length) rs.push([{content:'(sin conceptos)',colSpan:7,styles:{halign:'center',fontStyle:'italic',textColor:150}}])
+    rs.push([{content:'SUBTOTAL '+title,colSpan:6,styles:{halign:'right',fontStyle:'bold',fillColor:[226,232,240]}},{content:money(total),styles:{halign:'right',fontStyle:'bold',fillColor:[226,232,240]}}])
+    doc.autoTable({startY:y,head:[[{content:title,colSpan:7,styles:{fillColor:[30,41,59],textColor:255,halign:'left',fontStyle:'bold'}}],['Cód.','Insumo','Und','Rend.','Desp.','C.Base','Subtotal']],body:rs,styles:{fontSize:7.5,cellPadding:1.1},headStyles:{fillColor:[71,85,105],textColor:255},columnStyles:{0:{cellWidth:18,halign:'center'},2:{cellWidth:14,halign:'center'},3:{cellWidth:16,halign:'right'},4:{cellWidth:14,halign:'right'},5:{cellWidth:22,halign:'right'},6:{cellWidth:24,halign:'right'}},margin:{bottom:14}})
     y = doc.lastAutoTable.finalY + 3
   }
-  sect('MATERIALES','materiales',calc.totMat)
-  sect('MANO DE OBRA','manoObra',calc.totMo)
-  sect('HERRAMIENTA + EQUIPO','herramientaEquipo',calc.totHe)
-  sect('SUBCONTRATO','subcontratos',calc.totSub)
+  sectApu('MATERIALES','materiales',calc.totMat)
+  sectApu('MANO DE OBRA','manoObra',calc.totMo)
+  sectApu('HERRAMIENTA + EQUIPO','herramientaEquipo',calc.totHe,calc.totMo)
+  sectApu('SUBCONTRATO','subcontratos',calc.totSub)
+
+  // Compact summary
   doc.autoTable({startY:y,body:[
     ['Costo Directo',money(calc.costoDirecto)],
     [`Indirectos (${params.pctIndirectos}%)`,money(calc.indirectos)],
     [`Imprevistos (${params.pctImprevistos}%)`,money(calc.imprevistos)],
     [`Utilidad (${params.pctUtilidad}%)`,money(calc.utilidad)],
-    ['Subtotal antes de impuestos',money(calc.subtotalSinImpuesto)],
+    ['Subtotal sin impuestos',money(calc.subtotalSinImpuesto)],
     [`Impuesto (${params.pctImpuesto}%)`,money(calc.impuesto)],
     [{content:'PRECIO UNITARIO TOTAL',styles:{fontStyle:'bold',fillColor:[15,17,21],textColor:245}},{content:money(calc.precioUnitario),styles:{fontStyle:'bold',fillColor:[15,17,21],textColor:245,halign:'right'}}]
-  ],styles:{fontSize:9,cellPadding:2},columnStyles:{0:{halign:'right',fontStyle:'bold'},1:{halign:'right',cellWidth:50}},theme:'grid'})
+  ],styles:{fontSize:7.5,cellPadding:1.2},columnStyles:{0:{halign:'right',fontStyle:'bold'},1:{halign:'right',cellWidth:46}},theme:'grid',margin:{bottom:14}})
+
+  // Footers on all pages
+  const total = doc.internal.getNumberOfPages()
+  for (let i=1;i<=total;i++) { doc.setPage(i); drawApuFooter(doc,budget,i,total) }
   doc.save(`Ficha_${act.id}.pdf`)
 }
 
-export const exportPDFGeneral = (budget, params) => {
+export const exportPDFGeneral = (budget, params, empresa = {}) => {
   exportPDFPresupuesto(budget, params)
   const acts=[]; const collect=its=>{for(const it of its){if(it.tipo==='actividad')acts.push(it);else if(it.children)collect(it.children)}}
   collect(budget.items)
-  acts.forEach((act,i)=>setTimeout(()=>exportPDFFicha(budget,act,params),(i+1)*700))
+  acts.forEach((act,i)=>setTimeout(()=>exportPDFFicha(budget,act,params,empresa),(i+1)*700))
 }
 
-export const exportPDFRangoFichas = (budget, params, ids) => {
+// Exports all selected activities as ONE combined PDF (party info only on first page)
+export const exportPDFRangoFichas = (budget, params, ids, empresa = {}) => {
   const acts=[]; const collect=its=>{for(const it of its){if(it.tipo==='actividad'&&ids.includes(it.id))acts.push(it);else if(it.children)collect(it.children)}}
   collect(budget.items)
   if(!acts.length) return alert('No hay actividades seleccionadas.')
-  acts.forEach((act,i)=>setTimeout(()=>exportPDFFicha(budget,act,params),i*600))
+
+  const doc = new jsPDF({orientation:'portrait',unit:'mm',format:'letter'})
+
+  acts.forEach((act, actIdx) => {
+    if (actIdx > 0) doc.addPage()
+    const calc = calcFicha(act.ficha, budget.catalogos, params)
+    let y = drawApuHeader(doc, budget, empresa, { showPartyInfo: actIdx === 0 })
+
+    doc.setFontSize(10); doc.setFont(undefined,'bold'); doc.setTextColor(0)
+    doc.text(`${act.id} — ${act.descripcion}`, 10, y); y+=5
+    doc.setFontSize(8.5); doc.setFont(undefined,'normal'); doc.setTextColor(80,80,80)
+    doc.text(`Cantidad: ${fmt(act.cantidad)} ${act.unidad}`, 10, y); doc.setTextColor(0); y+=5
+
+    const sectApu = (title, k, total, moTotal = 0) => {
+      const rs = (act.ficha[k]||[]).map((c,i)=>{
+        const ins = findInsumo(budget.catalogos,k,c.insumoId)
+        if (!ins) return null
+        const isMoBased = k==='herramientaEquipo' && normalize(ins?.descripcion)==='herramienta menor'
+        const effectiveBase = isMoBased ? moTotal : (+ins.costoBase||0)
+        return [ins.codigo||String(i+1), ins.descripcion, ins.unidad, fmt(c.rendimiento), fmt(c.desperdicio)+'%', money(effectiveBase), money(conceptoCost(c,budget.catalogos,k,{moTotal}))]
+      }).filter(Boolean)
+      if (!rs.length) rs.push([{content:'(sin conceptos)',colSpan:7,styles:{halign:'center',fontStyle:'italic',textColor:150}}])
+      rs.push([{content:'SUBTOTAL '+title,colSpan:6,styles:{halign:'right',fontStyle:'bold',fillColor:[226,232,240]}},{content:money(total),styles:{halign:'right',fontStyle:'bold',fillColor:[226,232,240]}}])
+      doc.autoTable({startY:y,head:[[{content:title,colSpan:7,styles:{fillColor:[30,41,59],textColor:255,halign:'left',fontStyle:'bold'}}],['Cód.','Insumo','Und','Rend.','Desp.','C.Base','Subtotal']],body:rs,styles:{fontSize:7.5,cellPadding:1.1},headStyles:{fillColor:[71,85,105],textColor:255},columnStyles:{0:{cellWidth:18,halign:'center'},2:{cellWidth:14,halign:'center'},3:{cellWidth:16,halign:'right'},4:{cellWidth:14,halign:'right'},5:{cellWidth:22,halign:'right'},6:{cellWidth:24,halign:'right'}},margin:{bottom:14}})
+      y = doc.lastAutoTable.finalY + 3
+    }
+    sectApu('MATERIALES','materiales',calc.totMat)
+    sectApu('MANO DE OBRA','manoObra',calc.totMo)
+    sectApu('HERRAMIENTA + EQUIPO','herramientaEquipo',calc.totHe,calc.totMo)
+    sectApu('SUBCONTRATO','subcontratos',calc.totSub)
+
+    doc.autoTable({startY:y,body:[
+      ['Costo Directo',money(calc.costoDirecto)],
+      [`Indirectos (${params.pctIndirectos}%)`,money(calc.indirectos)],
+      [`Imprevistos (${params.pctImprevistos}%)`,money(calc.imprevistos)],
+      [`Utilidad (${params.pctUtilidad}%)`,money(calc.utilidad)],
+      ['Subtotal sin impuestos',money(calc.subtotalSinImpuesto)],
+      [`Impuesto (${params.pctImpuesto}%)`,money(calc.impuesto)],
+      [{content:'PRECIO UNITARIO TOTAL',styles:{fontStyle:'bold',fillColor:[15,17,21],textColor:245}},{content:money(calc.precioUnitario),styles:{fontStyle:'bold',fillColor:[15,17,21],textColor:245,halign:'right'}}]
+    ],styles:{fontSize:7.5,cellPadding:1.2},columnStyles:{0:{halign:'right',fontStyle:'bold'},1:{halign:'right',cellWidth:46}},theme:'grid',margin:{bottom:14}})
+  })
+
+  // Footers on every page
+  const totalPages = doc.internal.getNumberOfPages()
+  for (let i=1;i<=totalPages;i++) { doc.setPage(i); drawApuFooter(doc,budget,i,totalPages) }
+  doc.save((budget.nombreProyecto||'Fichas').replace(/[^\w]+/g,'_')+'_APU.pdf')
 }
 
 export async function exportExcelPresupuesto(budget, params) {
