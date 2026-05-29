@@ -36,8 +36,8 @@ const relTime = ts => {
   const w = Math.floor(d / 7)
   return `hace ${w} semana${w > 1 ? 's' : ''}`
 }
-const DB2UI = { borrador:'Borrador', activo:'Activo', en_revision:'En revisión', enviado:'En revisión', aprobado:'Aprobado', rechazado:'Rechazado', archivado:'Archivado' }
-const UI2DB = { 'Borrador':'borrador', 'Activo':'activo', 'En revisión':'en_revision', 'Aprobado':'aprobado', 'Rechazado':'rechazado', 'Archivado':'archivado' }
+const DB2UI = { borrador:'Borrador', activo:'Activo', en_revision:'En revisión', enviado:'En revisión', aprobado:'Aprobado', rechazado:'Rechazado', en_ejecucion:'En ejecución' }
+const UI2DB = { 'Borrador':'borrador', 'Activo':'activo', 'En revisión':'en_revision', 'Aprobado':'aprobado', 'Rechazado':'rechazado', 'En ejecución':'en_ejecucion' }
 
 const mapDb = row => ({
   id:            row.id,
@@ -112,7 +112,7 @@ function StatusBadge({ status }) {
     'Borrador':    { cls: '',        dot: 'var(--c-text-3)' },
     'Aprobado':    { cls: 'primary', dot: 'var(--c-primary)' },
     'Rechazado':   { cls: 'danger',  dot: 'var(--c-danger)' },
-    'Archivado':   { cls: '',        dot: 'var(--c-text-4)' },
+    'En ejecución':{ cls: '',        dot: '#7c3aed' },
   }
   const s = map[status] || { cls: '', dot: 'var(--c-text-3)' }
   return (
@@ -363,7 +363,7 @@ function EstadoMenu({ budget, setBudget }) {
     { v: 'En revisión', cls: 'warn',    dot: 'var(--c-warn)' },
     { v: 'Aprobado',    cls: 'primary', dot: 'var(--c-primary)' },
     { v: 'Rechazado',   cls: 'danger',  dot: 'var(--c-danger)' },
-    { v: 'Archivado',   cls: '',        dot: 'var(--c-text-4)' },
+    { v: 'En ejecución',cls: '',        dot: '#7c3aed' },
   ]
   return (
     <Dropdown align="left" minWidth={180} trigger={
@@ -1483,14 +1483,14 @@ function ReportesPage({ proyectos, budget, params, userEmpresa }) {
         <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--c-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           <Icon size={20} color="#fff" />
         </div>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 90 }}>
+        <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--c-text)', marginBottom: 4 }}>{title}</div>
-          <div style={{ fontSize: 12, color: 'var(--c-text-3)', flex: 1 }}>{desc}</div>
-          <div style={{ display: 'flex', gap: 8, marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--c-line)' }}>
-            {onPdf   && <button className="btn sm primary" onClick={onPdf}   disabled={disabled}><Download size={13}/> PDF</button>}
-            {onExcel && <button className="btn sm ghost"   onClick={onExcel} disabled={disabled}><FileSpreadsheet size={13}/> Excel</button>}
-          </div>
+          <div style={{ fontSize: 12, color: 'var(--c-text-3)', lineHeight: 1.5 }}>{desc}</div>
         </div>
+      </div>
+      <div style={{ padding: '10px 16px', borderTop: '1px solid var(--c-line)', display: 'flex', gap: 8 }}>
+        {onPdf   && <button className="btn sm primary" onClick={onPdf}   disabled={disabled}><Download size={13}/> PDF</button>}
+        {onExcel && <button className="btn sm ghost"   onClick={onExcel} disabled={disabled}><FileSpreadsheet size={13}/> Excel</button>}
       </div>
     </div>
   )
@@ -1946,7 +1946,7 @@ export default function MainApp() {
         setTabProject={setTabProject} tabProject={tabProject}
         user={{ name: userName, empresa: userEmpresa }}
         onLogout={doLogout}
-        onSettings={() => budget && setShowConfig(true)}
+        onSettings={() => budget && page === 'proyecto' && setShowConfig(true)}
         projectsCount={proyectos.length}
       />
 
@@ -1964,7 +1964,7 @@ export default function MainApp() {
           }}
           saving={saving}
           onLogout={doLogout}
-          onSettings={() => budget && setShowConfig(true)}
+          onSettings={() => budget && page === 'proyecto' && setShowConfig(true)}
         />
 
         {/* ── PAGES ── */}

@@ -866,12 +866,13 @@ export const exportPDFResumenEjecutivo = async (budget, params) => {
   y = doc.lastAutoTable.finalY + 8
 
   // ── Tabla resumen capítulos ───────────────────────────────────
-  // Col widths: ID=12, Acts=18, %=22, Sub=32, Cap=resto
-  const idW=12, actsW=18, pctW=22, subW=32, capW=CW-idW-actsW-pctW-subW
-  const capRows = budget.items.filter(it => it.tipo === 'capitulo').map(cap => {
+  // Col widths: ID=12, Acts=18, %=22, Sub=36, Cap=resto
+  const idW=12, actsW=18, pctW=22, subW=36, capW=CW-idW-actsW-pctW-subW
+  const capItems = budget.items.filter(it => it.tipo === 'capitulo')
+  const capRows = capItems.map(cap => {
     const capSub = round2(calcItem(cap, budget.catalogos, params).subtotal)
     const nActs  = (function count(its){ return its.reduce((s,x)=>s+(x.tipo==='actividad'?1:count(x.children||[])),0) })(cap.children||[])
-    const pct    = total > 0 ? ((capSub/total)*100).toFixed(1)+'%' : '—'
+    const pct    = directReal > 0 ? ((capSub/directReal)*100).toFixed(1)+'%' : '—'
     return [
       { content: cap.id,        styles: { halign: 'center' } },
       cap.descripcion,
@@ -881,15 +882,23 @@ export const exportPDFResumenEjecutivo = async (budget, params) => {
     ]
   })
   if (capRows.length) {
+    // fila total costos directos
+    capRows.push([
+      { content: '',                    styles: { halign: 'center', fontStyle: 'bold', fillColor: C.ink, textColor: 255 } },
+      { content: 'TOTAL COSTO DIRECTO', styles: { halign: 'left',   fontStyle: 'bold', fillColor: C.ink, textColor: 255 } },
+      { content: '',                    styles: { halign: 'center', fontStyle: 'bold', fillColor: C.ink, textColor: 255 } },
+      { content: '100%',                styles: { halign: 'center', fontStyle: 'bold', fillColor: C.ink, textColor: 255 } },
+      { content: money(directReal),     styles: { halign: 'right',  fontStyle: 'bold', fillColor: C.ink, textColor: 255 } },
+    ])
     doc.autoTable({
       startY: y,
       margin: { left: ML, right: ML },
       head: [[
-        { content: 'ID',      styles: { halign: 'center' } },
-        { content: 'Capítulo',styles: { halign: 'left'   } },
-        { content: 'Acts.',   styles: { halign: 'center' } },
-        { content: '% Total', styles: { halign: 'center' } },
-        { content: 'Subtotal',styles: { halign: 'right'  } },
+        { content: 'ID',           styles: { halign: 'center' } },
+        { content: 'Capítulo',     styles: { halign: 'left'   } },
+        { content: 'Acts.',        styles: { halign: 'center' } },
+        { content: '% Dir.',       styles: { halign: 'center' } },
+        { content: 'Costo Directo',styles: { halign: 'right'  } },
       ]],
       body: capRows,
       styles:             { fontSize: 9, cellPadding: 2.5, textColor: C.ink },
@@ -947,7 +956,7 @@ export const exportPDFPortafolio = (proyectos, empresa = '') => {
   })
 
   // Tabla de proyectos
-  const estadoColor = { 'Activo': [5,150,105], 'En revisión': [146,64,14], 'Aprobado': [79,70,229], 'Borrador': [100,116,139], 'Rechazado': [185,28,28] }
+  const estadoColor = { 'Activo': [5,150,105], 'En revisión': [146,64,14], 'Aprobado': [79,70,229], 'Borrador': [100,116,139], 'Rechazado': [185,28,28], 'En ejecución': [124,58,237] }
 
   const rows = proyectos.map((p, i) => [
     i + 1,
