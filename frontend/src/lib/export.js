@@ -86,19 +86,49 @@ const hexToRgb = hex => {
   return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)]
 }
 
+// Obtiene las dimensiones reales de una imagen base64 (async)
+const loadImageDims = src => new Promise(res => {
+  if (!src) return res(null)
+  try {
+    const img = new window.Image()
+    img.onload = () => res({ w: img.naturalWidth, h: img.naturalHeight })
+    img.onerror = () => res(null)
+    img.src = src
+  } catch { res(null) }
+})
+
+// Inserta imagen con object-fit: contain dentro de un bounding box maxW × maxH
+const addImageContain = async (doc, src, x, y, maxW, maxH) => {
+  if (!src) return
+  const dims = await loadImageDims(src)
+  let w = maxW, h = maxH
+  if (dims && dims.w && dims.h) {
+    const ratio = dims.w / dims.h
+    w = maxW; h = maxW / ratio
+    if (h > maxH) { h = maxH; w = maxH * ratio }
+  }
+  const ox = x + (maxW - w) / 2
+  const oy = y + (maxH - h) / 2
+  try {
+    // Detecta formato por header base64
+    const fmt = src.startsWith('data:image/png') ? 'PNG' : src.startsWith('data:image/svg') ? 'SVG' : 'JPEG'
+    doc.addImage(src, fmt, ox, oy, w, h)
+  } catch {}
+}
+
 // draws the compact APU page header; returns the Y coordinate where content should start
-const drawApuHeader = (doc, budget, empresa = {}, opts = {}) => {
+const drawApuHeader = async (doc, budget, empresa = {}, opts = {}) => {
   const w = doc.internal.pageSize.getWidth()
   const { showPartyInfo = true } = opts
-  const bgRgb    = hexToRgb(empresa.headerBg)    || [15,17,21]
-  const textRgb  = hexToRgb(empresa.headerText)  || [245,158,11]
-  const headerH  = 28
+  const bg   = hexToRgb(empresa.headerBg)   || [15,17,21]
+  const txt  = hexToRgb(empresa.headerText) || [245,158,11]
+  const headerH = 28
 
-  doc.setFillColor(...bgRgb); doc.rect(0,0,w,headerH,'F')
-  // Logo empresa
-  if (empresa.logo) { try { doc.addImage(empresa.logo,'PNG',6,4,20,20) } catch{} }
-  // Titles
-  doc.setTextColor(...textRgb); doc.setFontSize(13); doc.setFont(undefined,'bold')
+  doc.setFillColor(bg[0],bg[1],bg[2]); doc.rect(0,0,w,headerH,'F')
+  // Logo empresa (contain-fit dentro de 24×18mm, centrado a la izquierda)
+  await addImageContain(doc, empresa.logo, 5, 5, 24, 18)
+  // Títulos
+  doc.setTextColor(txt[0],txt[1],txt[2]); doc.setFontSize(13); doc.setFont(undefined,'bold')
   doc.text('FICHA DE COSTO UNITARIO', w/2, 11, {align:'center'})
   doc.setTextColor(255,255,255); doc.setFontSize(9); doc.setFont(undefined,'normal')
   doc.text(empresa.nombre||'', w/2, 18, {align:'center'})
@@ -123,7 +153,7 @@ const drawApuHeader = (doc, budget, empresa = {}, opts = {}) => {
       doc.setFont(undefined,'normal'); doc.text(v2, cx2+24, y)
       y += 4.5
     }
-    doc.setDrawColor(...textRgb); doc.setLineWidth(0.4); doc.line(10,y,w-10,y)
+    doc.setDrawColor(txt[0],txt[1],txt[2]); doc.setLineWidth(0.4); doc.line(10,y,w-10,y)
     y += 3
   }
   return y
@@ -167,11 +197,11 @@ export const exportPDFPresupuesto = (budget, params) => {
 }
 
 // empresa = { nombre, logo, headerBg, headerText }
-export const exportPDFFicha = (budget, act, params, empresa = {}) => {
+export const exportPDFFicha = async (budget, act, params, empresa = {}) => {
   const doc = new jsPDF({orientation:'portrait',unit:'mm',format:'letter'})
   const h   = doc.internal.pageSize.getHeight()
   const calc = calcFicha(act.ficha, budget.catalogos, params)
-  let y = drawApuHeader(doc, budget, empresa, { showPartyInfo: true })
+  let y = await drawApuHeader(doc, budget, empresa, { showPartyInfo: true })
 
   // Activity title bar
   doc.setFontSize(10); doc.setFont(undefined,'bold'); doc.setTextColor(0)
@@ -222,17 +252,17 @@ export const exportPDFGeneral = (budget, params, empresa = {}) => {
 }
 
 // Exports all selected activities as ONE combined PDF (party info only on first page)
-export const exportPDFRangoFichas = (budget, params, ids, empresa = {}) => {
+export const exportPDFRangoFichas = async (budget, params, ids, empresa = {}) => {
   const acts=[]; const collect=its=>{for(const it of its){if(it.tipo==='actividad'&&ids.includes(it.id))acts.push(it);else if(it.children)collect(it.children)}}
   collect(budget.items)
   if(!acts.length) return alert('No hay actividades seleccionadas.')
 
   const doc = new jsPDF({orientation:'portrait',unit:'mm',format:'letter'})
 
-  acts.forEach((act, actIdx) => {
+  for (const [actIdx, act] of acts.entries()) {
     if (actIdx > 0) doc.addPage()
     const calc = calcFicha(act.ficha, budget.catalogos, params)
-    let y = drawApuHeader(doc, budget, empresa, { showPartyInfo: actIdx === 0 })
+    let y = await drawApuHeader(doc, budget, empresa, { showPartyInfo: actIdx === 0 })
 
     doc.setFontSize(10); doc.setFont(undefined,'bold'); doc.setTextColor(0)
     doc.text(`${act.id} — ${act.descripcion}`, 10, y); y+=5
@@ -266,7 +296,7 @@ export const exportPDFRangoFichas = (budget, params, ids, empresa = {}) => {
       [`Impuesto (${params.pctImpuesto}%)`,money(calc.impuesto)],
       [{content:'PRECIO UNITARIO TOTAL',styles:{fontStyle:'bold',fillColor:[15,17,21],textColor:245}},{content:money(calc.precioUnitario),styles:{fontStyle:'bold',fillColor:[15,17,21],textColor:245,halign:'right'}}]
     ],styles:{fontSize:7.5,cellPadding:1.2},columnStyles:{0:{halign:'right',fontStyle:'bold'},1:{halign:'right',cellWidth:46}},theme:'grid',margin:{bottom:14}})
-  })
+  }
 
   // Footers on every page
   const totalPages = doc.internal.getNumberOfPages()
