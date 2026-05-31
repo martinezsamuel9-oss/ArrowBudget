@@ -782,75 +782,137 @@ export const exportPDFResumenEjecutivo = async (budget, params) => {
   const impuesto    = round2(subtotalU * (params.pctImpuesto / 100))
   const total       = round2(subtotalU + impuesto)
 
+  // ── m² para costo/m² ─────────────────────────────────────────
+  const m2Const = +(budget.m2Construccion || 0)
+  const m2Estr  = +(budget.m2Estructura   || 0)
+  const m2Val   = m2Const > 0 ? m2Const : m2Estr > 0 ? m2Estr : 0
+  const m2Lbl   = m2Const > 0 ? 'COSTO / m² CONST.' : m2Estr > 0 ? 'COSTO / m² ESTR.' : 'COSTO / m²'
+  const m2Src   = m2Const > 0 ? 'construcción' : 'estructura'
+  const costoM2 = m2Val > 0 ? round2(total / m2Val) : null
+
   // ── Header (barra oscura) ─────────────────────────────────────
-  const hdrH = 56
+  const hdrH = 58
   doc.setFillColor(...C.ink); doc.rect(0, 0, w, hdrH, 'F')
 
-  // Logos con aspect-ratio correcto (contain-fit 28×28)
   await addImageContain(doc, budget.logoOfertante, ML, 6, 28, 28)
   await addImageContain(doc, budget.logoCliente,   w - ML - 28, 6, 28, 28)
 
-  // Título y proyecto
-  doc.setTextColor(...C.muted); doc.setFontSize(7); doc.setFont(undefined, 'bold')
-  doc.text('RESUMEN EJECUTIVO DE PRESUPUESTO', w / 2, 11, { align: 'center' })
+  // 1. Título aumentado a 10pt
+  doc.setTextColor(...C.muted); doc.setFontSize(10); doc.setFont(undefined, 'bold')
+  doc.text('RESUMEN EJECUTIVO DE PRESUPUESTO', w / 2, 12, { align: 'center' })
   doc.setTextColor(...C.white); doc.setFontSize(17); doc.setFont(undefined, 'bold')
-  doc.text(budget.nombreProyecto || 'Sin nombre', w / 2, 23, { align: 'center' })
+  doc.text(budget.nombreProyecto || 'Sin nombre', w / 2, 24, { align: 'center' })
   doc.setFontSize(8); doc.setFont(undefined, 'normal'); doc.setTextColor(...C.muted)
-  doc.text(budget.lugar || '', w / 2, 30, { align: 'center' })
+  doc.text(budget.lugar || '', w / 2, 31, { align: 'center' })
 
   const meta = [`Rev. ${budget.revision || 1}`, budget.estado || 'Borrador', budget.moneda || 'USD', budget.tipo || ''].filter(Boolean).join('  ·  ')
   doc.setFontSize(7.5); doc.setTextColor(...C.muted)
-  doc.text(meta, w / 2, 36, { align: 'center' })
+  doc.text(meta, w / 2, 37, { align: 'center' })
 
-  doc.setDrawColor(...C.mid); doc.setLineWidth(0.3); doc.line(ML, 40, w - ML, 40)
+  doc.setDrawColor(...C.mid); doc.setLineWidth(0.3); doc.line(ML, 41, w - ML, 41)
 
   doc.setFontSize(7.5); doc.setFont(undefined, 'normal'); doc.setTextColor(...C.muted)
   const infoL = [['Cotizante:', budget.cotizante||'—'],['Ofertante:', budget.ofertante||'—'],['Realizado:', budget.realizadoPor||'—']]
   const infoR = [['Cliente:', budget.cliente||'—'],['Fecha:', budget.fecha||'—'],['Tipo:', budget.tipo||'—']]
-  infoL.forEach(([lbl,val],i)=>{ doc.setFont(undefined,'bold'); doc.text(lbl,ML,44+i*4); doc.setFont(undefined,'normal'); doc.text(val,ML+22,44+i*4) })
-  infoR.forEach(([lbl,val],i)=>{ doc.setFont(undefined,'bold'); doc.text(lbl,w/2+2,44+i*4); doc.setFont(undefined,'normal'); doc.text(val,w/2+20,44+i*4) })
+  infoL.forEach(([lbl,val],i)=>{ doc.setFont(undefined,'bold'); doc.text(lbl,ML,45+i*4); doc.setFont(undefined,'normal'); doc.text(val,ML+22,45+i*4) })
+  infoR.forEach(([lbl,val],i)=>{ doc.setFont(undefined,'bold'); doc.text(lbl,w/2+2,45+i*4); doc.setFont(undefined,'normal'); doc.text(val,w/2+20,45+i*4) })
   doc.setTextColor(0)
 
-  // ── KPI strip ────────────────────────────────────────────────
+  // ── KPI strip — 5 boxes (incluye costo/m²) ───────────────────
   let y = hdrH + 7
   const kpis = [
-    { label: 'COSTO DIRECTO',      value: money(directReal)             },
-    { label: 'INDIRECTOS + IMPR.', value: money(indirectos+imprevistos) },
-    { label: 'UTILIDAD',           value: money(utilidad)               },
-    { label: 'TOTAL GENERAL',      value: money(total)                  },
+    { label: 'COSTO DIRECTO',      value: money(directReal),             sub: null },
+    { label: 'INDIRECTOS + IMPR.', value: money(indirectos+imprevistos), sub: null },
+    { label: 'UTILIDAD',           value: money(utilidad),               sub: null },
+    { label: 'TOTAL GENERAL',      value: money(total),                  sub: null },
+    // 2. Nuevo KPI costo/m²
+    { label: m2Lbl, value: costoM2 !== null ? money(costoM2) : 'Sin m²',
+      sub: costoM2 !== null ? `Basado en ${fmt(m2Val)} m² de ${m2Src}` : 'Ingresa m² en Configuración' },
   ]
   const gap = 3
-  const bw  = (CW - gap * 3) / 4
-  const bh  = 24
+  const bw  = (CW - gap * 4) / 5
+  const bh  = 26
   kpis.forEach((b, i) => {
     const bx = ML + i * (bw + gap)
     doc.setFillColor(...C.dark); doc.roundedRect(bx, y, bw, bh, 1.5, 1.5, 'F')
-    doc.setTextColor(...C.muted); doc.setFontSize(7.5); doc.setFont(undefined, 'bold')
-    doc.text(b.label, bx + bw / 2, y + 7.5, { align: 'center' })
-    doc.setTextColor(...C.white); doc.setFontSize(12); doc.setFont(undefined, 'bold')
-    doc.text(b.value, bx + bw / 2, y + 18, { align: 'center' })
+    doc.setTextColor(...C.muted); doc.setFontSize(6.5); doc.setFont(undefined, 'bold')
+    doc.text(b.label, bx + bw / 2, y + 7, { align: 'center' })
+    doc.setTextColor(...C.white); doc.setFontSize(i === 4 ? 9 : 10); doc.setFont(undefined, 'bold')
+    doc.text(b.value, bx + bw / 2, y + 16, { align: 'center' })
+    if (b.sub) {
+      doc.setFontSize(5.5); doc.setFont(undefined, 'normal'); doc.setTextColor(...C.muted)
+      doc.text(b.sub, bx + bw / 2, y + 22, { align: 'center', maxWidth: bw - 2 })
+    }
   })
-  y += bh + 7
+  y += bh + 8
 
-  // ── Tabla financiera — columnas suman exactamente CW ─────────
-  // Col 0: CW - 22 - 40 = variable | Col 1: 22 | Col 2: 40
+  // ── 3. ORDEN: Tabla capítulos PRIMERO ────────────────────────
+  // Col widths: ID=12, Cap=resto, Acts=16, %Dir=20, $/m²=26, CostoDir=34
+  const idW=12, actsW=16, pctW=20, m2W=26, subW=34, capW=CW-idW-actsW-pctW-m2W-subW
+  const capItems = budget.items.filter(it => it.tipo === 'capitulo')
+  const capRows = capItems.map(cap => {
+    const capSub = round2(calcItem(cap, budget.catalogos, params).subtotal)
+    const nActs  = (function count(its){ return its.reduce((s,x)=>s+(x.tipo==='actividad'?1:count(x.children||[])),0) })(cap.children||[])
+    const pct    = directReal > 0 ? ((capSub/directReal)*100).toFixed(1)+'%' : '—'
+    // 4. Costo por m² del capítulo
+    const capM2  = m2Val > 0 ? money(round2(capSub / m2Val)) : '—'
+    return [
+      { content: cap.id,        styles: { halign: 'center' } },
+      cap.descripcion,
+      { content: nActs+' act.', styles: { halign: 'center' } },
+      { content: pct,           styles: { halign: 'center' } },
+      { content: capM2,         styles: { halign: 'right'  } },
+      { content: money(capSub), styles: { halign: 'right'  } },
+    ]
+  })
+  if (capRows.length) {
+    // 5. Fila TOTAL con colSpan correcto para las 3 primeras celdas
+    const totM2 = m2Val > 0 ? money(round2(directReal / m2Val)) : '—'
+    capRows.push([
+      { content: 'TOTAL COSTO DIRECTO', colSpan: 3, styles: { halign: 'left', fontStyle: 'bold', fillColor: C.ink, textColor: 255 } },
+      { content: '100%',      styles: { halign: 'center', fontStyle: 'bold', fillColor: C.ink, textColor: 255 } },
+      { content: totM2,       styles: { halign: 'right',  fontStyle: 'bold', fillColor: C.ink, textColor: 255 } },
+      { content: money(directReal), styles: { halign: 'right', fontStyle: 'bold', fillColor: C.ink, textColor: 255 } },
+    ])
+    doc.autoTable({
+      startY: y,
+      margin: { left: ML, right: ML },
+      head: [[
+        { content: 'ID',            styles: { halign: 'center' } },
+        { content: 'Capítulo',      styles: { halign: 'left'   } },
+        { content: 'Acts.',         styles: { halign: 'center' } },
+        { content: '% Dir.',        styles: { halign: 'center' } },
+        { content: `$/m² (${m2Src.slice(0,5)}.)`, styles: { halign: 'right' } },
+        { content: 'Costo Directo', styles: { halign: 'right'  } },
+      ]],
+      body: capRows,
+      styles:             { fontSize: 9, cellPadding: 2.5, textColor: C.ink },
+      headStyles:         { fillColor: C.dark, textColor: 255, fontStyle: 'bold', fontSize: 9 },
+      alternateRowStyles: { fillColor: C.bg },
+      columnStyles:       { 0:{cellWidth:idW}, 1:{cellWidth:capW}, 2:{cellWidth:actsW}, 3:{cellWidth:pctW}, 4:{cellWidth:m2W}, 5:{cellWidth:subW} },
+      theme: 'plain',
+    })
+    y = doc.lastAutoTable.finalY + 8
+  }
+
+  // ── Tabla financiera (va después de capítulos) ────────────────
   const col1W = 22, col2W = 40, col0W = CW - col1W - col2W
   doc.autoTable({
     startY: y,
     margin: { left: ML, right: ML },
     head: [[
-      { content: 'Concepto',                        styles: { halign: 'left'   } },
-      { content: '%',                               styles: { halign: 'center' } },
+      { content: 'Concepto',                          styles: { halign: 'left'   } },
+      { content: '%',                                 styles: { halign: 'center' } },
       { content: `Monto (${budget.moneda || 'USD'})`, styles: { halign: 'right'  } },
     ]],
     body: [
-      ['Costo Directo',               { content:'—',                        styles:{halign:'center'} }, { content:money(directReal),  styles:{halign:'right'} }],
-      ['Indirectos',                  { content:`${params.pctIndirectos}%`, styles:{halign:'center'} }, { content:money(indirectos),  styles:{halign:'right'} }],
-      ['Imprevistos',                 { content:`${params.pctImprevistos}%`,styles:{halign:'center'} }, { content:money(imprevistos), styles:{halign:'right'} }],
-      ['Subtotal',                    { content:'—',                        styles:{halign:'center'} }, { content:money(subtotal),    styles:{halign:'right'} }],
-      ['Utilidad',                    { content:`${params.pctUtilidad}%`,   styles:{halign:'center'} }, { content:money(utilidad),    styles:{halign:'right'} }],
-      ['Subtotal antes de impuestos', { content:'—',                        styles:{halign:'center'} }, { content:money(subtotalU),   styles:{halign:'right'} }],
-      [`Impuesto (ISV/IVA)`,          { content:`${params.pctImpuesto}%`,   styles:{halign:'center'} }, { content:money(impuesto),    styles:{halign:'right'} }],
+      ['Costo Directo',               { content:'—',                         styles:{halign:'center'} }, { content:money(directReal),  styles:{halign:'right'} }],
+      ['Indirectos',                  { content:`${params.pctIndirectos}%`,  styles:{halign:'center'} }, { content:money(indirectos),  styles:{halign:'right'} }],
+      ['Imprevistos',                 { content:`${params.pctImprevistos}%`, styles:{halign:'center'} }, { content:money(imprevistos), styles:{halign:'right'} }],
+      ['Subtotal',                    { content:'—',                         styles:{halign:'center'} }, { content:money(subtotal),    styles:{halign:'right'} }],
+      ['Utilidad',                    { content:`${params.pctUtilidad}%`,    styles:{halign:'center'} }, { content:money(utilidad),    styles:{halign:'right'} }],
+      ['Subtotal antes de impuestos', { content:'—',                         styles:{halign:'center'} }, { content:money(subtotalU),   styles:{halign:'right'} }],
+      [`Impuesto (ISV/IVA)`,          { content:`${params.pctImpuesto}%`,    styles:{halign:'center'} }, { content:money(impuesto),    styles:{halign:'right'} }],
       [
         { content:'TOTAL GENERAL', styles:{ fontStyle:'bold', fillColor:C.ink, textColor:255, halign:'left'   } },
         { content:'—',             styles:{ fontStyle:'bold', fillColor:C.ink, textColor:255, halign:'center' } },
@@ -863,51 +925,6 @@ export const exportPDFResumenEjecutivo = async (budget, params) => {
     columnStyles:       { 0:{ cellWidth: col0W }, 1:{ cellWidth: col1W }, 2:{ cellWidth: col2W } },
     theme: 'plain',
   })
-  y = doc.lastAutoTable.finalY + 8
-
-  // ── Tabla resumen capítulos ───────────────────────────────────
-  // Col widths: ID=12, Acts=18, %=22, Sub=36, Cap=resto
-  const idW=12, actsW=18, pctW=22, subW=36, capW=CW-idW-actsW-pctW-subW
-  const capItems = budget.items.filter(it => it.tipo === 'capitulo')
-  const capRows = capItems.map(cap => {
-    const capSub = round2(calcItem(cap, budget.catalogos, params).subtotal)
-    const nActs  = (function count(its){ return its.reduce((s,x)=>s+(x.tipo==='actividad'?1:count(x.children||[])),0) })(cap.children||[])
-    const pct    = directReal > 0 ? ((capSub/directReal)*100).toFixed(1)+'%' : '—'
-    return [
-      { content: cap.id,        styles: { halign: 'center' } },
-      cap.descripcion,
-      { content: nActs+' act.', styles: { halign: 'center' } },
-      { content: pct,           styles: { halign: 'center' } },
-      { content: money(capSub), styles: { halign: 'right'  } },
-    ]
-  })
-  if (capRows.length) {
-    // fila total costos directos
-    capRows.push([
-      { content: '',                    styles: { halign: 'center', fontStyle: 'bold', fillColor: C.ink, textColor: 255 } },
-      { content: 'TOTAL COSTO DIRECTO', styles: { halign: 'left',   fontStyle: 'bold', fillColor: C.ink, textColor: 255 } },
-      { content: '',                    styles: { halign: 'center', fontStyle: 'bold', fillColor: C.ink, textColor: 255 } },
-      { content: '100%',                styles: { halign: 'center', fontStyle: 'bold', fillColor: C.ink, textColor: 255 } },
-      { content: money(directReal),     styles: { halign: 'right',  fontStyle: 'bold', fillColor: C.ink, textColor: 255 } },
-    ])
-    doc.autoTable({
-      startY: y,
-      margin: { left: ML, right: ML },
-      head: [[
-        { content: 'ID',           styles: { halign: 'center' } },
-        { content: 'Capítulo',     styles: { halign: 'left'   } },
-        { content: 'Acts.',        styles: { halign: 'center' } },
-        { content: '% Dir.',       styles: { halign: 'center' } },
-        { content: 'Costo Directo',styles: { halign: 'right'  } },
-      ]],
-      body: capRows,
-      styles:             { fontSize: 9, cellPadding: 2.5, textColor: C.ink },
-      headStyles:         { fillColor: C.dark, textColor: 255, fontStyle: 'bold', fontSize: 9 },
-      alternateRowStyles: { fillColor: C.bg },
-      columnStyles:       { 0:{cellWidth:idW}, 1:{cellWidth:capW}, 2:{cellWidth:actsW}, 3:{cellWidth:pctW}, 4:{cellWidth:subW} },
-      theme: 'plain',
-    })
-  }
 
   // ── Footer ────────────────────────────────────────────────────
   doc.setDrawColor(...C.rule); doc.setLineWidth(0.3); doc.line(ML, h-10, w-ML, h-10)
