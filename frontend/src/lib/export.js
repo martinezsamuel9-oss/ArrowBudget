@@ -837,7 +837,7 @@ export const exportPDFResumenEjecutivo = async (budget, params) => {
     doc.setFillColor(...C.dark); doc.roundedRect(bx, y, bw, bh, 1.5, 1.5, 'F')
     doc.setTextColor(...C.muted); doc.setFontSize(6.5); doc.setFont(undefined, 'bold')
     doc.text(b.label, bx + bw / 2, y + 7, { align: 'center' })
-    doc.setTextColor(...C.white); doc.setFontSize(i === 4 ? 9 : 10); doc.setFont(undefined, 'bold')
+    doc.setTextColor(...C.white); doc.setFontSize(10); doc.setFont(undefined, 'bold')
     doc.text(b.value, bx + bw / 2, y + 16, { align: 'center' })
     if (b.sub) {
       doc.setFontSize(5.5); doc.setFont(undefined, 'normal'); doc.setTextColor(...C.muted)
@@ -866,7 +866,26 @@ export const exportPDFResumenEjecutivo = async (budget, params) => {
     ]
   })
   if (capRows.length) {
-    // Tabla sin fila TOTAL (se dibuja manualmente después)
+    // Filas de Indirectos, Imprevistos, Utilidad (e Impuesto si > 0)
+    const overheadRows = [
+      [`Indirectos (${params.pctIndirectos}%)`,   indirectos ],
+      [`Imprevistos (${params.pctImprevistos}%)`,  imprevistos],
+      [`Utilidad (${params.pctUtilidad}%)`,        utilidad   ],
+    ]
+    if (impuesto > 0) overheadRows.push([`Impuesto (${params.pctImpuesto}%)`, impuesto])
+    overheadRows.forEach(([lbl, val]) => {
+      const pctT = total > 0 ? ((val/total)*100).toFixed(1)+'%' : '—'
+      const valM2 = m2Val > 0 ? money(round2(val / m2Val)) : '—'
+      capRows.push([
+        { content: '',    styles: { halign: 'center', textColor: C.mid, fontStyle: 'italic' } },
+        { content: lbl,   styles: { textColor: C.mid, fontStyle: 'italic' } },
+        { content: '',    styles: { halign: 'center', textColor: C.mid } },
+        { content: pctT,  styles: { halign: 'center', textColor: C.mid, fontStyle: 'italic' } },
+        { content: valM2, styles: { halign: 'right',  textColor: C.mid, fontStyle: 'italic' } },
+        { content: money(val), styles: { halign: 'right', textColor: C.mid, fontStyle: 'italic' } },
+      ])
+    })
+
     doc.autoTable({
       startY: y,
       margin: { left: ML, right: ML },
@@ -874,9 +893,9 @@ export const exportPDFResumenEjecutivo = async (budget, params) => {
         { content: 'ID',            styles: { halign: 'center' } },
         { content: 'Capítulo',      styles: { halign: 'left'   } },
         { content: 'Acts.',         styles: { halign: 'center' } },
-        { content: '% Dir.',        styles: { halign: 'center' } },
+        { content: '% Total',       styles: { halign: 'center' } },
         { content: `$/m² (${m2Src.slice(0,5)}.)`, styles: { halign: 'right' } },
-        { content: 'Costo Directo', styles: { halign: 'right'  } },
+        { content: 'Monto',         styles: { halign: 'right'  } },
       ]],
       body: capRows,
       styles:             { fontSize: 9, cellPadding: 2.5, textColor: C.ink },
@@ -886,20 +905,16 @@ export const exportPDFResumenEjecutivo = async (budget, params) => {
       theme: 'plain',
     })
 
-    // 5. Fila TOTAL dibujada manualmente — evita bugs de colSpan en jsPDF
+    // Fila TOTAL GENERAL dibujada manualmente (= directReal + overhead)
     const rH = 9
     const ry = doc.lastAutoTable.finalY
     doc.setFillColor(...C.ink); doc.rect(ML, ry, CW, rH, 'F')
     doc.setTextColor(255); doc.setFontSize(9); doc.setFont(undefined, 'bold')
-    // "TOTAL COSTO DIRECTO" ocupa las primeras 3 columnas (ID + Cap + Acts)
-    doc.text('TOTAL COSTO DIRECTO', ML + 3, ry + 6)
-    // "100%" centrado en columna % (pos = ML + idW + capW + actsW + pctW/2)
+    doc.text('TOTAL GENERAL', ML + 3, ry + 6)
     doc.text('100%', ML + idW + capW + actsW + pctW / 2, ry + 6, { align: 'center' })
-    // $/m² centrado en su columna
-    const totM2 = m2Val > 0 ? money(round2(directReal / m2Val)) : '—'
+    const totM2 = m2Val > 0 ? money(round2(total / m2Val)) : '—'
     doc.text(totM2, ML + idW + capW + actsW + pctW + m2W / 2, ry + 6, { align: 'center' })
-    // Costo directo alineado a la derecha
-    doc.text(money(directReal), ML + CW - 2, ry + 6, { align: 'right' })
+    doc.text(money(total), ML + CW - 2, ry + 6, { align: 'right' })
     doc.setTextColor(0)
 
     y = ry + rH + 8
