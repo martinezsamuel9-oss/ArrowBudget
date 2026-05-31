@@ -813,7 +813,7 @@ function FichaCostoModal({ open, onClose, actividad, budget, catalogos, params, 
               ficha={f} catalogos={catalogos} onAdd={add} onDel={del} onUpd={upd} onCreateIns={createIns}
               moTotal={calc.totMo} />
           ))}
-          <div style={{ marginTop: 16, border: '1px solid var(--c-line)', borderRadius: 'var(--r-lg)', overflow: 'hidden' }}>
+          <div style={{ marginTop: 16, border: '1px solid var(--c-line)', borderRadius: 'var(--r-lg)', overflow: 'hidden', maxWidth: 340, marginLeft: 'auto' }}>
             <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', padding: '8px 12px', background: 'var(--c-bg-2)', borderBottom: '1px solid var(--c-line)', color: 'var(--c-text-2)' }}>Resumen</div>
             {[
               { lbl: 'Materiales',           val: calc.totMat,       bold: false, divider: false },
