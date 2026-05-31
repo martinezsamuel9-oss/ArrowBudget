@@ -727,7 +727,7 @@ export async function importExcelPresupuesto(file, budget, setBudget) {
     const parts=id.split('.')
     if(parts.length===1) newItems.push({id,tipo:'capitulo',descripcion:desc,children:[]})
     else if(parts.length===2){ const cap=newItems.find(x=>x.id===parts[0]); const it={id,tipo:'subcapitulo',descripcion:desc,children:[]}; (cap?cap.children:newItems).push(it) }
-    else { const cap=newItems.find(x=>x.id===parts[0]); const sub=cap?.children?.find(x=>x.id===parts.slice(0,2).join('.')); const it={id,tipo:'actividad',descripcion:desc,unidad:String(r[2]||'und').trim(),cantidad:parseFloat(r[3])||0,ficha:{materiales:[],manoObra:[],herramientaEquipo:[],subcontratos:[]}}; ((sub||cap)?(sub||cap).children:newItems).push(it) }
+    else { const cap=newItems.find(x=>x.id===parts[0]); const sub=cap?.children?.find(x=>x.id===parts.slice(0,2).join('.')); const precioManual=parseFloat(String(r[4]||'').replace(/[^0-9.-]/g,''))||0; const it={id,tipo:'actividad',descripcion:desc,unidad:String(r[2]||'und').trim(),cantidad:parseFloat(r[3])||0,...(precioManual>0?{precioManual}:{}),ficha:{materiales:[],manoObra:[],herramientaEquipo:[],subcontratos:[]}}; ((sub||cap)?(sub||cap).children:newItems).push(it) }
   }
   if(!newItems.length) return alert('No se detectaron filas válidas.')
   if(!confirm(`Se detectaron ${newItems.length} capítulo(s). ¿Reemplazar el presupuesto?`)) return

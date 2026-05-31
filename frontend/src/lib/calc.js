@@ -69,7 +69,9 @@ export const calcFicha = (f, cat, p) => {
 export const calcItem = (it, cat, p) => {
   if (it.tipo === 'actividad') {
     const f = calcFicha(it.ficha, cat, p)
-    return { precioUnitario: f.precioUnitario, subtotal: round2(f.precioUnitario * (+it.cantidad || 0)) }
+    // Si la ficha está vacía y hay un precio importado manualmente, usarlo como fallback
+    const pu = (f.precioUnitario === 0 && it.precioManual > 0) ? +it.precioManual : f.precioUnitario
+    return { precioUnitario: pu, subtotal: round2(pu * (+it.cantidad || 0)) }
   }
   let s = 0
   for (const c of it.children || []) s += calcItem(c, cat, p).subtotal
@@ -86,12 +88,13 @@ export const calcKPIs = b => {
     for (const it of its) {
       if (it.tipo === 'actividad') {
         const f = calcFicha(it.ficha, b.catalogos, p)
+        const pu = (f.precioUnitario === 0 && it.precioManual > 0) ? +it.precioManual : f.precioUnitario
         const q = +it.cantidad || 0
         totDir += f.costoDirecto   * q
         totInd += f.indirectos     * q
         totImp += f.imprevistos    * q
         totUti += f.utilidad       * q
-        total  += f.precioUnitario * q
+        total  += pu               * q
         nActs++
       } else if (it.children) walk(it.children)
     }
