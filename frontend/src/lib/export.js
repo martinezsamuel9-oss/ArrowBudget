@@ -291,7 +291,7 @@ export const exportPDFFicha = async (budget, act, params, empresa = {}) => {
   sectApu('HERRAMIENTA + EQUIPO','herramientaEquipo',calc.totHe,calc.totMo)
   sectApu('SUBCONTRATO','subcontratos',calc.totSub)
 
-  // Resumen compacto a la derecha (igual que UI)
+  // Resumen compacto a la derecha
   y += 6
   const C2 = { ink:[15,17,21], dark:[30,41,59], bg:[248,250,252] }
   const pw2 = doc.internal.pageSize.getWidth()
@@ -299,15 +299,12 @@ export const exportPDFFicha = async (budget, act, params, empresa = {}) => {
   doc.autoTable({startY:y, tableWidth:tW2, margin:{left:pw2-tW2-10, right:10, bottom:14},
     head:[[{content:'RESUMEN',colSpan:2,styles:{fillColor:C2.dark,textColor:255,fontStyle:'bold',fontSize:8,halign:'left'}}]],
     body:[
-      [{content:'Materiales',         styles:{halign:'left'}},{content:money(calc.totMat),         styles:{halign:'right'}}],
-      [{content:'Mano de Obra',       styles:{halign:'left'}},{content:money(calc.totMo),          styles:{halign:'right'}}],
-      [{content:'Herramientas y Equipo',styles:{halign:'left'}},{content:money(calc.totHe),        styles:{halign:'right'}}],
-      [{content:'Subcontratos',       styles:{halign:'left'}},{content:money(calc.totSub),         styles:{halign:'right'}}],
-      [{content:'COSTO DIRECTO',      styles:{fontStyle:'bold',halign:'left',fillColor:C2.bg}},{content:money(calc.costoDirecto),styles:{fontStyle:'bold',halign:'right',fillColor:C2.bg}}],
-      [{content:`Indirectos (${params.pctIndirectos}%)`,   styles:{halign:'left'}},{content:money(calc.indirectos),  styles:{halign:'right'}}],
-      [{content:`Imprevistos (${params.pctImprevistos}%)`, styles:{halign:'left'}},{content:money(calc.imprevistos), styles:{halign:'right'}}],
-      [{content:`Utilidad (${params.pctUtilidad}%)`,       styles:{halign:'left'}},{content:money(calc.utilidad),    styles:{halign:'right'}}],
-      [{content:`Impuesto (${params.pctImpuesto}%)`,       styles:{halign:'left'}},{content:money(calc.impuesto),    styles:{halign:'right'}}],
+      [{content:'Costo Directo',                           styles:{halign:'left'}},{content:money(calc.costoDirecto),          styles:{halign:'right'}}],
+      [{content:`Indirectos (${params.pctIndirectos}%)`,   styles:{halign:'left'}},{content:money(calc.indirectos),            styles:{halign:'right'}}],
+      [{content:`Imprevistos (${params.pctImprevistos}%)`, styles:{halign:'left'}},{content:money(calc.imprevistos),           styles:{halign:'right'}}],
+      [{content:`Utilidad (${params.pctUtilidad}%)`,       styles:{halign:'left'}},{content:money(calc.utilidad),              styles:{halign:'right'}}],
+      [{content:'Subtotal sin impuestos',                  styles:{halign:'left'}},{content:money(calc.subtotalSinImpuesto),   styles:{halign:'right'}}],
+      [{content:`Impuesto (${params.pctImpuesto}%)`,       styles:{halign:'left'}},{content:money(calc.impuesto),              styles:{halign:'right'}}],
       [{content:'PRECIO UNITARIO TOTAL',styles:{fontStyle:'bold',halign:'left',fillColor:C2.ink,textColor:255}},{content:money(calc.precioUnitario),styles:{fontStyle:'bold',halign:'right',fillColor:C2.ink,textColor:255}}],
     ],
     styles:{fontSize:8,cellPadding:1.8,textColor:C2.ink},
@@ -372,15 +369,12 @@ export const exportPDFRangoFichas = async (budget, params, ids, empresa = {}) =>
     doc.autoTable({startY:y, tableWidth:tWR, margin:{left:pwR-tWR-10, right:10, bottom:14},
       head:[[{content:'RESUMEN',colSpan:2,styles:{fillColor:CR.dark,textColor:255,fontStyle:'bold',fontSize:8,halign:'left'}}]],
       body:[
-        [{content:'Materiales',          styles:{halign:'left'}},{content:money(calc.totMat),         styles:{halign:'right'}}],
-        [{content:'Mano de Obra',        styles:{halign:'left'}},{content:money(calc.totMo),          styles:{halign:'right'}}],
-        [{content:'Herramientas y Equipo',styles:{halign:'left'}},{content:money(calc.totHe),         styles:{halign:'right'}}],
-        [{content:'Subcontratos',        styles:{halign:'left'}},{content:money(calc.totSub),         styles:{halign:'right'}}],
-        [{content:'COSTO DIRECTO',       styles:{fontStyle:'bold',halign:'left',fillColor:CR.bg}},{content:money(calc.costoDirecto),styles:{fontStyle:'bold',halign:'right',fillColor:CR.bg}}],
-        [{content:`Indirectos (${params.pctIndirectos}%)`,   styles:{halign:'left'}},{content:money(calc.indirectos),  styles:{halign:'right'}}],
-        [{content:`Imprevistos (${params.pctImprevistos}%)`, styles:{halign:'left'}},{content:money(calc.imprevistos), styles:{halign:'right'}}],
-        [{content:`Utilidad (${params.pctUtilidad}%)`,       styles:{halign:'left'}},{content:money(calc.utilidad),    styles:{halign:'right'}}],
-        [{content:`Impuesto (${params.pctImpuesto}%)`,       styles:{halign:'left'}},{content:money(calc.impuesto),    styles:{halign:'right'}}],
+        [{content:'Costo Directo',                           styles:{halign:'left'}},{content:money(calc.costoDirecto),        styles:{halign:'right'}}],
+        [{content:`Indirectos (${params.pctIndirectos}%)`,   styles:{halign:'left'}},{content:money(calc.indirectos),          styles:{halign:'right'}}],
+        [{content:`Imprevistos (${params.pctImprevistos}%)`, styles:{halign:'left'}},{content:money(calc.imprevistos),         styles:{halign:'right'}}],
+        [{content:`Utilidad (${params.pctUtilidad}%)`,       styles:{halign:'left'}},{content:money(calc.utilidad),            styles:{halign:'right'}}],
+        [{content:'Subtotal sin impuestos',                  styles:{halign:'left'}},{content:money(calc.subtotalSinImpuesto), styles:{halign:'right'}}],
+        [{content:`Impuesto (${params.pctImpuesto}%)`,       styles:{halign:'left'}},{content:money(calc.impuesto),            styles:{halign:'right'}}],
         [{content:'PRECIO UNITARIO TOTAL',styles:{fontStyle:'bold',halign:'left',fillColor:CR.ink,textColor:255}},{content:money(calc.precioUnitario),styles:{fontStyle:'bold',halign:'right',fillColor:CR.ink,textColor:255}}],
       ],
       styles:{fontSize:8,cellPadding:1.8,textColor:CR.ink},
