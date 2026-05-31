@@ -36,6 +36,31 @@ const relTime = ts => {
   const w = Math.floor(d / 7)
   return `hace ${w} semana${w > 1 ? 's' : ''}`
 }
+const DEFAULT_INDIRECTOS = [
+  { descripcion: 'Gerente de Proyecto',         unidad: 'mes',    cantidad: 1, costoBase: 0 },
+  { descripcion: 'Residente de Obra',           unidad: 'mes',    cantidad: 1, costoBase: 0 },
+  { descripcion: 'Ingeniero Jr',                unidad: 'mes',    cantidad: 1, costoBase: 0 },
+  { descripcion: 'Arquitecto I',                unidad: 'mes',    cantidad: 1, costoBase: 0 },
+  { descripcion: 'Arquitecto II',               unidad: 'mes',    cantidad: 1, costoBase: 0 },
+  { descripcion: 'Especialista en Costos',      unidad: 'mes',    cantidad: 1, costoBase: 0 },
+  { descripcion: 'Maestro de Obra',             unidad: 'mes',    cantidad: 1, costoBase: 0 },
+  { descripcion: 'Bodeguero',                   unidad: 'mes',    cantidad: 1, costoBase: 0 },
+  { descripcion: 'Alquiler de casas / oficina', unidad: 'mes',    cantidad: 1, costoBase: 0 },
+  { descripcion: 'Fianza de calidad',           unidad: 'global', cantidad: 1, costoBase: 0 },
+  { descripcion: 'Fianza de anticipo',          unidad: 'global', cantidad: 1, costoBase: 0 },
+  { descripcion: 'Buena ejecución de obra',     unidad: 'global', cantidad: 1, costoBase: 0 },
+  { descripcion: 'Alimentación',                unidad: 'mes',    cantidad: 1, costoBase: 0 },
+  { descripcion: 'Combustible',                 unidad: 'mes',    cantidad: 1, costoBase: 0 },
+  { descripcion: 'Viajes de gerencia',          unidad: 'viaje',  cantidad: 1, costoBase: 0 },
+  { descripcion: 'Seguros de obra',             unidad: 'global', cantidad: 1, costoBase: 0 },
+  { descripcion: 'Comunicaciones / Internet',   unidad: 'mes',    cantidad: 1, costoBase: 0 },
+  { descripcion: 'Papelería y útiles',          unidad: 'mes',    cantidad: 1, costoBase: 0 },
+  { descripcion: 'Vigilancia / Guardianía',     unidad: 'mes',    cantidad: 1, costoBase: 0 },
+  { descripcion: 'Instalación provisional',     unidad: 'global', cantidad: 1, costoBase: 0 },
+  { descripcion: 'Transporte de personal',      unidad: 'mes',    cantidad: 1, costoBase: 0 },
+  { descripcion: 'Equipos de cómputo y TI',     unidad: 'global', cantidad: 1, costoBase: 0 },
+].map(x => ({ ...x, id: uid() }))
+
 const DB2UI = { borrador:'Borrador', activo:'Activo', en_revision:'En revisión', enviado:'En revisión', aprobado:'Aprobado', rechazado:'Rechazado', en_ejecucion:'En ejecución' }
 const UI2DB = { 'Borrador':'borrador', 'Activo':'activo', 'En revisión':'en_revision', 'Aprobado':'aprobado', 'Rechazado':'rechazado', 'En ejecución':'en_ejecucion' }
 
@@ -63,6 +88,7 @@ const mapDb = row => ({
   catalogos:     (() => { const c = row.catalogos_json || {}; return { materiales: c.materiales||[], manoObra: c.manoObra||[], herramientaEquipo: c.herramientaEquipo||[], subcontratos: c.subcontratos||[] } })(),
   apuHeaderBg:   (row.catalogos_json?._apu?.headerBg)  || '#0f1115',
   apuHeaderText: (row.catalogos_json?._apu?.headerText) || '#f59e0b',
+  indirectos:    (row.catalogos_json?._indirectos) || DEFAULT_INDIRECTOS.map(x => ({ ...x, id: uid() })),
   items:         row.items_json     || [],
 })
 
@@ -85,7 +111,7 @@ const toDb = b => ({
   logo_ofertante:  b.logoOfertante,
   logo_cliente:    b.logoCliente,
   versiones_json:  b.versiones,
-  catalogos_json:  { ...b.catalogos, _apu: { headerBg: b.apuHeaderBg||'#0f1115', headerText: b.apuHeaderText||'#f59e0b' } },
+  catalogos_json:  { ...b.catalogos, _apu: { headerBg: b.apuHeaderBg||'#0f1115', headerText: b.apuHeaderText||'#f59e0b' }, _indirectos: b.indirectos||[] },
   items_json:      b.items,
   updated_at:      new Date().toISOString(),
 })
@@ -135,6 +161,7 @@ function Sidebar({ page, setPage, projectActivo, setTabProject, tabProject, user
     { id: 'cat-mo',         label: 'Mano de Obra',         Icon: HardHat },
     { id: 'cat-he',         label: 'Herramientas/Equipo',  Icon: Wrench },
     { id: 'cat-sub',        label: 'Subcontratos',         Icon: Users },
+    { id: 'indirectos',     label: 'Indirectos',           Icon: TrendingUp },
   ]
   const toolNav = [
     { id: 'reportes',   label: 'Reportes',             Icon: BarChart2 },
@@ -886,6 +913,116 @@ function FichaCostoModal({ open, onClose, actividad, budget, catalogos, params, 
         </div>
       </div>
     </Fragment>
+  )
+}
+
+// ============ INDIRECTOS VIEW ============
+function IndirectosView({ budget, setBudget }) {
+  const lista = budget.indirectos || []
+  const setLista = rows => setBudget({ ...budget, indirectos: rows })
+
+  const total = round2(lista.reduce((s, r) => s + round2((+r.cantidad||0) * (+r.costoBase||0)), 0))
+
+  const addRow = () => setLista([...lista, { id: uid(), descripcion: '', unidad: 'mes', cantidad: 1, costoBase: 0 }])
+
+  const del = id => setLista(lista.filter(r => r.id !== id))
+
+  const upd = (id, k, v) => setLista(lista.map(r => r.id === id ? { ...r, [k]: v } : r))
+
+  const restore = () => {
+    if (!confirm('¿Restaurar la lista base? Se perderán los cambios actuales.')) return
+    setLista(DEFAULT_INDIRECTOS.map(x => ({ ...x, id: uid() })))
+  }
+
+  const cellStyle = { padding: '6px 10px', borderBottom: '1px solid var(--c-line-2)', fontSize: 13 }
+  const inputStyle = { background: 'transparent', border: 'none', outline: 'none', width: '100%', fontSize: 13, color: 'var(--c-text)', fontFamily: 'inherit' }
+  const numStyle   = { ...inputStyle, textAlign: 'right', fontFamily: 'var(--font-mono)' }
+
+  return (
+    <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--c-text)' }}>Costos Indirectos</div>
+          <div style={{ fontSize: 12, color: 'var(--c-text-3)', marginTop: 2 }}>
+            {lista.length} conceptos · Total: <strong>{money(total)}</strong>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn sm ghost" onClick={restore} title="Restaurar lista base" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <RefreshCw size={13} /> Restaurar
+          </button>
+          <button className="btn sm primary" onClick={addRow} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Plus size={13} /> Agregar
+          </button>
+        </div>
+      </div>
+
+      {/* Tabla */}
+      <div style={{ border: '1px solid var(--c-line)', borderRadius: 'var(--r-lg)', overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ background: 'var(--c-bg-2)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--c-text-2)' }}>
+              <th style={{ ...cellStyle, width: 36, textAlign: 'center' }}>#</th>
+              <th style={{ ...cellStyle, textAlign: 'left' }}>Descripción</th>
+              <th style={{ ...cellStyle, width: 90, textAlign: 'center' }}>Unidad</th>
+              <th style={{ ...cellStyle, width: 80, textAlign: 'right' }}>Cantidad</th>
+              <th style={{ ...cellStyle, width: 120, textAlign: 'right' }}>Costo Unitario</th>
+              <th style={{ ...cellStyle, width: 120, textAlign: 'right' }}>Subtotal</th>
+              <th style={{ ...cellStyle, width: 40 }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {lista.map((r, i) => {
+              const sub = round2((+r.cantidad||0) * (+r.costoBase||0))
+              return (
+                <tr key={r.id} style={{ background: i % 2 === 0 ? 'transparent' : 'var(--c-bg-2)' }}>
+                  <td style={{ ...cellStyle, textAlign: 'center', color: 'var(--c-text-3)', fontSize: 11 }}>{i + 1}</td>
+                  <td style={cellStyle}>
+                    <input style={inputStyle} value={r.descripcion} onChange={e => upd(r.id, 'descripcion', e.target.value)} placeholder="Descripción…" />
+                  </td>
+                  <td style={{ ...cellStyle, textAlign: 'center' }}>
+                    <input style={{ ...inputStyle, textAlign: 'center' }} value={r.unidad} onChange={e => upd(r.id, 'unidad', e.target.value)} placeholder="mes" />
+                  </td>
+                  <td style={{ ...cellStyle, textAlign: 'right' }}>
+                    <input style={numStyle} type="number" min="0" value={r.cantidad} onFocus={e => e.target.select()} onChange={e => upd(r.id, 'cantidad', +e.target.value)} />
+                  </td>
+                  <td style={{ ...cellStyle, textAlign: 'right' }}>
+                    <input style={numStyle} type="number" min="0" step="0.01" value={r.costoBase} onFocus={e => e.target.select()} onChange={e => upd(r.id, 'costoBase', +e.target.value)} />
+                  </td>
+                  <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 600, fontFamily: 'var(--font-mono)', color: sub > 0 ? 'var(--c-text)' : 'var(--c-text-4)' }}>
+                    {money(sub)}
+                  </td>
+                  <td style={{ ...cellStyle, textAlign: 'center' }}>
+                    <button onClick={() => del(r.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--c-danger)', padding: 2, lineHeight: 1 }}>
+                      <Trash2 size={13} />
+                    </button>
+                  </td>
+                </tr>
+              )
+            })}
+            {lista.length === 0 && (
+              <tr><td colSpan={7} style={{ ...cellStyle, textAlign: 'center', color: 'var(--c-text-3)', padding: '24px', fontStyle: 'italic' }}>
+                Sin conceptos. Agrega uno o restaura la lista base.
+              </td></tr>
+            )}
+          </tbody>
+          {lista.length > 0 && (
+            <tfoot>
+              <tr style={{ background: 'var(--c-ink)', color: '#fff' }}>
+                <td colSpan={5} style={{ ...cellStyle, textAlign: 'right', fontWeight: 700, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: 'none' }}>
+                  Total Indirectos
+                </td>
+                <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 700, fontFamily: 'var(--font-mono)', fontSize: 14, color: 'var(--c-accent)', borderBottom: 'none' }}>
+                  {money(total)}
+                </td>
+                <td style={{ ...cellStyle, borderBottom: 'none' }}></td>
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+    </div>
   )
 }
 
@@ -1968,10 +2105,11 @@ export default function MainApp() {
   const tabToCat = { 'cat-mat': 'materiales', 'cat-mo': 'manoObra', 'cat-he': 'herramientaEquipo', 'cat-sub': 'subcontratos' }
   const tabsP = budget ? [
     { k: 'presupuesto', label: 'Presupuesto',         icon: <FileText size={14} />, badge: calcKPIs(budget).nActividades },
-    { k: 'cat-mat',     label: 'Materiales',           icon: <Package size={14} />,  badge: (budget.catalogos.materiales || []).length },
-    { k: 'cat-mo',      label: 'Mano de Obra',         icon: <HardHat size={14} />,  badge: (budget.catalogos.manoObra || []).length },
-    { k: 'cat-he',      label: 'Herramientas/Equipo',  icon: <Wrench size={14} />,   badge: (budget.catalogos.herramientaEquipo || []).length },
-    { k: 'cat-sub',     label: 'Subcontratos',         icon: <Users size={14} />,    badge: (budget.catalogos.subcontratos || []).length },
+    { k: 'cat-mat',     label: 'Materiales',           icon: <Package size={14} />,     badge: (budget.catalogos.materiales || []).length },
+    { k: 'cat-mo',      label: 'Mano de Obra',         icon: <HardHat size={14} />,     badge: (budget.catalogos.manoObra || []).length },
+    { k: 'cat-he',      label: 'Herramientas/Equipo',  icon: <Wrench size={14} />,      badge: (budget.catalogos.herramientaEquipo || []).length },
+    { k: 'cat-sub',     label: 'Subcontratos',         icon: <Users size={14} />,       badge: (budget.catalogos.subcontratos || []).length },
+    { k: 'indirectos',  label: 'Indirectos',           icon: <TrendingUp size={14} />,  badge: (budget.indirectos || []).length },
   ] : []
 
   return (
@@ -2119,10 +2257,11 @@ export default function MainApp() {
                   </div>
                 </div>
               )}
-              {tabProject === 'cat-mat' && <CatalogoView budget={budget} setBudget={setBudget} categoria={CATEGORIAS[0]} />}
-              {tabProject === 'cat-mo'  && <CatalogoView budget={budget} setBudget={setBudget} categoria={CATEGORIAS[1]} />}
-              {tabProject === 'cat-he'  && <CatalogoView budget={budget} setBudget={setBudget} categoria={CATEGORIAS[2]} />}
-              {tabProject === 'cat-sub' && <CatalogoView budget={budget} setBudget={setBudget} categoria={CATEGORIAS[3]} />}
+              {tabProject === 'cat-mat'    && <CatalogoView budget={budget} setBudget={setBudget} categoria={CATEGORIAS[0]} />}
+              {tabProject === 'cat-mo'     && <CatalogoView budget={budget} setBudget={setBudget} categoria={CATEGORIAS[1]} />}
+              {tabProject === 'cat-he'     && <CatalogoView budget={budget} setBudget={setBudget} categoria={CATEGORIAS[2]} />}
+              {tabProject === 'cat-sub'    && <CatalogoView budget={budget} setBudget={setBudget} categoria={CATEGORIAS[3]} />}
+              {tabProject === 'indirectos' && <IndirectosView budget={budget} setBudget={setBudget} />}
             </div>
           </Fragment>
         )}
