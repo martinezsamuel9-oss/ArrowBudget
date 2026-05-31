@@ -576,9 +576,44 @@ function ConfigProyectoModal({ open, onClose, budget, setBudget }) {
         </div>
         <div className="divider"></div>
         <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--c-text)', marginBottom: 10 }}>Colores del encabezado APU</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--c-text)', marginBottom: 4 }}>Encabezado del PDF (Fichas APU)</div>
+          <div style={{ fontSize: 11, color: 'var(--c-text-3)', marginBottom: 12 }}>Personaliza el color de fondo y del texto del header en los PDF exportados.</div>
+
+          {/* Preview en vivo */}
+          <div style={{ borderRadius: 8, overflow: 'hidden', marginBottom: 14, border: '1px solid var(--c-line)' }}>
+            <div style={{ background: form.apuHeaderBg || '#0f1115', padding: '14px 16px', textAlign: 'center' }}>
+              <div style={{ color: form.apuHeaderText || '#f59e0b', fontWeight: 800, fontSize: 14, letterSpacing: '0.04em' }}>FICHA DE COSTO UNITARIO</div>
+              <div style={{ color: form.apuHeaderText || '#f59e0b', fontWeight: 700, fontSize: 12, marginTop: 4, opacity: 0.85 }}>{(form.nombreProyecto || 'NOMBRE DEL PROYECTO').toUpperCase()}</div>
+            </div>
+            <div style={{ background: 'var(--c-bg-2)', padding: '6px 16px', fontSize: 11, color: 'var(--c-text-3)', textAlign: 'center' }}>Vista previa del encabezado</div>
+          </div>
+
+          {/* Paletas predefinidas */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--c-text-2)', marginBottom: 8 }}>Paletas rápidas</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {[
+                { label: 'Oscuro',      bg: '#0f1115', text: '#f59e0b' },
+                { label: 'Marino',      bg: '#1e3a5f', text: '#f59e0b' },
+                { label: 'Pizarra',     bg: '#1e293b', text: '#e2e8f0' },
+                { label: 'Verde',       bg: '#064e3b', text: '#6ee7b7' },
+                { label: 'Vino',        bg: '#4c0519', text: '#fda4af' },
+                { label: 'Corporativo', bg: '#1d4ed8', text: '#ffffff' },
+                { label: 'Gris',        bg: '#374151', text: '#f9fafb' },
+                { label: 'Blanco',      bg: '#ffffff', text: '#1e293b' },
+              ].map(p => (
+                <button key={p.label} onClick={() => setForm(prev => ({ ...prev, apuHeaderBg: p.bg, apuHeaderText: p.text }))}
+                  title={p.label}
+                  style={{ width: 32, height: 32, borderRadius: 6, background: p.bg, border: `2px solid ${(form.apuHeaderBg === p.bg) ? p.text : 'transparent'}`, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ width: 10, height: 10, borderRadius: '50%', background: p.text, display: 'block' }} />
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Controles manuales */}
           <div className="grid-2">
-            {[['apuHeaderBg', 'Fondo del header', '#0f1115'], ['apuHeaderText', 'Color de texto/acento', '#f59e0b']].map(([k, lbl, def]) => (
+            {[['apuHeaderBg', 'Color de fondo', '#0f1115'], ['apuHeaderText', 'Color de texto / acento', '#f59e0b']].map(([k, lbl, def]) => (
               <div key={k} className="field">
                 <label className="field-label">{lbl}</label>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
