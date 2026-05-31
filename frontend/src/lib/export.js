@@ -866,14 +866,7 @@ export const exportPDFResumenEjecutivo = async (budget, params) => {
     ]
   })
   if (capRows.length) {
-    // 5. Fila TOTAL con colSpan correcto para las 3 primeras celdas
-    const totM2 = m2Val > 0 ? money(round2(directReal / m2Val)) : '—'
-    capRows.push([
-      { content: 'TOTAL COSTO DIRECTO', colSpan: 3, styles: { halign: 'left', fontStyle: 'bold', fillColor: C.ink, textColor: 255 } },
-      { content: '100%',      styles: { halign: 'center', fontStyle: 'bold', fillColor: C.ink, textColor: 255 } },
-      { content: totM2,       styles: { halign: 'right',  fontStyle: 'bold', fillColor: C.ink, textColor: 255 } },
-      { content: money(directReal), styles: { halign: 'right', fontStyle: 'bold', fillColor: C.ink, textColor: 255 } },
-    ])
+    // Tabla sin fila TOTAL (se dibuja manualmente después)
     doc.autoTable({
       startY: y,
       margin: { left: ML, right: ML },
@@ -892,7 +885,24 @@ export const exportPDFResumenEjecutivo = async (budget, params) => {
       columnStyles:       { 0:{cellWidth:idW}, 1:{cellWidth:capW}, 2:{cellWidth:actsW}, 3:{cellWidth:pctW}, 4:{cellWidth:m2W}, 5:{cellWidth:subW} },
       theme: 'plain',
     })
-    y = doc.lastAutoTable.finalY + 8
+
+    // 5. Fila TOTAL dibujada manualmente — evita bugs de colSpan en jsPDF
+    const rH = 9
+    const ry = doc.lastAutoTable.finalY
+    doc.setFillColor(...C.ink); doc.rect(ML, ry, CW, rH, 'F')
+    doc.setTextColor(255); doc.setFontSize(9); doc.setFont(undefined, 'bold')
+    // "TOTAL COSTO DIRECTO" ocupa las primeras 3 columnas (ID + Cap + Acts)
+    doc.text('TOTAL COSTO DIRECTO', ML + 3, ry + 6)
+    // "100%" centrado en columna % (pos = ML + idW + capW + actsW + pctW/2)
+    doc.text('100%', ML + idW + capW + actsW + pctW / 2, ry + 6, { align: 'center' })
+    // $/m² centrado en su columna
+    const totM2 = m2Val > 0 ? money(round2(directReal / m2Val)) : '—'
+    doc.text(totM2, ML + idW + capW + actsW + pctW + m2W / 2, ry + 6, { align: 'center' })
+    // Costo directo alineado a la derecha
+    doc.text(money(directReal), ML + CW - 2, ry + 6, { align: 'right' })
+    doc.setTextColor(0)
+
+    y = ry + rH + 8
   }
 
   // ── Tabla financiera (va después de capítulos) ────────────────
