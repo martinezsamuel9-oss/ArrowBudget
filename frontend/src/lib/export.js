@@ -119,44 +119,22 @@ const addImageContain = async (doc, src, x, y, maxW, maxH) => {
 // draws the compact APU page header; returns the Y coordinate where content should start
 const drawApuHeader = async (doc, budget, empresa = {}, opts = {}) => {
   const w = doc.internal.pageSize.getWidth()
-  const { showPartyInfo = true } = opts
-  const bg   = hexToRgb(empresa.headerBg)   || [15,17,21]
-  const txt  = hexToRgb(empresa.headerText) || [245,158,11]
-  const headerH = 28
+  const bg  = hexToRgb(empresa.headerBg)  || [15,17,21]
+  const txt = hexToRgb(empresa.headerText)|| [245,158,11]
+  const headerH = 32
 
   doc.setFillColor(bg[0],bg[1],bg[2]); doc.rect(0,0,w,headerH,'F')
   // Logo empresa (contain-fit dentro de 24×18mm, centrado a la izquierda)
-  await addImageContain(doc, empresa.logo, 5, 5, 24, 18)
-  // Títulos
+  await addImageContain(doc, empresa.logo, 5, 7, 24, 18)
+  // Título principal
   doc.setTextColor(txt[0],txt[1],txt[2]); doc.setFontSize(13); doc.setFont(undefined,'bold')
-  doc.text('FICHA DE COSTO UNITARIO', w/2, 11, {align:'center'})
-  doc.setTextColor(255,255,255); doc.setFontSize(9); doc.setFont(undefined,'normal')
-  doc.text(empresa.nombre||'', w/2, 18, {align:'center'})
-  doc.setFontSize(7.5); doc.setTextColor(190,190,190)
-  doc.text(budget.nombreProyecto||'', w/2, 24, {align:'center'})
+  doc.text('FICHA DE COSTO UNITARIO', w/2, 12, {align:'center'})
+  // Nombre del proyecto — 90% del tamaño del título (~11.7pt → usamos 11)
+  doc.setFontSize(11); doc.setFont(undefined,'bold')
+  doc.text((budget.nombreProyecto||'').toUpperCase(), w/2, 24, {align:'center'})
   doc.setTextColor(0)
 
-  let y = headerH + 3
-
-  if (showPartyInfo) {
-    doc.setFontSize(7.5)
-    const pairs = [
-      ['Elaboró:',       budget.cotizante   ||'—',  'Cliente:',    budget.cliente  ||'—'],
-      ['Revisó/Aprobó:', budget.ofertante   ||'—',  'Ubicación:',  budget.lugar    ||'—'],
-      ['Realizado por:', budget.realizadoPor||'—',  'Tipo:',       budget.tipo     ||'—'],
-    ]
-    const cx1=10, cx2=w/2+4
-    for (const [l1,v1,l2,v2] of pairs) {
-      doc.setFont(undefined,'bold');   doc.text(l1, cx1, y)
-      doc.setFont(undefined,'normal'); doc.text(v1, cx1+27, y)
-      doc.setFont(undefined,'bold');   doc.text(l2, cx2, y)
-      doc.setFont(undefined,'normal'); doc.text(v2, cx2+24, y)
-      y += 4.5
-    }
-    doc.setDrawColor(txt[0],txt[1],txt[2]); doc.setLineWidth(0.4); doc.line(10,y,w-10,y)
-    y += 3
-  }
-  return y
+  return headerH + 4
 }
 
 // footer: rev info on left, page number on right
