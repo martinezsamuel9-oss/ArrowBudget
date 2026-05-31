@@ -866,25 +866,21 @@ export const exportPDFResumenEjecutivo = async (budget, params) => {
     ]
   })
   if (capRows.length) {
-    // Filas de Indirectos, Imprevistos, Utilidad (e Impuesto si > 0)
-    const overheadRows = [
-      [`Indirectos (${params.pctIndirectos}%)`,   indirectos ],
-      [`Imprevistos (${params.pctImprevistos}%)`,  imprevistos],
-      [`Utilidad (${params.pctUtilidad}%)`,        utilidad   ],
-    ]
-    if (impuesto > 0) overheadRows.push([`Impuesto (${params.pctImpuesto}%)`, impuesto])
-    overheadRows.forEach(([lbl, val]) => {
-      const pctT = total > 0 ? ((val/total)*100).toFixed(1)+'%' : '—'
-      const valM2 = m2Val > 0 ? money(round2(val / m2Val)) : '—'
-      capRows.push([
-        { content: '',    styles: { halign: 'center', textColor: C.mid, fontStyle: 'italic' } },
-        { content: lbl,   styles: { textColor: C.mid, fontStyle: 'italic' } },
-        { content: '',    styles: { halign: 'center', textColor: C.mid } },
-        { content: pctT,  styles: { halign: 'center', textColor: C.mid, fontStyle: 'italic' } },
-        { content: valM2, styles: { halign: 'right',  textColor: C.mid, fontStyle: 'italic' } },
-        { content: money(val), styles: { halign: 'right', textColor: C.mid, fontStyle: 'italic' } },
-      ])
-    })
+    // Fila única: suma de Indirectos + Imprevistos + Utilidad (+ Impuesto)
+    const overhead = round2(indirectos + imprevistos + utilidad + impuesto)
+    const pctOverhead = total > 0 ? ((overhead / total) * 100).toFixed(1) + '%' : '—'
+    const overheadM2  = m2Val > 0 ? money(round2(overhead / m2Val)) : '—'
+    const overheadLbl = impuesto > 0
+      ? `Indirectos, Imprevistos, Utilidad e Impuesto`
+      : `Indirectos, Imprevistos y Utilidad`
+    capRows.push([
+      { content: '',           styles: { halign: 'center', textColor: C.mid, fontStyle: 'italic' } },
+      { content: overheadLbl, styles: { textColor: C.mid, fontStyle: 'italic' } },
+      { content: '',           styles: { halign: 'center', textColor: C.mid } },
+      { content: pctOverhead,  styles: { halign: 'center', textColor: C.mid, fontStyle: 'italic' } },
+      { content: overheadM2,   styles: { halign: 'right',  textColor: C.mid, fontStyle: 'italic' } },
+      { content: money(overhead), styles: { halign: 'right', textColor: C.mid, fontStyle: 'italic' } },
+    ])
 
     doc.autoTable({
       startY: y,
