@@ -86,9 +86,11 @@ const mapDb = row => ({
   logoCliente:   row.logo_cliente   || null,
   versiones:     row.versiones_json || [],
   catalogos:     (() => { const c = row.catalogos_json || {}; return { materiales: c.materiales||[], manoObra: c.manoObra||[], herramientaEquipo: c.herramientaEquipo||[], subcontratos: c.subcontratos||[] } })(),
-  apuHeaderBg:   (row.catalogos_json?._apu?.headerBg)  || '#0f1115',
-  apuHeaderText: (row.catalogos_json?._apu?.headerText) || '#f59e0b',
-  indirectos:    (row.catalogos_json?._indirectos) || DEFAULT_INDIRECTOS.map(x => ({ ...x, id: uid() })),
+  apuHeaderBg:     (row.catalogos_json?._apu?.headerBg)       || '#0f1115',
+  apuHeaderText:   (row.catalogos_json?._apu?.headerText)     || '#f59e0b',
+  m2Construccion:  (row.catalogos_json?._params?.m2Construccion != null ? +row.catalogos_json._params.m2Construccion : 0),
+  m2Estructura:    (row.catalogos_json?._params?.m2Estructura   != null ? +row.catalogos_json._params.m2Estructura   : 0),
+  indirectos:      (row.catalogos_json?._indirectos) || DEFAULT_INDIRECTOS.map(x => ({ ...x, id: uid() })),
   items:         row.items_json     || [],
 })
 
@@ -111,7 +113,7 @@ const toDb = b => ({
   logo_ofertante:  b.logoOfertante,
   logo_cliente:    b.logoCliente,
   versiones_json:  b.versiones,
-  catalogos_json:  { ...b.catalogos, _apu: { headerBg: b.apuHeaderBg||'#0f1115', headerText: b.apuHeaderText||'#f59e0b' }, _indirectos: b.indirectos||[] },
+  catalogos_json:  { ...b.catalogos, _apu: { headerBg: b.apuHeaderBg||'#0f1115', headerText: b.apuHeaderText||'#f59e0b' }, _indirectos: b.indirectos||[], _params: { m2Construccion: b.m2Construccion||0, m2Estructura: b.m2Estructura||0 } },
   items_json:      b.items,
   updated_at:      new Date().toISOString(),
 })
@@ -599,6 +601,32 @@ function ConfigProyectoModal({ open, onClose, budget, setBudget }) {
             <ConfigField label="Imprevistos (%)" k="pctImprevistos" type="number" form={form} setForm={setForm} />
             <ConfigField label="Utilidad (%)" k="pctUtilidad" type="number" form={form} setForm={setForm} />
             <ConfigField label="Impuesto (%)" k="pctImpuesto" type="number" form={form} setForm={setForm} />
+          </div>
+          <div style={{ height: 12 }} />
+          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--c-text-2)', marginBottom: 10 }}>Áreas del proyecto</div>
+          <div className="grid-2">
+            <div className="field">
+              <label className="field-label">Metros cuadrados de construcción</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+                <input className="input" type="number" min="0" step="0.01"
+                  value={form.m2Construccion ?? 0}
+                  onFocus={e => e.target.select()}
+                  onChange={e => setForm(prev => ({ ...prev, m2Construccion: parseFloat(e.target.value) || 0 }))}
+                  style={{ borderRadius: 'var(--r-md) 0 0 var(--r-md)', borderRight: 'none' }} />
+                <span style={{ padding: '0 10px', height: 36, display: 'flex', alignItems: 'center', background: 'var(--c-bg)', border: '1px solid var(--c-line)', borderRadius: '0 var(--r-md) var(--r-md) 0', fontSize: 12, color: 'var(--c-text-2)', fontWeight: 600, whiteSpace: 'nowrap' }}>m²</span>
+              </div>
+            </div>
+            <div className="field">
+              <label className="field-label">Metros cuadrados de estructura</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+                <input className="input" type="number" min="0" step="0.01"
+                  value={form.m2Estructura ?? 0}
+                  onFocus={e => e.target.select()}
+                  onChange={e => setForm(prev => ({ ...prev, m2Estructura: parseFloat(e.target.value) || 0 }))}
+                  style={{ borderRadius: 'var(--r-md) 0 0 var(--r-md)', borderRight: 'none' }} />
+                <span style={{ padding: '0 10px', height: 36, display: 'flex', alignItems: 'center', background: 'var(--c-bg)', border: '1px solid var(--c-line)', borderRadius: '0 var(--r-md) var(--r-md) 0', fontSize: 12, color: 'var(--c-text-2)', fontWeight: 600, whiteSpace: 'nowrap' }}>m²</span>
+              </div>
+            </div>
           </div>
         </div>
         <div className="divider"></div>
