@@ -597,7 +597,16 @@ function ConfigProyectoModal({ open, onClose, budget, setBudget }) {
         <div>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--c-text)', marginBottom: 10 }}>Parámetros globales</div>
           <div className="grid-2">
-            <ConfigField label="Indirectos (%)" k="pctIndirectos" type="number" form={form} setForm={setForm} />
+            <div className="field">
+              <label className="field-label" style={{ display:'flex', alignItems:'center', gap:6 }}>
+                Indirectos (%)
+                {(form.indirectos||[]).some(r => (+r.costoBase||0) > 0) && (
+                  <span style={{ background:'var(--c-accent)', color:'#000', fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:4 }}>AUTO</span>
+                )}
+              </label>
+              <input className="input" type="number" step="any" value={form.pctIndirectos ?? 0}
+                onChange={e => setForm(prev => ({ ...prev, pctIndirectos: parseFloat(e.target.value)||0 }))} />
+            </div>
             <ConfigField label="Imprevistos (%)" k="pctImprevistos" type="number" form={form} setForm={setForm} />
             <ConfigField label="Utilidad (%)" k="pctUtilidad" type="number" form={form} setForm={setForm} />
             <ConfigField label="Impuesto (%)" k="pctImpuesto" type="number" form={form} setForm={setForm} />
@@ -947,9 +956,17 @@ function FichaCostoModal({ open, onClose, actividad, budget, catalogos, params, 
 // ============ INDIRECTOS VIEW ============
 function IndirectosView({ budget, setBudget }) {
   const lista = budget.indirectos || []
-  const setLista = rows => setBudget({ ...budget, indirectos: rows })
+
+  const costoDirecto = round2(budget.items.reduce((s, it) => s + calcItem(it, budget.catalogos, { pctIndirectos: 0, pctImprevistos: 0, pctUtilidad: 0, pctImpuesto: 0 }).subtotal, 0))
+
+  const setLista = rows => {
+    const tot = round2(rows.reduce((s, r) => s + round2((+r.cantidad||0) * (+r.costoBase||0)), 0))
+    const pct = (tot > 0 && costoDirecto > 0) ? round2((tot / costoDirecto) * 100) : budget.pctIndirectos
+    setBudget({ ...budget, indirectos: rows, pctIndirectos: pct })
+  }
 
   const total = round2(lista.reduce((s, r) => s + round2((+r.cantidad||0) * (+r.costoBase||0)), 0))
+  const pctCalculado = costoDirecto > 0 ? round2((total / costoDirecto) * 100) : null
 
   const addRow = () => setLista([...lista, { id: uid(), descripcion: '', unidad: 'mes', cantidad: 1, costoBase: 0 }])
 
@@ -969,12 +986,10 @@ function IndirectosView({ budget, setBudget }) {
   return (
     <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--c-text)' }}>Costos Indirectos</div>
-          <div style={{ fontSize: 12, color: 'var(--c-text-3)', marginTop: 2 }}>
-            {lista.length} conceptos · Total: <strong>{money(total)}</strong>
-          </div>
+          <div style={{ fontSize: 12, color: 'var(--c-text-3)', marginTop: 2 }}>{lista.length} conceptos</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn sm ghost" onClick={restore} title="Restaurar lista base" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -983,6 +998,34 @@ function IndirectosView({ budget, setBudget }) {
           <button className="btn sm primary" onClick={addRow} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <Plus size={13} /> Agregar
           </button>
+        </div>
+      </div>
+
+      {/* KPIs vinculados */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
+        <div style={{ background: 'var(--c-bg-2)', border: '1px solid var(--c-line)', borderRadius: 'var(--r-lg)', padding: '12px 16px' }}>
+          <div style={{ fontSize: 11, color: 'var(--c-text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Costo Directo</div>
+          <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--c-text)' }}>{money(costoDirecto)}</div>
+          <div style={{ fontSize: 11, color: 'var(--c-text-3)', marginTop: 2 }}>Del presupuesto activo</div>
+        </div>
+        <div style={{ background: 'var(--c-bg-2)', border: '1px solid var(--c-line)', borderRadius: 'var(--r-lg)', padding: '12px 16px' }}>
+          <div style={{ fontSize: 11, color: 'var(--c-text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Total Indirectos</div>
+          <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--c-text)' }}>{money(total)}</div>
+          <div style={{ fontSize: 11, color: 'var(--c-text-3)', marginTop: 2 }}>Suma de conceptos activos</div>
+        </div>
+        <div style={{ background: pctCalculado !== null ? 'var(--c-accent-soft)' : 'var(--c-bg-2)', border: `1px solid ${pctCalculado !== null ? 'var(--c-accent)' : 'var(--c-line)'}`, borderRadius: 'var(--r-lg)', padding: '12px 16px' }}>
+          <div style={{ fontSize: 11, color: 'var(--c-text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+            % Indirectos
+            {pctCalculado !== null && costoDirecto > 0 && (
+              <span style={{ background: 'var(--c-accent)', color: '#000', fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 4, textTransform: 'uppercase' }}>auto</span>
+            )}
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'var(--font-mono)', color: pctCalculado !== null ? 'var(--c-accent)' : 'var(--c-text)' }}>
+            {pctCalculado !== null ? `${pctCalculado}%` : `${budget.pctIndirectos}%`}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--c-text-3)', marginTop: 2 }}>
+            {pctCalculado !== null && costoDirecto > 0 ? 'Vinculado a Parámetros globales' : 'Sin costo directo calculado'}
+          </div>
         </div>
       </div>
 
