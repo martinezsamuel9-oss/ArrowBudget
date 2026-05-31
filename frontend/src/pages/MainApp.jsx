@@ -597,6 +597,7 @@ function ConfigProyectoModal({ open, onClose, budget, setBudget }) {
         <div>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--c-text)', marginBottom: 10 }}>Parámetros globales</div>
           <div className="grid-2">
+            {/* Indirectos con sufijo % y badge AUTO */}
             <div className="field">
               <label className="field-label" style={{ display:'flex', alignItems:'center', gap:6 }}>
                 Indirectos (%)
@@ -604,36 +605,55 @@ function ConfigProyectoModal({ open, onClose, budget, setBudget }) {
                   <span style={{ background:'var(--c-accent)', color:'#000', fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:4 }}>AUTO</span>
                 )}
               </label>
-              <input className="input" type="number" step="any" value={form.pctIndirectos ?? 0}
-                onChange={e => setForm(prev => ({ ...prev, pctIndirectos: parseFloat(e.target.value)||0 }))} />
+              <div style={{ display:'flex', alignItems:'center', gap:0 }}>
+                <input className="input" type="number" step="any"
+                  value={form.pctIndirectos ?? 0}
+                  onFocus={e => e.target.select()}
+                  onChange={e => setForm(prev => ({ ...prev, pctIndirectos: parseFloat(e.target.value)||0 }))}
+                  style={{ borderRadius:'var(--r-md) 0 0 var(--r-md)', borderRight:'none' }} />
+                <span style={{ padding:'0 10px', height:36, display:'flex', alignItems:'center', background:'var(--c-bg)', border:'1px solid var(--c-line)', borderRadius:'0 var(--r-md) var(--r-md) 0', fontSize:12, color:'var(--c-text-2)', fontWeight:600 }}>%</span>
+              </div>
             </div>
-            <ConfigField label="Imprevistos (%)" k="pctImprevistos" type="number" form={form} setForm={setForm} />
-            <ConfigField label="Utilidad (%)" k="pctUtilidad" type="number" form={form} setForm={setForm} />
-            <ConfigField label="Impuesto (%)" k="pctImpuesto" type="number" form={form} setForm={setForm} />
+            {/* Imprevistos */}
+            <div className="field">
+              <label className="field-label">Imprevistos (%)</label>
+              <div style={{ display:'flex', alignItems:'center', gap:0 }}>
+                <input className="input" type="number" step="any" value={form.pctImprevistos ?? 0} onFocus={e => e.target.select()} onChange={e => setForm(prev => ({ ...prev, pctImprevistos: parseFloat(e.target.value)||0 }))} style={{ borderRadius:'var(--r-md) 0 0 var(--r-md)', borderRight:'none' }} />
+                <span style={{ padding:'0 10px', height:36, display:'flex', alignItems:'center', background:'var(--c-bg)', border:'1px solid var(--c-line)', borderRadius:'0 var(--r-md) var(--r-md) 0', fontSize:12, color:'var(--c-text-2)', fontWeight:600 }}>%</span>
+              </div>
+            </div>
+            {/* Utilidad */}
+            <div className="field">
+              <label className="field-label">Utilidad (%)</label>
+              <div style={{ display:'flex', alignItems:'center', gap:0 }}>
+                <input className="input" type="number" step="any" value={form.pctUtilidad ?? 0} onFocus={e => e.target.select()} onChange={e => setForm(prev => ({ ...prev, pctUtilidad: parseFloat(e.target.value)||0 }))} style={{ borderRadius:'var(--r-md) 0 0 var(--r-md)', borderRight:'none' }} />
+                <span style={{ padding:'0 10px', height:36, display:'flex', alignItems:'center', background:'var(--c-bg)', border:'1px solid var(--c-line)', borderRadius:'0 var(--r-md) var(--r-md) 0', fontSize:12, color:'var(--c-text-2)', fontWeight:600 }}>%</span>
+              </div>
+            </div>
+            {/* Impuesto */}
+            <div className="field">
+              <label className="field-label">Impuesto (%)</label>
+              <div style={{ display:'flex', alignItems:'center', gap:0 }}>
+                <input className="input" type="number" step="any" value={form.pctImpuesto ?? 0} onFocus={e => e.target.select()} onChange={e => setForm(prev => ({ ...prev, pctImpuesto: parseFloat(e.target.value)||0 }))} style={{ borderRadius:'var(--r-md) 0 0 var(--r-md)', borderRight:'none' }} />
+                <span style={{ padding:'0 10px', height:36, display:'flex', alignItems:'center', background:'var(--c-bg)', border:'1px solid var(--c-line)', borderRadius:'0 var(--r-md) var(--r-md) 0', fontSize:12, color:'var(--c-text-2)', fontWeight:600 }}>%</span>
+              </div>
+            </div>
           </div>
           <div style={{ height: 12 }} />
           <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--c-text-2)', marginBottom: 10 }}>Áreas del proyecto</div>
           <div className="grid-2">
             <div className="field">
-              <label className="field-label">Metros cuadrados de construcción</label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
-                <input className="input" type="number" min="0" step="0.01"
-                  value={form.m2Construccion ?? 0}
-                  onFocus={e => e.target.select()}
-                  onChange={e => setForm(prev => ({ ...prev, m2Construccion: parseFloat(e.target.value) || 0 }))}
-                  style={{ borderRadius: 'var(--r-md) 0 0 var(--r-md)', borderRight: 'none' }} />
-                <span style={{ padding: '0 10px', height: 36, display: 'flex', alignItems: 'center', background: 'var(--c-bg)', border: '1px solid var(--c-line)', borderRadius: '0 var(--r-md) var(--r-md) 0', fontSize: 12, color: 'var(--c-text-2)', fontWeight: 600, whiteSpace: 'nowrap' }}>m²</span>
+              <label className="field-label">Construcción</label>
+              <div style={{ display:'flex', alignItems:'center', gap:0 }}>
+                <input className="input" type="number" min="0" step="0.01" value={form.m2Construccion ?? 0} onFocus={e => e.target.select()} onChange={e => setForm(prev => ({ ...prev, m2Construccion: parseFloat(e.target.value)||0 }))} style={{ borderRadius:'var(--r-md) 0 0 var(--r-md)', borderRight:'none' }} />
+                <span style={{ padding:'0 10px', height:36, display:'flex', alignItems:'center', background:'var(--c-bg)', border:'1px solid var(--c-line)', borderRadius:'0 var(--r-md) var(--r-md) 0', fontSize:12, color:'var(--c-text-2)', fontWeight:600, whiteSpace:'nowrap' }}>m²</span>
               </div>
             </div>
             <div className="field">
-              <label className="field-label">Metros cuadrados de estructura</label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
-                <input className="input" type="number" min="0" step="0.01"
-                  value={form.m2Estructura ?? 0}
-                  onFocus={e => e.target.select()}
-                  onChange={e => setForm(prev => ({ ...prev, m2Estructura: parseFloat(e.target.value) || 0 }))}
-                  style={{ borderRadius: 'var(--r-md) 0 0 var(--r-md)', borderRight: 'none' }} />
-                <span style={{ padding: '0 10px', height: 36, display: 'flex', alignItems: 'center', background: 'var(--c-bg)', border: '1px solid var(--c-line)', borderRadius: '0 var(--r-md) var(--r-md) 0', fontSize: 12, color: 'var(--c-text-2)', fontWeight: 600, whiteSpace: 'nowrap' }}>m²</span>
+              <label className="field-label">Estructura</label>
+              <div style={{ display:'flex', alignItems:'center', gap:0 }}>
+                <input className="input" type="number" min="0" step="0.01" value={form.m2Estructura ?? 0} onFocus={e => e.target.select()} onChange={e => setForm(prev => ({ ...prev, m2Estructura: parseFloat(e.target.value)||0 }))} style={{ borderRadius:'var(--r-md) 0 0 var(--r-md)', borderRight:'none' }} />
+                <span style={{ padding:'0 10px', height:36, display:'flex', alignItems:'center', background:'var(--c-bg)', border:'1px solid var(--c-line)', borderRadius:'0 var(--r-md) var(--r-md) 0', fontSize:12, color:'var(--c-text-2)', fontWeight:600, whiteSpace:'nowrap' }}>m²</span>
               </div>
             </div>
           </div>
