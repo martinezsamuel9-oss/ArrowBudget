@@ -813,8 +813,8 @@ function FichaCostoModal({ open, onClose, actividad, budget, catalogos, params, 
               ficha={f} catalogos={catalogos} onAdd={add} onDel={del} onUpd={upd} onCreateIns={createIns}
               moTotal={calc.totMo} />
           ))}
-          <div style={{ marginTop: 16, border: '1px solid var(--c-line)', borderRadius: 'var(--r-lg)', overflow: 'hidden', maxWidth: 340, marginLeft: 'auto' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', padding: '8px 12px', background: 'var(--c-bg-2)', borderBottom: '1px solid var(--c-line)', color: 'var(--c-text-2)' }}>Resumen</div>
+          <div style={{ marginTop: 24, border: '1px solid var(--c-line)', borderRadius: 'var(--r-lg)', overflow: 'hidden', maxWidth: 340, marginLeft: 'auto' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', padding: '8px 12px', background: 'var(--c-bg-2)', borderBottom: '1px solid var(--c-line)', color: 'var(--c-text)' }}>Resumen</div>
             {[
               { lbl: 'Materiales',           val: calc.totMat,       bold: false, divider: false },
               { lbl: 'Mano de Obra',         val: calc.totMo,        bold: false, divider: false },
@@ -837,7 +837,7 @@ function FichaCostoModal({ open, onClose, actividad, budget, catalogos, params, 
               </div>
             ))}
             <div style={{ background: 'var(--c-ink)', color: '#fff', padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontWeight: 700, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Precio Unitario Total</span>
+              <span style={{ fontWeight: 700, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Precio Unitario Total</span>
               <span style={{ fontWeight: 700, fontSize: 20, color: 'var(--c-accent)', fontFamily: 'var(--font-mono)' }}>{money(calc.precioUnitario)}</span>
             </div>
           </div>

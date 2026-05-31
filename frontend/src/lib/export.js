@@ -291,16 +291,28 @@ export const exportPDFFicha = async (budget, act, params, empresa = {}) => {
   sectApu('HERRAMIENTA + EQUIPO','herramientaEquipo',calc.totHe,calc.totMo)
   sectApu('SUBCONTRATO','subcontratos',calc.totSub)
 
-  // Compact summary
-  doc.autoTable({startY:y,body:[
-    ['Costo Directo',money(calc.costoDirecto)],
-    [`Indirectos (${params.pctIndirectos}%)`,money(calc.indirectos)],
-    [`Imprevistos (${params.pctImprevistos}%)`,money(calc.imprevistos)],
-    [`Utilidad (${params.pctUtilidad}%)`,money(calc.utilidad)],
-    ['Subtotal sin impuestos',money(calc.subtotalSinImpuesto)],
-    [`Impuesto (${params.pctImpuesto}%)`,money(calc.impuesto)],
-    [{content:'PRECIO UNITARIO TOTAL',styles:{fontStyle:'bold',fillColor:[15,17,21],textColor:245}},{content:money(calc.precioUnitario),styles:{fontStyle:'bold',fillColor:[15,17,21],textColor:245,halign:'right'}}]
-  ],styles:{fontSize:7.5,cellPadding:1.2},columnStyles:{0:{halign:'right',fontStyle:'bold'},1:{halign:'right',cellWidth:46}},theme:'grid',margin:{bottom:14}})
+  // Resumen con desglose por categoría (espacio doble antes)
+  y += 6
+  const C2 = { ink:[15,17,21], dark:[30,41,59], mid:[71,85,105], rule:[203,213,225], bg:[248,250,252] }
+  doc.autoTable({startY:y,
+    head:[[{content:'RESUMEN',colSpan:2,styles:{fillColor:C2.dark,textColor:255,fontStyle:'bold',fontSize:8,halign:'left'}}]],
+    body:[
+      ['Materiales',                                  {content:money(calc.totMat),         styles:{halign:'right'}}],
+      ['Mano de Obra',                                {content:money(calc.totMo),          styles:{halign:'right'}}],
+      ['Herramientas y Equipo',                       {content:money(calc.totHe),          styles:{halign:'right'}}],
+      ['Subcontratos',                                {content:money(calc.totSub),         styles:{halign:'right'}}],
+      [{content:'COSTO DIRECTO',styles:{fontStyle:'bold',fillColor:C2.bg}},{content:money(calc.costoDirecto),styles:{fontStyle:'bold',fillColor:C2.bg,halign:'right'}}],
+      [`Indirectos (${params.pctIndirectos}%)`,       {content:money(calc.indirectos),     styles:{halign:'right'}}],
+      [`Imprevistos (${params.pctImprevistos}%)`,     {content:money(calc.imprevistos),    styles:{halign:'right'}}],
+      [`Utilidad (${params.pctUtilidad}%)`,           {content:money(calc.utilidad),       styles:{halign:'right'}}],
+      [`Impuesto (${params.pctImpuesto}%)`,           {content:money(calc.impuesto),       styles:{halign:'right'}}],
+      [{content:'PRECIO UNITARIO TOTAL',styles:{fontStyle:'bold',fillColor:C2.ink,textColor:255}},{content:money(calc.precioUnitario),styles:{fontStyle:'bold',fillColor:C2.ink,textColor:255,halign:'right'}}],
+    ],
+    styles:{fontSize:8,cellPadding:1.5,textColor:C2.ink},
+    alternateRowStyles:{fillColor:[255,255,255]},
+    columnStyles:{0:{fontStyle:'bold',halign:'right'},1:{halign:'right',cellWidth:46}},
+    theme:'grid',margin:{bottom:14}
+  })
 
   // Footers on all pages
   const total = doc.internal.getNumberOfPages()
@@ -351,15 +363,27 @@ export const exportPDFRangoFichas = async (budget, params, ids, empresa = {}) =>
     sectApu('HERRAMIENTA + EQUIPO','herramientaEquipo',calc.totHe,calc.totMo)
     sectApu('SUBCONTRATO','subcontratos',calc.totSub)
 
-    doc.autoTable({startY:y,body:[
-      ['Costo Directo',money(calc.costoDirecto)],
-      [`Indirectos (${params.pctIndirectos}%)`,money(calc.indirectos)],
-      [`Imprevistos (${params.pctImprevistos}%)`,money(calc.imprevistos)],
-      [`Utilidad (${params.pctUtilidad}%)`,money(calc.utilidad)],
-      ['Subtotal sin impuestos',money(calc.subtotalSinImpuesto)],
-      [`Impuesto (${params.pctImpuesto}%)`,money(calc.impuesto)],
-      [{content:'PRECIO UNITARIO TOTAL',styles:{fontStyle:'bold',fillColor:[15,17,21],textColor:245}},{content:money(calc.precioUnitario),styles:{fontStyle:'bold',fillColor:[15,17,21],textColor:245,halign:'right'}}]
-    ],styles:{fontSize:7.5,cellPadding:1.2},columnStyles:{0:{halign:'right',fontStyle:'bold'},1:{halign:'right',cellWidth:46}},theme:'grid',margin:{bottom:14}})
+    y += 6
+    const CR = { ink:[15,17,21], dark:[30,41,59], bg:[248,250,252] }
+    doc.autoTable({startY:y,
+      head:[[{content:'RESUMEN',colSpan:2,styles:{fillColor:CR.dark,textColor:255,fontStyle:'bold',fontSize:8,halign:'left'}}]],
+      body:[
+        ['Materiales',                              {content:money(calc.totMat),         styles:{halign:'right'}}],
+        ['Mano de Obra',                            {content:money(calc.totMo),          styles:{halign:'right'}}],
+        ['Herramientas y Equipo',                   {content:money(calc.totHe),          styles:{halign:'right'}}],
+        ['Subcontratos',                            {content:money(calc.totSub),         styles:{halign:'right'}}],
+        [{content:'COSTO DIRECTO',styles:{fontStyle:'bold',fillColor:CR.bg}},{content:money(calc.costoDirecto),styles:{fontStyle:'bold',fillColor:CR.bg,halign:'right'}}],
+        [`Indirectos (${params.pctIndirectos}%)`,   {content:money(calc.indirectos),     styles:{halign:'right'}}],
+        [`Imprevistos (${params.pctImprevistos}%)`, {content:money(calc.imprevistos),    styles:{halign:'right'}}],
+        [`Utilidad (${params.pctUtilidad}%)`,       {content:money(calc.utilidad),       styles:{halign:'right'}}],
+        [`Impuesto (${params.pctImpuesto}%)`,       {content:money(calc.impuesto),       styles:{halign:'right'}}],
+        [{content:'PRECIO UNITARIO TOTAL',styles:{fontStyle:'bold',fillColor:CR.ink,textColor:255}},{content:money(calc.precioUnitario),styles:{fontStyle:'bold',fillColor:CR.ink,textColor:255,halign:'right'}}],
+      ],
+      styles:{fontSize:8,cellPadding:1.5,textColor:CR.ink},
+      alternateRowStyles:{fillColor:[255,255,255]},
+      columnStyles:{0:{fontStyle:'bold',halign:'right'},1:{halign:'right',cellWidth:46}},
+      theme:'grid',margin:{bottom:14}
+    })
   }
 
   // Footers on every page
