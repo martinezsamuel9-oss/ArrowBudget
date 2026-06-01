@@ -589,7 +589,18 @@ function ConfigProyectoModal({ open, onClose, budget, setBudget }) {
         <div>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--c-text)', marginBottom: 10 }}>Económico</div>
           <div className="grid-2">
-            <ConfigField label="Moneda" k="moneda" form={form} setForm={setForm} />
+            <div className="field">
+              <label className="field-label">Moneda</label>
+              <select className="input" value={form.moneda || 'USD'} onChange={e => setForm(prev => ({ ...prev, moneda: e.target.value }))}>
+                <option value="USD">USD — Dólar estadounidense</option>
+                <option value="HNL">HNL — Lempira hondureño</option>
+                <option value="GTQ">GTQ — Quetzal guatemalteco</option>
+                <option value="NIO">NIO — Córdoba nicaragüense</option>
+                <option value="CRC">CRC — Colón costarricense</option>
+                <option value="MXN">MXN — Peso mexicano</option>
+                <option value="EUR">EUR — Euro</option>
+              </select>
+            </div>
             <ConfigField label="Revisión" k="revision" type="number" form={form} setForm={setForm} />
           </div>
         </div>
