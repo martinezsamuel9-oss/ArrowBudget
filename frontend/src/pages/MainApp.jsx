@@ -88,8 +88,8 @@ const mapDb = row => ({
   catalogos:     (() => { const c = row.catalogos_json || {}; return { materiales: c.materiales||[], manoObra: c.manoObra||[], herramientaEquipo: c.herramientaEquipo||[], subcontratos: c.subcontratos||[] } })(),
   apuHeaderBg:     (row.catalogos_json?._apu?.headerBg)       || '#0f1115',
   apuHeaderText:   (row.catalogos_json?._apu?.headerText)     || '#f59e0b',
-  m2Construccion:  (row.catalogos_json?._params?.m2Construccion != null ? +row.catalogos_json._params.m2Construccion : 0),
-  m2Estructura:    (row.catalogos_json?._params?.m2Estructura   != null ? +row.catalogos_json._params.m2Estructura   : 0),
+  m2Construccion:  +(row.catalogos_json?._m2c ?? row.catalogos_json?._params?.m2Construccion ?? 0),
+  m2Estructura:    +(row.catalogos_json?._m2e ?? row.catalogos_json?._params?.m2Estructura   ?? 0),
   indirectos:      (row.catalogos_json?._indirectos) || DEFAULT_INDIRECTOS.map(x => ({ ...x, id: uid() })),
   items:         row.items_json     || [],
 })
@@ -113,7 +113,7 @@ const toDb = b => ({
   logo_ofertante:  b.logoOfertante,
   logo_cliente:    b.logoCliente,
   versiones_json:  b.versiones,
-  catalogos_json:  { ...b.catalogos, _apu: { headerBg: b.apuHeaderBg||'#0f1115', headerText: b.apuHeaderText||'#f59e0b' }, _indirectos: b.indirectos||[], _params: { m2Construccion: b.m2Construccion||0, m2Estructura: b.m2Estructura||0 } },
+  catalogos_json:  { ...b.catalogos, _apu: { headerBg: b.apuHeaderBg||'#0f1115', headerText: b.apuHeaderText||'#f59e0b' }, _indirectos: b.indirectos||[], _m2c: b.m2Construccion ?? 0, _m2e: b.m2Estructura ?? 0 },
   items_json:      b.items,
   updated_at:      new Date().toISOString(),
 })
