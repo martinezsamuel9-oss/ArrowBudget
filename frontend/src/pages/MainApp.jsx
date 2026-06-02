@@ -2568,7 +2568,7 @@ export default function MainApp() {
         setTabProject={setTabProject} tabProject={tabProject}
         user={{ name: userName, empresa: userEmpresa }}
         onLogout={doLogout}
-        onSettings={() => setShowUserSettings(true)}
+        onSettings={() => { if (page === 'proyecto' && budget) setShowConfig(true); else setShowUserSettings(true) }}
         projectsCount={proyectos.length}
       />
 
@@ -2586,7 +2586,7 @@ export default function MainApp() {
           }}
           saving={saving}
           onLogout={doLogout}
-          onUserSettings={() => setShowUserSettings(true)}
+          onUserSettings={() => { if (page === 'proyecto' && budget) setShowConfig(true); else setShowUserSettings(true) }}
           notifCount={notificaciones.length}
           notifs={notificaciones}
           showNotifs={showNotifs}
