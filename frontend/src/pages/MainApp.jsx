@@ -130,6 +130,51 @@ function useClickOutside(ref, cb) {
 }
 
 // ============ HELPERS ============
+
+// Evalúa expresiones matemáticas simples: "136/5" → 27.2, "2*3+1" → 7
+const evalMath = str => {
+  const s = String(str ?? '').trim()
+  if (!s) return 0
+  if (/^-?\d+\.?\d*$/.test(s)) return parseFloat(s) || 0
+  if (!/^[\d\s\+\-\*\/\.\(\)]+$/.test(s)) return parseFloat(s) || 0
+  try {
+    // eslint-disable-next-line no-new-func
+    const result = new Function('return (' + s + ')')()
+    if (typeof result === 'number' && isFinite(result)) return Math.round(result * 1e8) / 1e8
+    return 0
+  } catch { return parseFloat(s) || 0 }
+}
+
+// Input que acepta expresiones matemáticas y las evalúa al salir del campo
+function MathInput({ value, onChange, className, style, placeholder }) {
+  const [raw, setRaw] = useState(String(value ?? 0))
+  const [editing, setEditing] = useState(false)
+
+  useEffect(() => { if (!editing) setRaw(String(value ?? 0)) }, [value, editing])
+
+  const commit = () => {
+    const result = evalMath(raw)
+    setRaw(String(result))
+    setEditing(false)
+    onChange(result)
+  }
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      className={className}
+      style={style}
+      placeholder={placeholder}
+      value={raw}
+      onFocus={e => { setEditing(true); e.target.select() }}
+      onChange={e => setRaw(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+    />
+  )
+}
+
 function formatMoney(amount, currency = 'USD') {
   const sym = currency === 'HNL' ? 'L' : '$'
   return sym + ' ' + (amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -1076,8 +1121,8 @@ function FichaSection({ title, k, total, ficha, catalogos, onAdd, onDel, onUpd, 
                   <InsumoSelect catalogos={catalogos} categoria={k} value={c.insumoId} onChange={v => onUpd(k, i, 'insumoId', v)} onCreateNew={d => onCreateIns(k, i, d)} />
                 </td>
                 <td className="num" style={{ color: 'var(--c-text-2)', fontSize: 12 }}>{ins ? ins.unidad : '—'}</td>
-                <td className="num"><input type="number" step="any" className="cell-input num" value={c.rendimiento} onFocus={e => e.target.select()} onChange={e => onUpd(k, i, 'rendimiento', parseFloat(e.target.value) || 0)} /></td>
-                <td className="num"><input type="number" step="any" className="cell-input num" value={c.desperdicio} onFocus={e => e.target.select()} onChange={e => onUpd(k, i, 'desperdicio', parseFloat(e.target.value) || 0)} /></td>
+                <td className="num"><MathInput className="cell-input num" value={c.rendimiento} onChange={v => onUpd(k, i, 'rendimiento', v)} /></td>
+                <td className="num"><MathInput className="cell-input num" value={c.desperdicio} onChange={v => onUpd(k, i, 'desperdicio', v)} /></td>
                 <td className="num" style={{ color: isMoBased ? 'var(--c-accent)' : 'var(--c-text-2)' }} title={isMoBased ? 'Calculado sobre el total MO' : undefined}>
                   {ins ? money(effectiveBase) : '—'}
                   {isMoBased && <span style={{ fontSize: 9, marginLeft: 3, color: 'var(--c-accent)' }}>MO</span>}
@@ -1279,7 +1324,7 @@ function IndirectosView({ budget, setBudget }) {
                     <input style={{ ...inputStyle, textAlign: 'center' }} value={r.unidad} onChange={e => upd(r.id, 'unidad', e.target.value)} placeholder="mes" />
                   </td>
                   <td style={{ ...cellStyle, textAlign: 'right' }}>
-                    <input style={numStyle} type="number" min="0" value={r.cantidad} onFocus={e => e.target.select()} onChange={e => upd(r.id, 'cantidad', +e.target.value)} />
+                    <MathInput style={numStyle} value={r.cantidad} onChange={v => upd(r.id, 'cantidad', v)} />
                   </td>
                   <td style={{ ...cellStyle, textAlign: 'right' }}>
                     <input style={numStyle} type="number" min="0" step="0.01" value={r.costoBase} onFocus={e => e.target.select()} onChange={e => upd(r.id, 'costoBase', +e.target.value)} />
@@ -1776,7 +1821,7 @@ function PresupuestoTableComp({ budget, setBudget, onOpenFicha, params }) {
             <input value={it.descripcion} onChange={e => upd(cp, 'descripcion', e.target.value)} className="cell-input" style={{ width: '100%' }} />
           </td>
           <td><span className="unit-chip">{it.unidad}</span></td>
-          <td className="num"><input type="number" step="any" value={it.cantidad} onChange={e => upd(cp, 'cantidad', parseFloat(e.target.value) || 0)} className="cell-input num" /></td>
+          <td className="num"><MathInput value={it.cantidad} onChange={v => upd(cp, 'cantidad', v)} className="cell-input num" /></td>
           <td className="num" style={{ cursor: 'pointer' }} onDoubleClick={() => onOpenFicha(cp)} title="Doble clic para abrir ficha">
             <span style={{ fontWeight: 600 }}>{money(c.precioUnitario)}</span>
             <span style={{ marginLeft: 4, color: 'var(--c-accent)', fontSize: 10 }}>✦</span>
