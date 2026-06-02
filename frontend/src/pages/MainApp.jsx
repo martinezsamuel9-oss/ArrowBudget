@@ -11,7 +11,7 @@ import {
   FileSpreadsheet, Copy, Edit2, Trash2, Download, ChevronDown, Crown, Coins, RefreshCw, AlertTriangle,
 } from 'lucide-react'
 import {
-  round2, fmt, money, moneyK, uid, normalize,
+  round2, fmt, money, moneyK, makeMoneyFmt, uid, normalize,
   findInsumo, conceptoCost, calcFicha, calcItem, calcKPIs,
   findOrCreateInsumo, findPathById, CATEGORIAS, EMPTY_CATALOGOS,
 } from '../lib/calc'
@@ -911,6 +911,7 @@ function FichaSection({ title, k, total, ficha, catalogos, onAdd, onDel, onUpd, 
 // ============ FICHA COSTO MODAL ============
 function FichaCostoModal({ open, onClose, actividad, budget, catalogos, params, onUpdate, onUpdateCatalogos, empresa = {} }) {
   if (!open || !actividad) return null
+  const money = makeMoneyFmt(budget?.moneda)
   const f = actividad.ficha || { materiales: [], manoObra: [], herramientaEquipo: [], subcontratos: [] }
   const calc = calcFicha(f, catalogos, params)
   const upd = (k, i, fld, v) => { const nf = { ...f, [k]: [...f[k]] }; nf[k][i] = { ...nf[k][i], [fld]: v }; onUpdate({ ...actividad, ficha: nf }) }
@@ -986,6 +987,7 @@ function FichaCostoModal({ open, onClose, actividad, budget, catalogos, params, 
 
 // ============ INDIRECTOS VIEW ============
 function IndirectosView({ budget, setBudget }) {
+  const money = makeMoneyFmt(budget.moneda)
   const lista = budget.indirectos || []
 
   const costoDirecto = round2(budget.items.reduce((s, it) => s + calcItem(it, budget.catalogos, { pctIndirectos: 0, pctImprevistos: 0, pctUtilidad: 0, pctImpuesto: 0 }).subtotal, 0))
@@ -1482,6 +1484,7 @@ function syncFichasByName(items) {
 
 // ============ PRESUPUESTO TABLE ============
 function PresupuestoTableComp({ budget, setBudget, onOpenFicha, params }) {
+  const money = makeMoneyFmt(budget.moneda)
   const upd = (path, fld, v) => {
     const its = JSON.parse(JSON.stringify(budget.items))
     let cur = its; for (let i = 0; i < path.length - 1; i++) cur = cur[path[i]].children
@@ -1652,6 +1655,7 @@ function ParametrosGlobales({ budget, setBudget }) {
 
 // ============ CATALOGO VIEW ============
 function CatalogoView({ budget, setBudget, categoria }) {
+  const money = makeMoneyFmt(budget.moneda)
   const list = budget.catalogos[categoria.key] || []
   const [q, setQ] = useState('')
   const [showForm, setShowForm] = useState(false)
@@ -2184,6 +2188,9 @@ export default function MainApp() {
     return { direct, indirectos, imprevistos, utilidad, impuesto, total }
   }, [budget, params])
 
+  // Formateador de moneda atado a la moneda del proyecto activo
+  const moneyB = makeMoneyFmt(budget?.moneda)
+
   // ---- LOADING ----
   if (loadingData) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--c-side)' }}>
@@ -2314,22 +2321,22 @@ export default function MainApp() {
                       <div className="kpi-row">
                         <div className="kpi">
                           <div className="kpi-label"><HardHat size={12} className="ico" /> Costo Directo</div>
-                          <div className="kpi-val">{money(budgetKPIs.direct)}</div>
+                          <div className="kpi-val">{moneyB(budgetKPIs.direct)}</div>
                           <div className="kpi-foot">Materiales + Mano de obra + Equipo</div>
                         </div>
                         <div className="kpi">
                           <div className="kpi-label"><Layers size={12} className="ico" /> Indirectos + Imprevistos</div>
-                          <div className="kpi-val">{money(budgetKPIs.indirectos + budgetKPIs.imprevistos)}</div>
+                          <div className="kpi-val">{moneyB(budgetKPIs.indirectos + budgetKPIs.imprevistos)}</div>
                           <div className="kpi-foot">{params.pctIndirectos}% + {params.pctImprevistos}%</div>
                         </div>
                         <div className="kpi">
                           <div className="kpi-label"><TrendingUp size={12} className="ico" /> Utilidad</div>
-                          <div className="kpi-val">{money(budgetKPIs.utilidad)}</div>
+                          <div className="kpi-val">{moneyB(budgetKPIs.utilidad)}</div>
                           <div className="kpi-foot">{params.pctUtilidad}% sobre subtotal</div>
                         </div>
                         <div className="kpi highlight">
                           <div className="kpi-label"><DollarSign size={12} className="ico" /> Total General</div>
-                          <div className="kpi-val">{money(budgetKPIs.total)}</div>
+                          <div className="kpi-val">{moneyB(budgetKPIs.total)}</div>
                           <div className="kpi-foot">Incluye impuesto {params.pctImpuesto}%</div>
                         </div>
                       </div>

@@ -13,13 +13,21 @@ export const EMPTY_CATALOGOS = {
 // ============ HELPERS ============
 export const round2  = n => Math.round((+n || 0) * 100) / 100
 export const fmt     = n => round2(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-export const money   = n => '$' + fmt(n)
-export const moneyK  = n => {
+
+const CURRENCY_SYMBOLS = { USD:'$', HNL:'L', GTQ:'Q', NIO:'C$', CRC:'₡', MXN:'$', EUR:'€' }
+export const currencySymbol = (cur = 'USD') => CURRENCY_SYMBOLS[cur] || '$'
+// money(n) — mantiene compatibilidad con llamadas existentes (muestra $)
+// money(n, moneda) — usa el símbolo correcto
+export const money   = (n, cur = 'USD') => currencySymbol(cur) + fmt(n)
+export const moneyK  = (n, cur = 'USD') => {
+  const s = currencySymbol(cur)
   const v = +n || 0
-  if (v >= 1e6) return '$' + (v / 1e6).toFixed(2) + 'M'
-  if (v >= 1e3) return '$' + (v / 1e3).toFixed(1) + 'K'
-  return '$' + v.toFixed(0)
+  if (v >= 1e6) return s + (v / 1e6).toFixed(2) + 'M'
+  if (v >= 1e3) return s + (v / 1e3).toFixed(1) + 'K'
+  return s + v.toFixed(0)
 }
+// Crea un formateador local atado a una moneda específica
+export const makeMoneyFmt = (cur = 'USD') => (n => money(n, cur))
 export const uid       = () => Math.random().toString(36).slice(2, 10)
 export const normalize = s => (s || '').toString().trim().toLowerCase().replace(/\s+/g, ' ')
 

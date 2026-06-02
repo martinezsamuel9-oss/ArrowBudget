@@ -4,7 +4,8 @@ import ExcelJS from 'exceljs'
 import { saveAs } from 'file-saver'
 import * as XLSX from 'xlsx'
 import {
-  round2, fmt, money, findInsumo, conceptoCost,
+  round2, fmt, money, makeMoneyFmt, currencySymbol,
+  findInsumo, conceptoCost,
   calcItem, calcFicha, CATEGORIAS, uid, normalize,
 } from './calc'
 
@@ -25,7 +26,7 @@ const X = {
   ar: { vertical:'middle', horizontal:'right' },
   al: { vertical:'middle', horizontal:'left', wrapText:true },
 }
-const MFMT = '"$"#,##0.00'
+const mfmt = (cur = 'USD') => `"${currencySymbol(cur)}"#,##0.00`
 const NFMT = '#,##0.0000'
 
 const setC = (ws, addr, val, opts={}) => {
@@ -150,6 +151,7 @@ const drawApuFooter = (doc, budget, pageNum, totalPages) => {
 
 // ============ PDF CATÁLOGO ============
 export const exportPDFCatalogo = (budget, catKey) => {
+  const money = makeMoneyFmt(budget.moneda); const MFMT = mfmt(budget.moneda)
   const cat = CATEGORIAS.find(c => c.key === catKey)
   if (!cat) return
   const ML = 14
@@ -213,6 +215,7 @@ export const exportPDFCatalogo = (budget, catKey) => {
 }
 
 export const exportPDFPresupuesto = (budget, params) => {
+  const money = makeMoneyFmt(budget.moneda); const MFMT = mfmt(budget.moneda)
   const doc = new jsPDF({orientation:'landscape',unit:'mm',format:'letter'})
   const y = drawPDFHeader(doc, budget, 'PRESUPUESTO DE OBRA')
   const rows = []
@@ -240,6 +243,7 @@ export const exportPDFPresupuesto = (budget, params) => {
 
 // empresa = { nombre, logo, headerBg, headerText }
 export const exportPDFFicha = async (budget, act, params, empresa = {}) => {
+  const money = makeMoneyFmt(budget.moneda); const MFMT = mfmt(budget.moneda)
   const doc = new jsPDF({orientation:'portrait',unit:'mm',format:'letter'})
   const h   = doc.internal.pageSize.getHeight()
   const calc = calcFicha(act.ficha, budget.catalogos, params)
@@ -306,6 +310,7 @@ export const exportPDFGeneral = (budget, params, empresa = {}) => {
 
 // Exports all selected activities as ONE combined PDF (party info only on first page)
 export const exportPDFRangoFichas = async (budget, params, ids, empresa = {}) => {
+  const money = makeMoneyFmt(budget.moneda); const MFMT = mfmt(budget.moneda)
   const acts=[]; const collect=its=>{for(const it of its){if(it.tipo==='actividad'&&ids.includes(it.id))acts.push(it);else if(it.children)collect(it.children)}}
   collect(budget.items)
   if(!acts.length) return alert('No hay actividades seleccionadas.')
@@ -369,6 +374,7 @@ export const exportPDFRangoFichas = async (budget, params, ids, empresa = {}) =>
 }
 
 export async function exportExcelPresupuesto(budget, params) {
+  const money = makeMoneyFmt(budget.moneda); const MFMT = mfmt(budget.moneda)
   const wb=new ExcelJS.Workbook(); const ws=wb.addWorksheet('Presupuesto')
   ws.columns=[{width:10},{width:50},{width:10},{width:12},{width:16},{width:18}]
   let row=writeHeader(ws,budget)
@@ -410,6 +416,7 @@ export async function exportExcelPresupuesto(budget, params) {
 }
 
 export async function exportExcelCatalogo(budget, catKey) {
+  const money = makeMoneyFmt(budget.moneda); const MFMT = mfmt(budget.moneda)
   const cat=CATEGORIAS.find(c=>c.key===catKey)
   // Calcula la cantidad total consumida por un insumo: Σ (actividad.cantidad × rendimiento)
   const cantTotalOf = id => {
@@ -447,6 +454,7 @@ export async function exportExcelCatalogo(budget, catKey) {
 }
 
 export async function exportExcelFicha(budget, act, params) {
+  const money = makeMoneyFmt(budget.moneda); const MFMT = mfmt(budget.moneda)
   const wb=new ExcelJS.Workbook(); const ws=wb.addWorksheet('Ficha')
   ws.columns=[{width:6},{width:38},{width:14},{width:12},{width:12},{width:12},{width:18}]
   ws.mergeCells('A1:G1')
@@ -488,6 +496,7 @@ export async function exportExcelFicha(budget, act, params) {
 
 // Todas las fichas seleccionadas en UN solo workbook, una hoja por actividad
 export async function exportExcelRangoFichas(budget, params, ids) {
+  const money = makeMoneyFmt(budget.moneda); const MFMT = mfmt(budget.moneda)
   const acts=[]; const collect=its=>{for(const it of its){if(it.tipo==='actividad'&&ids.includes(it.id))acts.push(it);else if(it.children)collect(it.children)}}
   collect(budget.items)
   if(!acts.length) return alert('No hay actividades seleccionadas.')
@@ -755,6 +764,7 @@ export async function importExcelCatalogo(file, budget, setBudget, catKey) {
 
 // ============ RESUMEN EJECUTIVO PDF ============
 export const exportPDFResumenEjecutivo = async (budget, params) => {
+  const money = makeMoneyFmt(budget.moneda); const MFMT = mfmt(budget.moneda)
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' })
   const w = doc.internal.pageSize.getWidth()
   const h = doc.internal.pageSize.getHeight()
