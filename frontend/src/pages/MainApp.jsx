@@ -88,34 +88,36 @@ const mapDb = row => ({
   catalogos:     (() => { const c = row.catalogos_json || {}; return { materiales: c.materiales||[], manoObra: c.manoObra||[], herramientaEquipo: c.herramientaEquipo||[], subcontratos: c.subcontratos||[] } })(),
   apuHeaderBg:     (row.catalogos_json?._apu?.headerBg)       || '#0f1115',
   apuHeaderText:   (row.catalogos_json?._apu?.headerText)     || '#f59e0b',
-  m2Construccion:  +(row.catalogos_json?._m2c ?? row.catalogos_json?._params?.m2Construccion ?? 0),
-  m2Estructura:    +(row.catalogos_json?._m2e ?? row.catalogos_json?._params?.m2Estructura   ?? 0),
+  m2Construccion:  +(row.m2_construccion ?? row.catalogos_json?._m2c ?? row.catalogos_json?._params?.m2Construccion ?? 0),
+  m2Estructura:    +(row.m2_estructura   ?? row.catalogos_json?._m2e ?? row.catalogos_json?._params?.m2Estructura   ?? 0),
   indirectos:      (row.catalogos_json?._indirectos) || DEFAULT_INDIRECTOS.map(x => ({ ...x, id: uid() })),
   items:         row.items_json     || [],
 })
 
 const toDb = b => ({
-  cotizante:       b.cotizante,
-  cliente:         b.cliente,
-  ofertante:       b.ofertante,
-  realizado_por:   b.realizadoPor,
-  lugar:           b.lugar,
-  nombre_proyecto: b.nombreProyecto,
-  fecha:           b.fecha,
-  revision:        b.revision,
-  moneda:          b.moneda,
-  tipo:            b.tipo,
-  estado:          UI2DB[b.estado] || 'borrador',
-  pct_indirectos:  b.pctIndirectos,
-  pct_imprevistos: b.pctImprevistos,
-  pct_utilidad:    b.pctUtilidad,
-  pct_impuesto:    b.pctImpuesto,
-  logo_ofertante:  b.logoOfertante,
-  logo_cliente:    b.logoCliente,
-  versiones_json:  b.versiones,
-  catalogos_json:  { ...b.catalogos, _apu: { headerBg: b.apuHeaderBg||'#0f1115', headerText: b.apuHeaderText||'#f59e0b' }, _indirectos: b.indirectos||[], _m2c: b.m2Construccion ?? 0, _m2e: b.m2Estructura ?? 0 },
-  items_json:      b.items,
-  updated_at:      new Date().toISOString(),
+  cotizante:        b.cotizante,
+  cliente:          b.cliente,
+  ofertante:        b.ofertante,
+  realizado_por:    b.realizadoPor,
+  lugar:            b.lugar,
+  nombre_proyecto:  b.nombreProyecto,
+  fecha:            b.fecha,
+  revision:         b.revision,
+  moneda:           b.moneda,
+  tipo:             b.tipo,
+  estado:           UI2DB[b.estado] || 'borrador',
+  pct_indirectos:   b.pctIndirectos,
+  pct_imprevistos:  b.pctImprevistos,
+  pct_utilidad:     b.pctUtilidad,
+  pct_impuesto:     b.pctImpuesto,
+  logo_ofertante:   b.logoOfertante,
+  logo_cliente:     b.logoCliente,
+  versiones_json:   b.versiones,
+  m2_construccion:  b.m2Construccion ?? 0,
+  m2_estructura:    b.m2Estructura   ?? 0,
+  catalogos_json:   { ...b.catalogos, _apu: { headerBg: b.apuHeaderBg||'#0f1115', headerText: b.apuHeaderText||'#f59e0b' }, _indirectos: b.indirectos||[], _m2c: b.m2Construccion ?? 0, _m2e: b.m2Estructura ?? 0 },
+  items_json:       b.items,
+  updated_at:       new Date().toISOString(),
 })
 
 // ============ HOOKS ============
@@ -2090,7 +2092,8 @@ export default function MainApp() {
     const t = setTimeout(async () => {
       if (savingRef.current) return
       savingRef.current = true; setSaving(true)
-      await supabase.from('presupuestos').update(toDb(budget)).eq('id', budget.id)
+      const { error } = await supabase.from('presupuestos').update(toDb(budget)).eq('id', budget.id)
+      if (error) console.error('[auto-save] Error al guardar:', error.message, error)
       setSaving(false); savingRef.current = false
     }, 1400)
     return () => clearTimeout(t)
