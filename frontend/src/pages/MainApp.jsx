@@ -269,7 +269,7 @@ function Sidebar({ page, setPage, projectActivo, setTabProject, tabProject, user
 }
 
 // ============ TOPBAR ============
-function Topbar({ crumbs, search, setSearch, onHome, searchResults, onResultPick, saving, onLogout, onUserSettings, notifCount, notifs, showNotifs, setShowNotifs }) {
+function Topbar({ crumbs, search, setSearch, onHome, searchResults, onResultPick, saving, onLogout, onUserSettings, notifCount, notifs, showNotifs, setShowNotifs, onNavigateAlert }) {
   return (
     <div className="topbar">
       {/* Breadcrumbs */}
@@ -336,7 +336,7 @@ function Topbar({ crumbs, search, setSearch, onHome, searchResults, onResultPick
               </span>
             )}
           </button>
-          {showNotifs && <NotificationsDropdown notifs={notifs} onClose={() => setShowNotifs(false)} />}
+          {showNotifs && <NotificationsDropdown notifs={notifs} onClose={() => setShowNotifs(false)} onNavigate={onNavigateAlert} />}
         </div>
         {/* Gear → siempre abre configuración de cuenta */}
         <button className="icon-btn" title="Configuración de cuenta" onClick={onUserSettings}>
@@ -884,7 +884,7 @@ function UserSettingsModal({ open, onClose, profile, user, onSaved }) {
 }
 
 // ============ NOTIFICATIONS DROPDOWN ============
-function NotificationsDropdown({ notifs, onClose }) {
+function NotificationsDropdown({ notifs, onClose, onNavigate }) {
   const ref = useRef(null)
   useClickOutside(ref, onClose)
   const grupos = [
@@ -893,7 +893,7 @@ function NotificationsDropdown({ notifs, onClose }) {
     { tipo: 'insumo-sin-precio',   label: 'Insumos sin precio',    color: 'var(--c-warn)' },
   ]
   return (
-    <div ref={ref} style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: 340, background: 'var(--c-surface)', border: '1px solid var(--c-line)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', zIndex: 50, overflow: 'hidden' }}>
+    <div ref={ref} style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: 380, background: 'var(--c-surface)', border: '1px solid var(--c-line)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', zIndex: 50, overflow: 'hidden' }}>
       <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--c-line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--c-ink)' }}>Notificaciones</span>
         {notifs.length > 0 && <span style={{ fontSize: 11, color: 'var(--c-text-3)' }}>{notifs.length} alerta{notifs.length !== 1 ? 's' : ''}</span>}
@@ -904,24 +904,27 @@ function NotificationsDropdown({ notifs, onClose }) {
           Sin alertas pendientes
         </div>
       ) : (
-        <div style={{ maxHeight: 380, overflowY: 'auto' }}>
+        <div style={{ maxHeight: 420, overflowY: 'auto' }}>
           {grupos.map(g => {
             const items = notifs.filter(n => n.tipo === g.tipo)
             if (!items.length) return null
             return (
               <div key={g.tipo}>
-                <div style={{ padding: '7px 16px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: g.color || 'var(--c-text-3)', background: 'var(--c-bg)', borderBottom: '1px solid var(--c-line-2)' }}>
+                <div style={{ padding: '7px 16px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: g.color, background: 'var(--c-bg)', borderBottom: '1px solid var(--c-line-2)' }}>
                   ⚠ {g.label} ({items.length})
                 </div>
-                {items.slice(0, 6).map(n => (
-                  <div key={n.id} style={{ padding: '9px 16px', borderBottom: '1px solid var(--c-line-2)' }}>
-                    <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--c-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{n.msg}</div>
-                    <div style={{ fontSize: 11, color: 'var(--c-text-3)', marginTop: 2 }}>{n.sub}</div>
-                  </div>
+                {items.map(n => (
+                  <button key={n.id} onClick={() => onNavigate(n)}
+                    style={{ width: '100%', textAlign: 'left', padding: '10px 16px', borderBottom: '1px solid var(--c-line-2)', background: 'none', border: 'none', borderBottom: '1px solid var(--c-line-2)', cursor: 'pointer', display: 'block' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--c-bg)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                    <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--c-text)', lineHeight: 1.45, wordBreak: 'break-word' }}>{n.msg}</div>
+                    <div style={{ fontSize: 11, color: 'var(--c-text-3)', marginTop: 3, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span>{n.sub}</span>
+                      <span style={{ color: 'var(--c-primary)', fontSize: 10 }}>→ Ir</span>
+                    </div>
+                  </button>
                 ))}
-                {items.length > 6 && (
-                  <div style={{ padding: '6px 16px', fontSize: 11, color: 'var(--c-text-3)', background: 'var(--c-bg)' }}>+{items.length - 6} más en esta categoría</div>
-                )}
               </div>
             )
           })}
@@ -2263,9 +2266,10 @@ export default function MainApp() {
   const notificaciones = useMemo(() => {
     const alerts = []
     const CATS = ['materiales','manoObra','herramientaEquipo','subcontratos']
+    const CAT_TAB = { materiales: 'cat-mat', manoObra: 'cat-mo', herramientaEquipo: 'cat-he', subcontratos: 'cat-sub' }
 
     proyectos.forEach(p => {
-      const alertedCostoBase = new Set() // evitar duplicar la misma alerta de costoBase por insumo
+      const alertedCostoBase = new Set()
 
       const walk = items => {
         items.forEach(it => {
@@ -2273,14 +2277,12 @@ export default function MainApp() {
             const f = it.ficha || {}
             const fichaVacia = !(f.materiales?.length || f.manoObra?.length || f.herramientaEquipo?.length || f.subcontratos?.length)
 
-            // Actividad sin ficha ni precio manual pero con cantidad > 0
             if (fichaVacia && !it.precioManual && (+it.cantidad || 0) > 0) {
-              alerts.push({ id: `act-${p.id}-${it.id}`, tipo: 'actividad-sin-costo', msg: it.descripcion || it.id, sub: p.nombreProyecto })
+              alerts.push({ id: `act-${p.id}-${it.id}`, tipo: 'actividad-sin-costo', msg: `Actividad sin costo: "${it.descripcion || it.id}"`, sub: p.nombreProyecto, proyectoId: p.id, actividadId: it.id, tab: 'presupuesto' })
             }
 
-            // Regla 4: actividad con ficha completa pero cantidad = 0 → subtotal siempre 0
             if (!fichaVacia && (+it.cantidad || 0) === 0) {
-              alerts.push({ id: `qty0-${p.id}-${it.id}`, tipo: 'error-calculo', msg: `Cantidad = 0 con ficha completa: "${it.descripcion || it.id}"`, sub: p.nombreProyecto })
+              alerts.push({ id: `qty0-${p.id}-${it.id}`, tipo: 'error-calculo', msg: `Cantidad = 0 con ficha completa: "${it.descripcion || it.id}"`, sub: p.nombreProyecto, proyectoId: p.id, actividadId: it.id, tab: 'presupuesto' })
             }
 
             if (!fichaVacia) {
@@ -2289,22 +2291,19 @@ export default function MainApp() {
                   const ins = findInsumo(p.catalogos, cat, c.insumoId)
                   const isHM = cat === 'herramientaEquipo' && normalize(ins?.descripcion || '') === 'herramienta menor'
 
-                  // Regla 4: insumo referenciado en ficha pero eliminado del catálogo
                   if (c.insumoId && !ins) {
-                    alerts.push({ id: `orphan-${p.id}-${it.id}-${cat}-${ci}`, tipo: 'error-calculo', msg: `Insumo eliminado del catálogo en ficha: "${it.descripcion || it.id}"`, sub: p.nombreProyecto })
+                    alerts.push({ id: `orphan-${p.id}-${it.id}-${cat}-${ci}`, tipo: 'error-calculo', msg: `Insumo eliminado del catálogo en ficha: "${it.descripcion || it.id}"`, sub: p.nombreProyecto, proyectoId: p.id, actividadId: it.id, tab: 'presupuesto' })
                     return
                   }
 
-                  // Reglas 2 y 3: rendimiento ≤ 0 en ficha (aplica a todos incluido HM)
                   if ((+c.rendimiento || 0) <= 0) {
                     const label = isHM ? 'Herramienta Menor' : (ins?.descripcion || 'Insumo')
-                    alerts.push({ id: `rend-${p.id}-${it.id}-${cat}-${ci}`, tipo: 'insumo-sin-precio', msg: `"${label}" con rendimiento = 0 en ficha: "${it.descripcion || it.id}"`, sub: p.nombreProyecto })
+                    alerts.push({ id: `rend-${p.id}-${it.id}-${cat}-${ci}`, tipo: 'insumo-sin-precio', msg: `"${label}" con rendimiento = 0 en ficha: "${it.descripcion || it.id}"`, sub: p.nombreProyecto, proyectoId: p.id, actividadId: it.id, tab: 'presupuesto' })
                   }
 
-                  // Regla 1: costoBase ≤ 0, excluye Herramienta Menor (su precio es % de MO)
                   if (!isHM && ins && (+ins.costoBase || 0) <= 0 && !alertedCostoBase.has(ins.id)) {
                     alertedCostoBase.add(ins.id)
-                    alerts.push({ id: `base-${p.id}-${ins.id}`, tipo: 'insumo-sin-precio', msg: `"${ins.descripcion}" sin precio en catálogo (ficha: "${it.descripcion || it.id}")`, sub: p.nombreProyecto })
+                    alerts.push({ id: `base-${p.id}-${ins.id}`, tipo: 'insumo-sin-precio', msg: `"${ins.descripcion}" sin precio en catálogo (ficha: "${it.descripcion || it.id}")`, sub: p.nombreProyecto, proyectoId: p.id, actividadId: it.id, tab: CAT_TAB[cat] })
                   }
                 })
               })
@@ -2395,6 +2394,22 @@ export default function MainApp() {
   }
 
   const openProject = p => { setActiveId(p.id); setPage('proyecto'); setTabProject('presupuesto') }
+
+  const navigateToAlert = alert => {
+    setShowNotifs(false)
+    if (!alert.proyectoId) return
+    setActiveId(alert.proyectoId)
+    setPage('proyecto')
+    setTabProject(alert.tab || 'presupuesto')
+    // Si tiene actividad asociada y el tab es presupuesto, abrir la ficha
+    if (alert.actividadId && (alert.tab === 'presupuesto' || !alert.tab)) {
+      const proj = proyectos.find(p => p.id === alert.proyectoId)
+      if (proj) {
+        const path = findPathById(proj.items, alert.actividadId)
+        if (path) setTimeout(() => setFichaPath(path), 100)
+      }
+    }
+  }
 
   const deleteProject = async (id, nombre) => {
     if (!confirm(`¿Eliminar el proyecto "${nombre}"?\n\nEsta acción no se puede deshacer.`)) return
@@ -2508,6 +2523,7 @@ export default function MainApp() {
           notifs={notificaciones}
           showNotifs={showNotifs}
           setShowNotifs={setShowNotifs}
+          onNavigateAlert={navigateToAlert}
         />
 
         {/* ── PAGES ── */}
