@@ -1165,7 +1165,7 @@ function InicioPage({ proyectos, openProject, addProject, setPage, userName }) {
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 24, marginBottom: 8 }}>
         <div>
           <div style={{ fontSize: 13, color: 'var(--c-text-3)', fontWeight: 500, marginBottom: 4 }}>{saludo},</div>
-          <h1 style={{ margin: 0, fontSize: 28, fontWeight: 600, color: 'var(--c-ink)', letterSpacing: '-0.02em' }}>{firstName} 👋</h1>
+          <h1 style={{ margin: 0, fontSize: 28, fontWeight: 600, color: 'var(--c-ink)', letterSpacing: '-0.02em' }}>{userName} 👋</h1>
           <div style={{ fontSize: 14, color: 'var(--c-text-2)', marginTop: 6 }}>
             Tienes <b style={{ color: 'var(--c-ink)' }}>{activos} proyecto{activos !== 1 ? 's' : ''} activo{activos !== 1 ? 's' : ''}</b>
             {enRevision > 0 && <> y <b style={{ color: 'var(--c-warn)' }}>{enRevision} en revisión</b></>}.
