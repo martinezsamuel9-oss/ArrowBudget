@@ -723,7 +723,7 @@ export async function importExcelPresupuesto(file, budget, setBudget) {
   const newItems=[]
   for(let i=h+1;i<rows.length;i++){
     const r=rows[i]; const id=String(r[0]||'').trim(); const desc=String(r[1]||'').trim()
-    if(!id||/^subtotal|^total/i.test(desc)) continue
+    if(!id||/^subtotal|^total/i.test(desc)||/^subtotal|^total/i.test(id)) continue
     const parts=id.split('.')
     if(parts.length===1) newItems.push({id,tipo:'capitulo',descripcion:desc,children:[]})
     else if(parts.length===2){ const cap=newItems.find(x=>x.id===parts[0]); const it={id,tipo:'subcapitulo',descripcion:desc,children:[]}; (cap?cap.children:newItems).push(it) }
@@ -849,12 +849,13 @@ export const exportPDFResumenEjecutivo = async (budget, params) => {
   // ── 3. ORDEN: Tabla capítulos PRIMERO ────────────────────────
   // Col widths: ID=12, Cap=resto, Acts=16, %Dir=20, $/m²=26, CostoDir=34
   const idW=12, actsW=16, pctW=20, m2W=26, subW=34, capW=CW-idW-actsW-pctW-m2W-subW
-  const capItems = budget.items.filter(it => it.tipo === 'capitulo')
+  // Filtrar SOLO capítulos reales — excluir filas "TOTAL/SUBTOTAL" mal importadas
+  const isFakeTotal = it => /^total|^subtotal/i.test((it.id||'').trim()) || /^total|^subtotal/i.test((it.descripcion||'').trim())
+  const capItems = budget.items.filter(it => it.tipo === 'capitulo' && !isFakeTotal(it))
   const capRows = capItems.map(cap => {
     const capSub = round2(calcItem(cap, budget.catalogos, params).subtotal)
     const nActs  = (function count(its){ return its.reduce((s,x)=>s+(x.tipo==='actividad'?1:count(x.children||[])),0) })(cap.children||[])
-    const pct    = directReal > 0 ? ((capSub/directReal)*100).toFixed(1)+'%' : '—'
-    // 4. Costo por m² del capítulo
+    const pct    = total > 0 ? ((capSub/total)*100).toFixed(1)+'%' : '—'
     const capM2  = m2Val > 0 ? money(round2(capSub / m2Val)) : '—'
     return [
       { content: cap.id,        styles: { halign: 'center' } },
@@ -866,20 +867,20 @@ export const exportPDFResumenEjecutivo = async (budget, params) => {
     ]
   })
   if (capRows.length) {
-    // Fila única: suma de Indirectos + Imprevistos + Utilidad (+ Impuesto)
+    // Fila overhead con mismo estilo que capítulos — homogéneo
     const overhead = round2(indirectos + imprevistos + utilidad + impuesto)
     const pctOverhead = total > 0 ? ((overhead / total) * 100).toFixed(1) + '%' : '—'
     const overheadM2  = m2Val > 0 ? money(round2(overhead / m2Val)) : '—'
     const overheadLbl = impuesto > 0
-      ? `Indirectos, Imprevistos, Utilidad e Impuesto`
-      : `Indirectos, Imprevistos y Utilidad`
+      ? 'INDIRECTOS, IMPREVISTOS, UTILIDAD E IMPUESTO'
+      : 'INDIRECTOS, IMPREVISTOS Y UTILIDAD'
     capRows.push([
-      { content: '',           styles: { halign: 'center', textColor: C.mid, fontStyle: 'italic' } },
-      { content: overheadLbl, styles: { textColor: C.mid, fontStyle: 'italic' } },
-      { content: '',           styles: { halign: 'center', textColor: C.mid } },
-      { content: pctOverhead,  styles: { halign: 'center', textColor: C.mid, fontStyle: 'italic' } },
-      { content: overheadM2,   styles: { halign: 'right',  textColor: C.mid, fontStyle: 'italic' } },
-      { content: money(overhead), styles: { halign: 'right', textColor: C.mid, fontStyle: 'italic' } },
+      { content: '',              styles: { halign: 'center', fillColor: C.bg } },
+      { content: overheadLbl,    styles: { fillColor: C.bg, fontStyle: 'bold', textColor: C.mid } },
+      { content: '',              styles: { halign: 'center', fillColor: C.bg } },
+      { content: pctOverhead,    styles: { halign: 'center', fillColor: C.bg, textColor: C.mid } },
+      { content: overheadM2,     styles: { halign: 'right',  fillColor: C.bg, textColor: C.mid } },
+      { content: money(overhead), styles: { halign: 'right',  fillColor: C.bg, textColor: C.mid } },
     ])
 
     doc.autoTable({
