@@ -2271,21 +2271,10 @@ export default function MainApp() {
         })
       }
       walk(p.items || [])
-      // 2. Insumos USADOS en fichas pero con costoBase = 0
-      const usedIds = new Set()
-      const walkFicha = items => {
-        items.forEach(it => {
-          if (it.tipo === 'actividad' && it.ficha) {
-            ;['materiales','manoObra','herramientaEquipo','subcontratos'].forEach(cat => {
-              ;(it.ficha[cat] || []).forEach(c => { if (c.insumoId) usedIds.add(`${cat}::${c.insumoId}`) })
-            })
-          } else if (it.children) walkFicha(it.children)
-        })
-      }
-      walkFicha(p.items || [])
+      // 2. Todos los insumos del catálogo con costoBase = 0
       ;['materiales','manoObra','herramientaEquipo','subcontratos'].forEach(cat => {
         ;(p.catalogos?.[cat] || []).forEach(ins => {
-          if (usedIds.has(`${cat}::${ins.id}`) && (+ins.costoBase || 0) === 0) {
+          if ((+ins.costoBase || 0) === 0) {
             alerts.push({ id: `ins-${p.id}-${ins.id}`, tipo: 'insumo-sin-precio', msg: ins.descripcion, sub: p.nombreProyecto })
           }
         })
