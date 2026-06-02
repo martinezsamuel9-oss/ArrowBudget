@@ -888,8 +888,9 @@ function NotificationsDropdown({ notifs, onClose }) {
   const ref = useRef(null)
   useClickOutside(ref, onClose)
   const grupos = [
-    { tipo: 'actividad-sin-costo', label: 'Actividades sin costo' },
-    { tipo: 'insumo-sin-precio',   label: 'Insumos sin precio' },
+    { tipo: 'error-calculo',       label: 'Errores de cálculo',   color: 'var(--c-danger)' },
+    { tipo: 'actividad-sin-costo', label: 'Actividades sin costo', color: 'var(--c-warn)' },
+    { tipo: 'insumo-sin-precio',   label: 'Insumos sin precio',    color: 'var(--c-warn)' },
   ]
   return (
     <div ref={ref} style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: 340, background: 'var(--c-surface)', border: '1px solid var(--c-line)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', zIndex: 50, overflow: 'hidden' }}>
@@ -909,7 +910,7 @@ function NotificationsDropdown({ notifs, onClose }) {
             if (!items.length) return null
             return (
               <div key={g.tipo}>
-                <div style={{ padding: '7px 16px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--c-text-3)', background: 'var(--c-bg)', borderBottom: '1px solid var(--c-line-2)' }}>
+                <div style={{ padding: '7px 16px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: g.color || 'var(--c-text-3)', background: 'var(--c-bg)', borderBottom: '1px solid var(--c-line-2)' }}>
                   ⚠ {g.label} ({items.length})
                 </div>
                 {items.slice(0, 6).map(n => (
@@ -2254,42 +2255,64 @@ export default function MainApp() {
   const userName    = effectiveProfile?.nombre || effectiveProfile?.full_name || user?.user_metadata?.full_name || 'Usuario'
   const userEmpresa = effectiveProfile?.empresa || effectiveProfile?.company_name || ''
 
-  // Notificaciones: actividades sin costo + insumos usados sin precio
+  // ── Notificaciones ──────────────────────────────────────────────────
+  // Regla 1: insumo (no HM) con costoBase ≤ 0 asignado a una ficha
+  // Regla 2: cualquier insumo con rendimiento ≤ 0 en una ficha → indicar en qué ficha
+  // Regla 3: Herramienta Menor con rendimiento ≤ 0 → indicar en qué ficha
+  // Regla 4: errores que afectan cálculos (insumo huérfano, actividad con ficha y cantidad=0)
   const notificaciones = useMemo(() => {
     const alerts = []
+    const CATS = ['materiales','manoObra','herramientaEquipo','subcontratos']
+
     proyectos.forEach(p => {
-      // 1. Actividades con cantidad > 0 pero sin ficha ni precio manual
+      const alertedCostoBase = new Set() // evitar duplicar la misma alerta de costoBase por insumo
+
       const walk = items => {
         items.forEach(it => {
           if (it.tipo === 'actividad') {
             const f = it.ficha || {}
-            const isEmpty = !(f.materiales?.length || f.manoObra?.length || f.herramientaEquipo?.length || f.subcontratos?.length)
-            if (isEmpty && !it.precioManual && (+it.cantidad || 0) > 0) {
+            const fichaVacia = !(f.materiales?.length || f.manoObra?.length || f.herramientaEquipo?.length || f.subcontratos?.length)
+
+            // Actividad sin ficha ni precio manual pero con cantidad > 0
+            if (fichaVacia && !it.precioManual && (+it.cantidad || 0) > 0) {
               alerts.push({ id: `act-${p.id}-${it.id}`, tipo: 'actividad-sin-costo', msg: it.descripcion || it.id, sub: p.nombreProyecto })
+            }
+
+            // Regla 4: actividad con ficha completa pero cantidad = 0 → subtotal siempre 0
+            if (!fichaVacia && (+it.cantidad || 0) === 0) {
+              alerts.push({ id: `qty0-${p.id}-${it.id}`, tipo: 'error-calculo', msg: `Cantidad = 0 con ficha completa: "${it.descripcion || it.id}"`, sub: p.nombreProyecto })
+            }
+
+            if (!fichaVacia) {
+              CATS.forEach(cat => {
+                ;(f[cat] || []).forEach((c, ci) => {
+                  const ins = findInsumo(p.catalogos, cat, c.insumoId)
+                  const isHM = cat === 'herramientaEquipo' && normalize(ins?.descripcion || '') === 'herramienta menor'
+
+                  // Regla 4: insumo referenciado en ficha pero eliminado del catálogo
+                  if (c.insumoId && !ins) {
+                    alerts.push({ id: `orphan-${p.id}-${it.id}-${cat}-${ci}`, tipo: 'error-calculo', msg: `Insumo eliminado del catálogo en ficha: "${it.descripcion || it.id}"`, sub: p.nombreProyecto })
+                    return
+                  }
+
+                  // Reglas 2 y 3: rendimiento ≤ 0 en ficha (aplica a todos incluido HM)
+                  if ((+c.rendimiento || 0) <= 0) {
+                    const label = isHM ? 'Herramienta Menor' : (ins?.descripcion || 'Insumo')
+                    alerts.push({ id: `rend-${p.id}-${it.id}-${cat}-${ci}`, tipo: 'insumo-sin-precio', msg: `"${label}" con rendimiento = 0 en ficha: "${it.descripcion || it.id}"`, sub: p.nombreProyecto })
+                  }
+
+                  // Regla 1: costoBase ≤ 0, excluye Herramienta Menor (su precio es % de MO)
+                  if (!isHM && ins && (+ins.costoBase || 0) <= 0 && !alertedCostoBase.has(ins.id)) {
+                    alertedCostoBase.add(ins.id)
+                    alerts.push({ id: `base-${p.id}-${ins.id}`, tipo: 'insumo-sin-precio', msg: `"${ins.descripcion}" sin precio en catálogo (ficha: "${it.descripcion || it.id}")`, sub: p.nombreProyecto })
+                  }
+                })
+              })
             }
           } else if (it.children) walk(it.children)
         })
       }
       walk(p.items || [])
-      // 2. Insumos usados en fichas con costoBase = 0
-      const usedIds = new Set()
-      const walkFicha = items => {
-        items.forEach(it => {
-          if (it.tipo === 'actividad' && it.ficha) {
-            ;['materiales','manoObra','herramientaEquipo','subcontratos'].forEach(cat => {
-              ;(it.ficha[cat] || []).forEach(c => { if (c.insumoId && (+c.rendimiento || 0) > 0) usedIds.add(`${cat}::${c.insumoId}`) })
-            })
-          } else if (it.children) walkFicha(it.children)
-        })
-      }
-      walkFicha(p.items || [])
-      ;['materiales','manoObra','herramientaEquipo','subcontratos'].forEach(cat => {
-        ;(p.catalogos?.[cat] || []).forEach(ins => {
-          if (usedIds.has(`${cat}::${ins.id}`) && (+ins.costoBase || 0) === 0) {
-            alerts.push({ id: `ins-${p.id}-${ins.id}`, tipo: 'insumo-sin-precio', msg: ins.descripcion, sub: p.nombreProyecto })
-          }
-        })
-      })
     })
     return alerts
   }, [proyectos])
