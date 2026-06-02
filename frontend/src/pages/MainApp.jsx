@@ -269,7 +269,7 @@ function Sidebar({ page, setPage, projectActivo, setTabProject, tabProject, user
 }
 
 // ============ TOPBAR ============
-function Topbar({ crumbs, search, setSearch, onHome, searchResults, onResultPick, saving, onLogout, onSettings }) {
+function Topbar({ crumbs, search, setSearch, onHome, searchResults, onResultPick, saving, onLogout, onUserSettings, notifCount, notifs, showNotifs, setShowNotifs }) {
   return (
     <div className="topbar">
       {/* Breadcrumbs */}
@@ -294,14 +294,8 @@ function Topbar({ crumbs, search, setSearch, onHome, searchResults, onResultPick
           placeholder="Buscar proyectos, actividades, materiales…"
         />
         <kbd>⌘K</kbd>
-        {/* Search results dropdown */}
         {searchResults && (searchResults.proys.length + searchResults.acts.length + searchResults.insumos.length) > 0 && (
-          <div style={{
-            position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4,
-            background: 'var(--c-surface)', border: '1px solid var(--c-line)',
-            borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)',
-            zIndex: 30, maxHeight: 360, overflowY: 'auto',
-          }}>
+          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: 'var(--c-surface)', border: '1px solid var(--c-line)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', zIndex: 30, maxHeight: 360, overflowY: 'auto' }}>
             {searchResults.proys.length > 0 && <>
               <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--c-text-3)', padding: '8px 12px 4px', borderBottom: '1px solid var(--c-line-2)' }}>Proyectos</div>
               {searchResults.proys.slice(0, 5).map(p => (
@@ -332,11 +326,20 @@ function Topbar({ crumbs, search, setSearch, onHome, searchResults, onResultPick
             Guardando…
           </span>
         )}
-        <button className="icon-btn" title="Notificaciones">
-          <Bell size={16} />
-          <span className="dot"></span>
-        </button>
-        <button className="icon-btn" title="Configuración" onClick={onSettings}>
+        {/* Bell con badge y dropdown */}
+        <div style={{ position: 'relative' }}>
+          <button className="icon-btn" title="Notificaciones" onClick={() => setShowNotifs(v => !v)} style={{ position: 'relative' }}>
+            <Bell size={16} />
+            {notifCount > 0 && (
+              <span style={{ position: 'absolute', top: 1, right: 1, background: 'var(--c-danger)', color: '#fff', fontSize: 9, fontWeight: 700, minWidth: 15, height: 15, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px', lineHeight: 1 }}>
+                {notifCount > 99 ? '99+' : notifCount}
+              </span>
+            )}
+          </button>
+          {showNotifs && <NotificationsDropdown notifs={notifs} onClose={() => setShowNotifs(false)} />}
+        </div>
+        {/* Gear → siempre abre configuración de cuenta */}
+        <button className="icon-btn" title="Configuración de cuenta" onClick={onUserSettings}>
           <Settings size={16} />
         </button>
         <div style={{ width: 1, height: 22, background: 'var(--c-line)', margin: '0 4px' }}></div>
@@ -743,6 +746,187 @@ function ConfigProyectoModal({ open, onClose, budget, setBudget }) {
         </div>
       </div>
     </Drawer>
+  )
+}
+
+// ============ USER SETTINGS MODAL ============
+function UserSettingsModal({ open, onClose, profile, user, onSaved }) {
+  const [tab, setTab]       = useState('perfil')
+  const [nombre, setNombre] = useState('')
+  const [empresa, setEmpresa] = useState('')
+  const [pwd, setPwd]       = useState('')
+  const [pwd2, setPwd2]     = useState('')
+  const [msg, setMsg]       = useState(null)   // { ok, txt }
+  const [busy, setBusy]     = useState(false)
+
+  useEffect(() => {
+    if (open) {
+      setNombre(profile?.nombre || profile?.full_name || '')
+      setEmpresa(profile?.empresa || profile?.company_name || '')
+      setMsg(null); setPwd(''); setPwd2('')
+    }
+  }, [open])
+
+  const TABS = [
+    { id: 'perfil',    label: 'Perfil' },
+    { id: 'seguridad', label: 'Contraseña' },
+    { id: 'plan',      label: 'Plan' },
+  ]
+
+  const PLANES = [
+    { id: 'estimador',    nombre: 'Estimador',       m: 29,  y: 290,  color: '#6366f1', features: ['Presupuesto APU completo', 'Exportación PDF y Excel', 'Fichas de costo ilimitadas', 'Catálogos de insumos'] },
+    { id: 'planificador', nombre: 'Planificador',     m: 59,  y: 590,  color: '#f59e0b', pop: true, features: ['Todo lo de Estimador', 'Cronograma (Gantt)', 'Flujo de caja', 'Análisis de recursos'] },
+    { id: 'director',     nombre: 'Director de Obra', m: 99,  y: 990,  color: '#10b981', features: ['Todo lo de Planificador', 'Órdenes de cambio', 'Planillas a contratistas', 'Control de gastos y KPIs'] },
+  ]
+
+  const savePerfil = async () => {
+    if (!nombre.trim()) return setMsg({ ok: false, txt: 'El nombre es requerido' })
+    setBusy(true); setMsg(null)
+    const { error } = await supabase.from('profiles').update({ nombre: nombre.trim(), empresa: empresa.trim() }).eq('id', user.id)
+    setBusy(false)
+    if (error) setMsg({ ok: false, txt: error.message })
+    else { setMsg({ ok: true, txt: 'Perfil actualizado correctamente' }); onSaved({ nombre: nombre.trim(), empresa: empresa.trim() }) }
+  }
+
+  const savePwd = async () => {
+    if (pwd.length < 6) return setMsg({ ok: false, txt: 'Mínimo 6 caracteres' })
+    if (pwd !== pwd2)   return setMsg({ ok: false, txt: 'Las contraseñas no coinciden' })
+    setBusy(true); setMsg(null)
+    const { error } = await supabase.auth.updateUser({ password: pwd })
+    setBusy(false)
+    if (error) setMsg({ ok: false, txt: error.message })
+    else { setMsg({ ok: true, txt: 'Contraseña actualizada' }); setPwd(''); setPwd2('') }
+  }
+
+  const inputStyle = { borderRadius: 'var(--r-md)', width: '100%' }
+
+  if (!open) return null
+  return (
+    <Drawer open={open} onClose={onClose} title="Configuración de cuenta" subtitle={user?.email} width={500}
+      footer={
+        tab === 'perfil'    ? <><button onClick={onClose} className="btn ghost">Cancelar</button><button onClick={savePerfil} className="btn primary" disabled={busy}>{busy ? 'Guardando…' : 'Guardar cambios'}</button></> :
+        tab === 'seguridad' ? <><button onClick={onClose} className="btn ghost">Cancelar</button><button onClick={savePwd} className="btn primary" disabled={busy}>{busy ? 'Actualizando…' : 'Cambiar contraseña'}</button></> :
+        <button onClick={onClose} className="btn ghost">Cerrar</button>
+      }>
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: 0, marginBottom: 24, borderBottom: '1px solid var(--c-line)' }}>
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => { setTab(t.id); setMsg(null) }}
+            style={{ padding: '8px 18px', fontSize: 13, fontWeight: tab === t.id ? 700 : 500, color: tab === t.id ? 'var(--c-primary)' : 'var(--c-text-2)', background: 'none', border: 'none', borderBottom: tab === t.id ? '2px solid var(--c-primary)' : '2px solid transparent', cursor: 'pointer', marginBottom: -1, transition: 'all 0.15s' }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Mensaje feedback */}
+      {msg && (
+        <div style={{ padding: '9px 14px', borderRadius: 'var(--r-md)', marginBottom: 18, fontSize: 13, background: msg.ok ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.08)', color: msg.ok ? '#10b981' : 'var(--c-danger)', border: `1px solid ${msg.ok ? '#10b981' : 'var(--c-danger)'}` }}>
+          {msg.txt}
+        </div>
+      )}
+
+      {/* ── Perfil ── */}
+      {tab === 'perfil' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <div className="field">
+            <label className="field-label">Nombre completo</label>
+            <input className="input" style={inputStyle} value={nombre} placeholder="Ej. Juan Pérez" onChange={e => setNombre(e.target.value)} />
+          </div>
+          <div className="field">
+            <label className="field-label">Empresa / Organización</label>
+            <input className="input" style={inputStyle} value={empresa} placeholder="Ej. Constructora XYZ" onChange={e => setEmpresa(e.target.value)} />
+          </div>
+          <div className="field">
+            <label className="field-label">Correo electrónico</label>
+            <input className="input" style={{ ...inputStyle, opacity: 0.5, cursor: 'not-allowed' }} value={user?.email || ''} disabled />
+            <div style={{ fontSize: 11, color: 'var(--c-text-3)', marginTop: 4 }}>El correo no se puede cambiar desde aquí.</div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Contraseña ── */}
+      {tab === 'seguridad' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <div className="field">
+            <label className="field-label">Nueva contraseña</label>
+            <input className="input" style={inputStyle} type="password" value={pwd} placeholder="Mínimo 6 caracteres" onChange={e => setPwd(e.target.value)} />
+          </div>
+          <div className="field">
+            <label className="field-label">Confirmar contraseña</label>
+            <input className="input" style={inputStyle} type="password" value={pwd2} placeholder="Repite la nueva contraseña" onChange={e => setPwd2(e.target.value)} />
+          </div>
+        </div>
+      )}
+
+      {/* ── Plan ── */}
+      {tab === 'plan' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ fontSize: 13, color: 'var(--c-text-2)', marginBottom: 4 }}>Selecciona el plan que mejor se adapte a tus necesidades.</div>
+          {PLANES.map(p => (
+            <div key={p.id} style={{ border: `1.5px solid ${p.pop ? p.color : 'var(--c-line)'}`, borderRadius: 'var(--r-lg)', padding: '16px 18px', position: 'relative', background: p.pop ? `${p.color}12` : 'var(--c-bg)' }}>
+              {p.pop && <span style={{ position: 'absolute', top: -10, right: 14, background: p.color, color: '#fff', fontSize: 10, fontWeight: 700, padding: '2px 10px', borderRadius: 20 }}>MÁS POPULAR</span>}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--c-ink)' }}>{p.nombre}</div>
+                  <div style={{ fontSize: 12, color: 'var(--c-text-3)', marginTop: 2 }}>desde <b style={{ color: 'var(--c-ink)' }}>${p.m}/mes</b> · ${p.y}/año</div>
+                </div>
+                <button className="btn sm" style={{ background: p.color, borderColor: p.color, color: '#fff', flexShrink: 0 }}>Seleccionar</button>
+              </div>
+              <ul style={{ margin: 0, padding: '0 0 0 16px', fontSize: 12, color: 'var(--c-text-2)', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                {p.features.map(f => <li key={f}>{f}</li>)}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+    </Drawer>
+  )
+}
+
+// ============ NOTIFICATIONS DROPDOWN ============
+function NotificationsDropdown({ notifs, onClose }) {
+  const ref = useRef(null)
+  useClickOutside(ref, onClose)
+  const grupos = [
+    { tipo: 'actividad-sin-costo', label: 'Actividades sin costo' },
+    { tipo: 'insumo-sin-precio',   label: 'Insumos sin precio' },
+  ]
+  return (
+    <div ref={ref} style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: 340, background: 'var(--c-surface)', border: '1px solid var(--c-line)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', zIndex: 50, overflow: 'hidden' }}>
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--c-line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--c-ink)' }}>Notificaciones</span>
+        {notifs.length > 0 && <span style={{ fontSize: 11, color: 'var(--c-text-3)' }}>{notifs.length} alerta{notifs.length !== 1 ? 's' : ''}</span>}
+      </div>
+      {notifs.length === 0 ? (
+        <div style={{ padding: '28px 16px', textAlign: 'center', color: 'var(--c-text-3)', fontSize: 13 }}>
+          <div style={{ fontSize: 22, marginBottom: 6 }}>✓</div>
+          Sin alertas pendientes
+        </div>
+      ) : (
+        <div style={{ maxHeight: 380, overflowY: 'auto' }}>
+          {grupos.map(g => {
+            const items = notifs.filter(n => n.tipo === g.tipo)
+            if (!items.length) return null
+            return (
+              <div key={g.tipo}>
+                <div style={{ padding: '7px 16px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--c-text-3)', background: 'var(--c-bg)', borderBottom: '1px solid var(--c-line-2)' }}>
+                  ⚠ {g.label} ({items.length})
+                </div>
+                {items.slice(0, 6).map(n => (
+                  <div key={n.id} style={{ padding: '9px 16px', borderBottom: '1px solid var(--c-line-2)' }}>
+                    <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--c-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{n.msg}</div>
+                    <div style={{ fontSize: 11, color: 'var(--c-text-3)', marginTop: 2 }}>{n.sub}</div>
+                  </div>
+                ))}
+                {items.length > 6 && (
+                  <div style={{ padding: '6px 16px', fontSize: 11, color: 'var(--c-text-3)', background: 'var(--c-bg)' }}>+{items.length - 6} más en esta categoría</div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -2058,13 +2242,57 @@ export default function MainApp() {
   const [showConfig, setShowConfig] = useState(false)
   const [showVersion, setShowVersion] = useState(false)
   const [showRango, setShowRango] = useState(false)
+  const [showUserSettings, setShowUserSettings] = useState(false)
+  const [showNotifs, setShowNotifs] = useState(false)
+  const [profileOverride, setProfileOverride] = useState(null)
   const [saving, setSaving] = useState(false)
   const fileRef = useRef(null)
   const importCtx = useRef(null)
   const savingRef = useRef(false)
 
-  const userName    = profile?.nombre || profile?.full_name || user?.user_metadata?.full_name || 'Usuario'
-  const userEmpresa = profile?.company_name || ''
+  const effectiveProfile = profileOverride ? { ...profile, ...profileOverride } : profile
+  const userName    = effectiveProfile?.nombre || effectiveProfile?.full_name || user?.user_metadata?.full_name || 'Usuario'
+  const userEmpresa = effectiveProfile?.empresa || effectiveProfile?.company_name || ''
+
+  // Notificaciones: actividades sin costo + insumos usados sin precio
+  const notificaciones = useMemo(() => {
+    const alerts = []
+    proyectos.forEach(p => {
+      // 1. Actividades con cantidad > 0 pero sin ficha ni precio manual
+      const walk = items => {
+        items.forEach(it => {
+          if (it.tipo === 'actividad') {
+            const f = it.ficha || {}
+            const isEmpty = !(f.materiales?.length || f.manoObra?.length || f.herramientaEquipo?.length || f.subcontratos?.length)
+            if (isEmpty && !it.precioManual && (+it.cantidad || 0) > 0) {
+              alerts.push({ id: `act-${p.id}-${it.id}`, tipo: 'actividad-sin-costo', msg: it.descripcion || it.id, sub: p.nombreProyecto })
+            }
+          } else if (it.children) walk(it.children)
+        })
+      }
+      walk(p.items || [])
+      // 2. Insumos USADOS en fichas pero con costoBase = 0
+      const usedIds = new Set()
+      const walkFicha = items => {
+        items.forEach(it => {
+          if (it.tipo === 'actividad' && it.ficha) {
+            ;['materiales','manoObra','herramientaEquipo','subcontratos'].forEach(cat => {
+              ;(it.ficha[cat] || []).forEach(c => { if (c.insumoId) usedIds.add(`${cat}::${c.insumoId}`) })
+            })
+          } else if (it.children) walkFicha(it.children)
+        })
+      }
+      walkFicha(p.items || [])
+      ;['materiales','manoObra','herramientaEquipo','subcontratos'].forEach(cat => {
+        ;(p.catalogos?.[cat] || []).forEach(ins => {
+          if (usedIds.has(`${cat}::${ins.id}`) && (+ins.costoBase || 0) === 0) {
+            alerts.push({ id: `ins-${p.id}-${ins.id}`, tipo: 'insumo-sin-precio', msg: ins.descripcion, sub: p.nombreProyecto })
+          }
+        })
+      })
+    })
+    return alerts
+  }, [proyectos])
 
   // Cargar presupuestos
   useEffect(() => {
@@ -2234,7 +2462,7 @@ export default function MainApp() {
         setTabProject={setTabProject} tabProject={tabProject}
         user={{ name: userName, empresa: userEmpresa }}
         onLogout={doLogout}
-        onSettings={() => budget && page === 'proyecto' && setShowConfig(true)}
+        onSettings={() => setShowUserSettings(true)}
         projectsCount={proyectos.length}
       />
 
@@ -2252,7 +2480,11 @@ export default function MainApp() {
           }}
           saving={saving}
           onLogout={doLogout}
-          onSettings={() => budget && page === 'proyecto' && setShowConfig(true)}
+          onUserSettings={() => setShowUserSettings(true)}
+          notifCount={notificaciones.length}
+          notifs={notificaciones}
+          showNotifs={showNotifs}
+          setShowNotifs={setShowNotifs}
         />
 
         {/* ── PAGES ── */}
@@ -2391,6 +2623,13 @@ export default function MainApp() {
       {budget && <ConfigProyectoModal  open={showConfig}  onClose={() => setShowConfig(false)}  budget={budget} setBudget={setBudget} />}
       {budget && <GuardarVersionDialog open={showVersion} onClose={() => setShowVersion(false)} budget={budget} setBudget={setBudget} />}
       {budget && <RangoFichasDialog    open={showRango}   onClose={() => setShowRango(false)}   budget={budget} params={params} empresa={{ nombre: userEmpresa, logo: budget.logoOfertante, headerBg: budget.apuHeaderBg, headerText: budget.apuHeaderText }} />}
+      <UserSettingsModal
+        open={showUserSettings}
+        onClose={() => setShowUserSettings(false)}
+        profile={effectiveProfile}
+        user={user}
+        onSaved={({ nombre, empresa }) => setProfileOverride(p => ({ ...p, nombre, empresa }))}
+      />
     </div>
   )
 }
