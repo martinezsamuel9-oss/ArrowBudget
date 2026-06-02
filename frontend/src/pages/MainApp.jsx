@@ -157,7 +157,7 @@ function StatusBadge({ status }) {
 function Sidebar({ page, setPage, projectActivo, setTabProject, tabProject, user, onLogout, projectsCount, onSettings }) {
   const mainNav = [
     { id: 'inicio',    label: 'Inicio',    Icon: Home },
-    { id: 'proyectos', label: 'Proyectos', Icon: Folder, badge: projectsCount },
+    { id: 'proyectos', label: 'Proyectos', Icon: Folder },
   ]
   const projectNav = [
     { id: 'presupuesto',    label: 'Presupuesto',         Icon: FileText },
