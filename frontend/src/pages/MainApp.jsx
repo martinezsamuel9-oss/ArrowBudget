@@ -1921,16 +1921,17 @@ function CatalogoView({ budget, setBudget, categoria }) {
           </button>
         </div>
       </div>
-      {showForm && (
+      {/* Form de NUEVO insumo — aparece arriba */}
+      {showForm && !editId && (
         <form onSubmit={submit} style={{ background: 'var(--c-accent-soft)', borderBottom: '1px solid var(--c-line)', padding: '14px 18px', display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 10 }}>
           <div className="field"><label className="field-label">Código</label><input className="input sm" value={form.codigo} onChange={e => setForm({ ...form, codigo: e.target.value })} /></div>
-          <div className="field" style={{ gridColumn: 'span 2' }}><label className="field-label">Descripción *</label><input required className="input sm" value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} /></div>
+          <div className="field" style={{ gridColumn: 'span 2' }}><label className="field-label">Descripción *</label><input required className="input sm" autoFocus value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} /></div>
           <div className="field"><label className="field-label">Unidad</label><input className="input sm" value={form.unidad} onChange={e => setForm({ ...form, unidad: e.target.value })} /></div>
-          <div className="field"><label className="field-label">Precio Base</label><input type="number" step="any" className="input sm" style={{ textAlign: 'right' }} value={form.costoBase} onChange={e => setForm({ ...form, costoBase: e.target.value })} /></div>
+          <div className="field"><label className="field-label">Precio Base</label><MathInput className="input sm" style={{ textAlign: 'right' }} value={form.costoBase} onChange={v => setForm({ ...form, costoBase: v })} /></div>
           <div className="field"><label className="field-label">Proveedor</label><input className="input sm" value={form.proveedor} onChange={e => setForm({ ...form, proveedor: e.target.value })} /></div>
           <div style={{ gridColumn: 'span 6', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button type="button" className="btn sm ghost" onClick={() => { setShowForm(false); setEditId(null) }}>Cancelar</button>
-            <button type="submit" className="btn sm primary">{editId ? 'Actualizar' : 'Agregar'}</button>
+            <button type="submit" className="btn sm primary">Agregar</button>
           </div>
         </form>
       )}
@@ -1946,6 +1947,28 @@ function CatalogoView({ budget, setBudget, categoria }) {
             {filtered.map(i => {
               const u = usagesOf(i.id)
               const cantTotal = cantTotalOf(i.id)
+
+              // Form de EDICIÓN inline — reemplaza el row
+              if (editId === i.id && showForm) {
+                return (
+                  <tr key={i.id} style={{ background: 'var(--c-accent-soft)' }}>
+                    <td colSpan={7} style={{ padding: '12px 18px' }}>
+                      <form onSubmit={submit} style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 10 }}>
+                        <div className="field"><label className="field-label">Código</label><input className="input sm" value={form.codigo} onChange={e => setForm({ ...form, codigo: e.target.value })} /></div>
+                        <div className="field" style={{ gridColumn: 'span 2' }}><label className="field-label">Descripción *</label><input required autoFocus className="input sm" value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} /></div>
+                        <div className="field"><label className="field-label">Unidad</label><input className="input sm" value={form.unidad} onChange={e => setForm({ ...form, unidad: e.target.value })} /></div>
+                        <div className="field"><label className="field-label">Precio Base</label><MathInput className="input sm" style={{ textAlign: 'right' }} value={form.costoBase} onChange={v => setForm({ ...form, costoBase: v })} /></div>
+                        <div className="field"><label className="field-label">Proveedor</label><input className="input sm" value={form.proveedor} onChange={e => setForm({ ...form, proveedor: e.target.value })} /></div>
+                        <div style={{ gridColumn: 'span 6', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                          <button type="button" className="btn sm ghost" onClick={() => { setShowForm(false); setEditId(null) }}>Cancelar</button>
+                          <button type="submit" className="btn sm primary">Actualizar</button>
+                        </div>
+                      </form>
+                    </td>
+                  </tr>
+                )
+              }
+
               return (
                 <tr key={i.id}>
                   <td className="id">{i.codigo}</td>
