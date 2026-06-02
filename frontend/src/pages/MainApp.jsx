@@ -2063,7 +2063,7 @@ export default function MainApp() {
   const importCtx = useRef(null)
   const savingRef = useRef(false)
 
-  const userName    = profile?.full_name    || user?.user_metadata?.full_name || 'Usuario'
+  const userName    = profile?.nombre || profile?.full_name || user?.user_metadata?.full_name || 'Usuario'
   const userEmpresa = profile?.company_name || ''
 
   // Cargar presupuestos
