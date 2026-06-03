@@ -2226,7 +2226,7 @@ function PlantillasPage({ budget, setBudget }) {
               <div style={{ width: 44, height: 44, borderRadius: 10, background: 'var(--c-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, marginBottom: 12 }}>{t.icon}</div>
               <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{t.label}</div>
               <div style={{ fontSize: 13, color: 'var(--c-text-3)', flex: 1, marginBottom: 16 }}>{t.desc}</div>
-              <button className="btn primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => exportPlantilla(t.k)}>
+              <button className="btn primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => exportPlantilla(t.k).catch(err => alert('Error al descargar: ' + err.message))}>
                 <Download size={14} /> Descargar plantilla
               </button>
             </div>
@@ -2240,7 +2240,7 @@ function PlantillasPage({ budget, setBudget }) {
               Importa una o varias fichas de costo unitario (APU) al proyecto activo desde una hoja de cálculo.
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <button className="btn primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => exportPlantillaFicha()}>
+              <button className="btn primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => exportPlantillaFicha().catch(err => alert('Error al descargar: ' + err.message))}>
                 <Download size={14} /> Descargar plantilla
               </button>
               <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }}
