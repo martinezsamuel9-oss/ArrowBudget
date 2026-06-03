@@ -2058,10 +2058,23 @@ function ExplosionTable({ items, catTotal, money }) {
           })}
         </tbody>
         <tfoot>
-          <tr style={{ background: '#0f1115' }}>
-            <td colSpan={5} style={{ padding: '10px 14px', fontWeight: 700, textAlign: 'right', color: 'rgba(255,255,255,0.6)', fontSize: 12, letterSpacing: '0.05em' }}>TOTAL</td>
-            <td className="num" style={{ fontWeight: 800, fontSize: 15, color: '#f59e0b', padding: '10px 14px' }}>{money(catTotal)}</td>
-            <td className="num" style={{ fontWeight: 700, color: '#f59e0b', padding: '10px 14px' }}>100%</td>
+          <tr>
+            {['','','','','TOTAL',money(catTotal),'100%'].map((v, i) => (
+              <td key={i} colSpan={i === 4 ? 1 : 1}
+                className={i >= 5 ? 'num' : ''}
+                style={{
+                  background: '#0f1115',
+                  padding: '11px 14px',
+                  fontWeight: i >= 5 ? 800 : 700,
+                  fontSize: i === 5 ? 15 : 13,
+                  color: i >= 5 ? '#f59e0b' : 'rgba(255,255,255,0.55)',
+                  textAlign: i >= 4 ? 'right' : 'left',
+                  letterSpacing: i === 4 ? '0.06em' : undefined,
+                  borderTop: '2px solid #1e293b',
+                }}>
+                {v}
+              </td>
+            ))}
           </tr>
         </tfoot>
       </table>
