@@ -13,7 +13,7 @@ import {
 import {
   round2, fmt, money, moneyK, makeMoneyFmt, uid, normalize,
   findInsumo, conceptoCost, calcFicha, calcItem, calcKPIs,
-  findOrCreateInsumo, findPathById, CATEGORIAS, EMPTY_CATALOGOS,
+  findOrCreateInsumo, findPathById, calcExplosionInsumos, CATEGORIAS, EMPTY_CATALOGOS,
 } from '../lib/calc'
 import {
   exportPDFCatalogo, exportPDFPresupuesto, exportPDFFicha, exportPDFGeneral, exportPDFRangoFichas,
@@ -21,6 +21,7 @@ import {
   exportExcelPresupuesto, exportExcelCatalogo, exportExcelFicha, exportExcelGeneral,
   exportExcelRangoFichas, exportExcelPortafolio,
   exportPlantilla, exportPlantillaFicha, importExcelPresupuesto, importExcelCatalogo, importExcelFichas,
+  exportExcelExplosion, exportPDFExplosion,
 } from '../lib/export'
 
 // ============ SUPABASE MAPPING ============
@@ -212,6 +213,7 @@ function Sidebar({ page, setPage, projectActivo, setTabProject, tabProject, user
     { id: 'cat-sub',        label: 'Subcontratos',         Icon: Users },
     { id: 'indirectos',     label: 'Indirectos',           Icon: TrendingUp },
   ]
+  const explosionNav = { id: 'explosion', label: 'Explosión', Icon: Layers }
   const toolNav = [
     { id: 'reportes',   label: 'Reportes',             Icon: BarChart2 },
     { id: 'plantillas', label: 'Biblioteca',           Icon: BookOpen },
@@ -275,6 +277,13 @@ function Sidebar({ page, setPage, projectActivo, setTabProject, tabProject, user
                 <span>{label}</span>
               </button>
             ))}
+            <button
+              className={`side-nav-item ${page === 'explosion' ? 'active' : ''}`}
+              onClick={() => setPage('explosion')}
+            >
+              <explosionNav.Icon size={15} className="ico" />
+              <span>{explosionNav.label}</span>
+            </button>
           </nav>
         </div>
       )}
@@ -1212,6 +1221,7 @@ function FichaCostoModal({ open, onClose, actividad, budget, catalogos, params, 
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={() => budget && exportPDFFicha(budget, actividad, params, empresa)} className="btn" style={{ background: 'var(--c-danger)', borderColor: 'var(--c-danger)', color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}><FileText size={13} /> PDF</button>
             <button onClick={() => budget && exportExcelFicha(budget, actividad, params)} className="btn" style={{ background: 'var(--c-success)', borderColor: 'var(--c-success)', color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}><FileSpreadsheet size={13} /> Excel</button>
+            {onExplosion && <button onClick={onExplosion} className="btn" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Layers size={13} /> Explosión</button>}
           </div>
           <button onClick={onClose} className="btn primary">Cerrar</button>
         </div>
@@ -2003,6 +2013,168 @@ function CatalogoView({ budget, setBudget, categoria }) {
   )
 }
 
+// ============ EXPLOSIÓN DE INSUMOS ============
+const EXP_CATS = [
+  { key: 'materiales',        label: 'Materiales',          icon: Package },
+  { key: 'manoObra',          label: 'Mano de Obra',        icon: HardHat },
+  { key: 'herramientaEquipo', label: 'Herramienta/Equipo',  icon: Wrench },
+  { key: 'subcontratos',      label: 'Subcontratos',        icon: Users },
+]
+
+function ExplosionTable({ items, catTotal, money }) {
+  if (!items.length) return <div style={{ padding: '32px 20px', textAlign: 'center', color: 'var(--c-text-3)', fontSize: 13 }}>Sin insumos en esta categoría.</div>
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table className="bt">
+        <thead>
+          <tr>
+            <th style={{ width: 90 }}>Código</th>
+            <th>Descripción</th>
+            <th style={{ width: 80, textAlign: 'center' }}>Unidad</th>
+            <th className="num" style={{ width: 120 }}>Cant. Total</th>
+            <th className="num" style={{ width: 120 }}>Costo Unit.</th>
+            <th className="num" style={{ width: 130 }}>Costo Total</th>
+            <th className="num" style={{ width: 64 }}>%</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item, ri) => {
+            const pct = catTotal > 0 ? (item.costoTotal / catTotal * 100).toFixed(1) : '0.0'
+            return (
+              <tr key={item.id} style={{ background: ri % 2 ? 'var(--c-bg)' : undefined }}>
+                <td className="id">{item.codigo}</td>
+                <td style={{ fontWeight: 500 }}>{item.descripcion}</td>
+                <td style={{ textAlign: 'center', color: 'var(--c-text-2)' }}>{item.isHM ? '% MO' : item.unidad}</td>
+                <td className="num">{item.isHM ? <span style={{ color: 'var(--c-text-3)' }}>—</span> : fmt(item.cantTotal)}</td>
+                <td className="num">{item.isHM ? <span style={{ color: 'var(--c-text-3)' }}>—</span> : money(item.costoBase)}</td>
+                <td className="num" style={{ fontWeight: 700, color: 'var(--c-ink)' }}>{money(item.costoTotal)}</td>
+                <td className="num" style={{ color: 'var(--c-text-3)', fontSize: 12 }}>{pct}%</td>
+              </tr>
+            )
+          })}
+        </tbody>
+        <tfoot>
+          <tr style={{ background: 'var(--c-side)', color: '#fff' }}>
+            <td colSpan={5} style={{ padding: '10px 14px', fontWeight: 700, textAlign: 'right', color: 'rgba(255,255,255,0.7)' }}>TOTAL</td>
+            <td className="num" style={{ fontWeight: 800, fontSize: 14, color: '#f59e0b' }}>{money(catTotal)}</td>
+            <td className="num" style={{ fontWeight: 700, color: '#f59e0b' }}>100%</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  )
+}
+
+function ExplosionView({ budget, params }) {
+  const monFmt = makeMoneyFmt(budget.moneda)
+  const [tab, setTab] = useState('materiales')
+
+  const explosion = useMemo(
+    () => calcExplosionInsumos(budget.items, budget.catalogos, params),
+    [budget.items, budget.catalogos, params]
+  )
+
+  const grandTotal = EXP_CATS.reduce((s, c) => s + (explosion[c.key] || []).reduce((ss, i) => ss + i.costoTotal, 0), 0)
+  const catTotal   = (explosion[tab] || []).reduce((s, i) => s + i.costoTotal, 0)
+
+  return (
+    <Fragment>
+      <div className="page-head">
+        <div className="page-head-title">
+          <h1><Layers size={20} /> Explosión de Insumos</h1>
+          <div className="page-head-sub">{budget.nombreProyecto}</div>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn" onClick={() => exportPDFExplosion(budget, params).catch(e => alert(e.message))}>
+            <FileText size={14} /> PDF
+          </button>
+          <button className="btn" onClick={() => exportExcelExplosion(budget, params).catch(e => alert(e.message))}>
+            <FileSpreadsheet size={14} /> Excel
+          </button>
+        </div>
+      </div>
+
+      <div className="page-body">
+        {/* KPIs por categoría */}
+        <div className="kpi-row" style={{ marginBottom: 20 }}>
+          {EXP_CATS.map(c => {
+            const tot = (explosion[c.key] || []).reduce((s, i) => s + i.costoTotal, 0)
+            const pct = grandTotal > 0 ? (tot / grandTotal * 100).toFixed(1) : '0.0'
+            return (
+              <div key={c.key} className={`kpi ${tab === c.key ? 'highlight' : ''}`}
+                style={{ cursor: 'pointer' }} onClick={() => setTab(c.key)}>
+                <div className="kpi-label"><c.icon size={12} className="ico" /> {c.label}</div>
+                <div className="kpi-val">{monFmt(tot)}</div>
+                <div className="kpi-foot"><span>{pct}% del costo directo</span></div>
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="card" style={{ padding: 0 }}>
+          {/* Tabs */}
+          <div style={{ display: 'flex', borderBottom: '1px solid var(--c-line)', padding: '0 16px' }}>
+            {EXP_CATS.map(c => {
+              const count = (explosion[c.key] || []).length
+              return (
+                <button key={c.key} onClick={() => setTab(c.key)}
+                  style={{ padding: '12px 16px', fontSize: 13, fontWeight: tab === c.key ? 700 : 500, color: tab === c.key ? 'var(--c-primary)' : 'var(--c-text-2)', background: 'none', border: 'none', borderBottom: tab === c.key ? '2px solid var(--c-primary)' : '2px solid transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <c.icon size={13} /> {c.label}
+                  <span style={{ background: 'var(--c-bg)', borderRadius: 10, fontSize: 11, padding: '1px 7px', color: 'var(--c-text-3)' }}>{count}</span>
+                </button>
+              )
+            })}
+          </div>
+          <ExplosionTable items={explosion[tab] || []} catTotal={catTotal} money={monFmt} />
+        </div>
+      </div>
+    </Fragment>
+  )
+}
+
+// Explosión por actividad específica (modal)
+function ExplosionActividadModal({ open, onClose, actividad, budget, params }) {
+  const monFmt = makeMoneyFmt(budget?.moneda)
+  const [tab, setTab] = useState('materiales')
+
+  const explosion = useMemo(() => {
+    if (!open || !actividad || !budget) return { materiales: [], manoObra: [], herramientaEquipo: [], subcontratos: [] }
+    return calcExplosionInsumos(budget.items, budget.catalogos, params, it => it.id === actividad.id)
+  }, [open, actividad, budget, params])
+
+  const catTotal = (explosion[tab] || []).reduce((s, i) => s + i.costoTotal, 0)
+
+  if (!open || !actividad) return null
+  return (
+    <Drawer open={open} onClose={onClose} title="Explosión de Insumos" subtitle={actividad.descripcion} width={820}
+      footer={
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn ghost" onClick={onClose}>Cerrar</button>
+          <button className="btn" onClick={() => exportPDFExplosion(budget, params, actividad.id).catch(e => alert(e.message))}>
+            <FileText size={13} /> PDF
+          </button>
+          <button className="btn primary" onClick={() => exportExcelExplosion(budget, params, actividad.id).catch(e => alert(e.message))}>
+            <FileSpreadsheet size={13} /> Excel
+          </button>
+        </div>
+      }>
+      {/* Tabs */}
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--c-line)', marginBottom: 0 }}>
+        {EXP_CATS.map(c => {
+          const count = (explosion[c.key] || []).length
+          return (
+            <button key={c.key} onClick={() => setTab(c.key)}
+              style={{ padding: '8px 14px', fontSize: 12, fontWeight: tab === c.key ? 700 : 500, color: tab === c.key ? 'var(--c-primary)' : 'var(--c-text-2)', background: 'none', border: 'none', borderBottom: tab === c.key ? '2px solid var(--c-primary)' : '2px solid transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+              <c.icon size={12} /> {c.label} <span style={{ fontSize: 10, color: 'var(--c-text-3)' }}>({count})</span>
+            </button>
+          )
+        })}
+      </div>
+      <ExplosionTable items={explosion[tab] || []} catTotal={catTotal} money={monFmt} />
+    </Drawer>
+  )
+}
+
 // ============ PLANTILLAS PAGE ============
 // ============ REPORTES PAGE ============
 function ReportesPage({ proyectos, budget, params, userEmpresa }) {
@@ -2316,6 +2488,7 @@ export default function MainApp() {
   const [showRango, setShowRango] = useState(false)
   const [showUserSettings, setShowUserSettings] = useState(false)
   const [showNotifs, setShowNotifs] = useState(false)
+  const [explosionActividad, setExplosionActividad] = useState(null)
   const [profileOverride, setProfileOverride] = useState(null)
   const [saving, setSaving] = useState(false)
   const fileRef = useRef(null)
@@ -2546,6 +2719,7 @@ export default function MainApp() {
   else if (page === 'proyecto' && budget) crumbs = ['Proyectos', budget.nombreProyecto]
   else if (page === 'reportes')           crumbs = ['Reportes']
   else if (page === 'plantillas')        crumbs = ['Biblioteca']
+  else if (page === 'explosion' && budget) crumbs = [budget.nombreProyecto, 'Explosión de Insumos']
   else if (page === 'planes')            crumbs = ['Planes']
 
   const tabToCat = { 'cat-mat': 'materiales', 'cat-mo': 'manoObra', 'cat-he': 'herramientaEquipo', 'cat-sub': 'subcontratos' }
@@ -2599,6 +2773,7 @@ export default function MainApp() {
         {page === 'proyectos'  && <ProyectosPage proyectos={proyectos} openProject={openProject} addProject={addProject} deleteProject={deleteProject} />}
         {page === 'reportes'   && <ReportesPage  proyectos={proyectos} budget={budget} params={params} userEmpresa={userEmpresa} />}
         {page === 'plantillas' && <PlantillasPage budget={budget} setBudget={setBudget} />}
+        {page === 'explosion'  && budget && <ExplosionView budget={budget} params={params} />}
         {page === 'planes'     && <PlanesPage />}
 
         {/* ── PROYECTO VIEW ── */}
@@ -2726,7 +2901,17 @@ export default function MainApp() {
         params={params} onUpdate={updFicha}
         onUpdateCatalogos={nc => setBudget({ ...budget, catalogos: nc })}
         empresa={{ nombre: userEmpresa, logo: budget?.logoOfertante, headerBg: budget?.apuHeaderBg, headerText: budget?.apuHeaderText }}
+        onExplosion={() => { setExplosionActividad(fichaActividad); setFichaPath(null) }}
       />
+      {budget && explosionActividad && (
+        <ExplosionActividadModal
+          open={!!explosionActividad}
+          onClose={() => setExplosionActividad(null)}
+          actividad={explosionActividad}
+          budget={budget}
+          params={params}
+        />
+      )}
       {budget && <ConfigProyectoModal  open={showConfig}  onClose={() => setShowConfig(false)}  budget={budget} setBudget={setBudget} />}
       {budget && <GuardarVersionDialog open={showVersion} onClose={() => setShowVersion(false)} budget={budget} setBudget={setBudget} />}
       {budget && <RangoFichasDialog    open={showRango}   onClose={() => setShowRango(false)}   budget={budget} params={params} empresa={{ nombre: userEmpresa, logo: budget.logoOfertante, headerBg: budget.apuHeaderBg, headerText: budget.apuHeaderText }} />}

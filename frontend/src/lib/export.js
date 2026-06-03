@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx'
 import {
   round2, fmt, money, makeMoneyFmt, currencySymbol,
   findInsumo, conceptoCost,
-  calcItem, calcFicha, CATEGORIAS, uid, normalize,
+  calcItem, calcFicha, calcExplosionInsumos, CATEGORIAS, uid, normalize,
 } from './calc'
 
 const X = {
@@ -1099,4 +1099,149 @@ export async function exportExcelPortafolio(proyectos, empresa = '') {
 
   const buf = await wb.xlsx.writeBuffer()
   saveAs(new Blob([buf]), `Portafolio_${(empresa || 'Proyectos').replace(/[^\w]+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`)
+}
+
+// ============ EXPLOSIÓN DE INSUMOS — EXCEL ============
+export async function exportExcelExplosion(budget, params, actividadId = null) {
+  const MFMT = mfmt(budget.moneda)
+  const money2 = makeMoneyFmt(budget.moneda)
+  const explosion = calcExplosionInsumos(budget.items, budget.catalogos, params, actividadId ? it => it.id === actividadId : null)
+  const CATS = [
+    { key: 'materiales',        label: 'Materiales' },
+    { key: 'manoObra',          label: 'Mano de Obra' },
+    { key: 'herramientaEquipo', label: 'Herramienta y Equipo' },
+    { key: 'subcontratos',      label: 'Subcontratos' },
+  ]
+
+  const wb = new ExcelJS.Workbook()
+  const proyecto = budget.nombreProyecto || 'Proyecto'
+  const fecha    = new Date().toLocaleDateString('es-HN')
+
+  CATS.forEach(({ key, label }) => {
+    const items = explosion[key] || []
+    const ws = wb.addWorksheet(label)
+    ws.columns = [
+      { width: 12 }, { width: 44 }, { width: 10 },
+      { width: 16 }, { width: 16 }, { width: 18 }, { width: 8 },
+    ]
+
+    // Título
+    ws.mergeCells('A1:G1')
+    setC(ws, 'A1', `EXPLOSIÓN DE INSUMOS — ${label.toUpperCase()}`, { fill: X.titleFill, font: X.titleFont, alignment: X.ac })
+    ws.getRow(1).height = 28
+
+    // Info del proyecto
+    ws.mergeCells('A2:G2')
+    setC(ws, 'A2', `${proyecto}${actividadId ? ' (actividad específica)' : ''}   |   Fecha: ${fecha}`, { font: { italic: true, color: { argb: 'FF64748B' } }, alignment: X.ac })
+
+    // Headers
+    const HDRS = ['Código', 'Descripción', 'Unidad', 'Cantidad Total', 'Costo Unitario', 'Costo Total', '%']
+    HDRS.forEach((h, i) => setC(ws, String.fromCharCode(65 + i) + '4', h, { fill: X.headerFill, font: X.headerFont, alignment: i >= 3 ? X.ar : X.ac }))
+    ws.getRow(4).height = 22
+
+    const catTotal = items.reduce((s, i) => s + i.costoTotal, 0)
+
+    items.forEach((item, ri) => {
+      const row = 5 + ri
+      const pct = catTotal > 0 ? round2(item.costoTotal / catTotal * 100) : 0
+      const fill = ri % 2 === 0 ? undefined : { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } }
+      setC(ws, 'A' + row, item.codigo,       { fill, alignment: X.al })
+      setC(ws, 'B' + row, item.descripcion,  { fill, alignment: X.al, font: { bold: true } })
+      setC(ws, 'C' + row, item.isHM ? '% MO' : item.unidad, { fill, alignment: X.ac })
+      setC(ws, 'D' + row, item.isHM ? '—' : round2(item.cantTotal), { fill, alignment: X.ar, numFmt: item.isHM ? undefined : NFMT })
+      setC(ws, 'E' + row, item.isHM ? '—' : round2(item.costoBase), { fill, alignment: X.ar, numFmt: item.isHM ? undefined : MFMT })
+      setC(ws, 'F' + row, round2(item.costoTotal), { fill, alignment: X.ar, numFmt: MFMT, font: { bold: true } })
+      setC(ws, 'G' + row, pct / 100, { fill, alignment: X.ar, numFmt: '0.0%' })
+    })
+
+    // Total
+    const totRow = 5 + items.length
+    ws.mergeCells(`A${totRow}:E${totRow}`)
+    setC(ws, 'A' + totRow, `TOTAL ${label.toUpperCase()}`, { fill: X.totalFill, font: X.totalFont, alignment: X.ar })
+    setC(ws, 'F' + totRow, round2(catTotal), { fill: X.totalFill, font: X.totalFont, alignment: X.ar, numFmt: MFMT })
+    setC(ws, 'G' + totRow, 1, { fill: X.totalFill, font: X.totalFont, alignment: X.ar, numFmt: '0.0%' })
+    ws.getRow(totRow).height = 24
+  })
+
+  const buf = await wb.xlsx.writeBuffer()
+  const suffix = actividadId ? `_actividad_${actividadId}` : '_general'
+  saveAs(new Blob([buf]), `Explosion_${proyecto.replace(/[^\w]+/g, '_')}${suffix}_${new Date().toISOString().slice(0, 10)}.xlsx`)
+}
+
+// ============ EXPLOSIÓN DE INSUMOS — PDF ============
+export async function exportPDFExplosion(budget, params, actividadId = null) {
+  const monFmt = makeMoneyFmt(budget.moneda)
+  const explosion = calcExplosionInsumos(budget.items, budget.catalogos, params, actividadId ? it => it.id === actividadId : null)
+  const CATS = [
+    { key: 'materiales',        label: 'Materiales' },
+    { key: 'manoObra',          label: 'Mano de Obra' },
+    { key: 'herramientaEquipo', label: 'Herramienta y Equipo' },
+    { key: 'subcontratos',      label: 'Subcontratos' },
+  ]
+
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' })
+  const PW = 279, ML = 10, MT = 14, CW = PW - ML * 2
+
+  CATS.forEach(({ key, label }, ci) => {
+    if (ci > 0) doc.addPage()
+    const items = explosion[key] || []
+    const catTotal = items.reduce((s, i) => s + i.costoTotal, 0)
+    const proyecto = budget.nombreProyecto || 'Proyecto'
+    const fecha    = new Date().toLocaleDateString('es-HN')
+
+    // Header strip
+    doc.setFillColor(15, 17, 21)
+    doc.rect(ML, MT, CW, 12, 'F')
+    doc.setTextColor(245, 158, 11)
+    doc.setFontSize(11); doc.setFont('helvetica', 'bold')
+    doc.text(`EXPLOSIÓN DE INSUMOS — ${label.toUpperCase()}`, ML + 4, MT + 8)
+    doc.setTextColor(180, 180, 180)
+    doc.setFontSize(8); doc.setFont('helvetica', 'normal')
+    doc.text(`${proyecto}${actividadId ? ' (actividad)' : ''}   |   ${fecha}`, PW - ML - 4, MT + 8, { align: 'right' })
+
+    // Table
+    const head = [['Código', 'Descripción', 'Unidad', 'Cantidad Total', 'Costo Unitario', 'Costo Total', '%']]
+    const body = items.map(item => {
+      const pct = catTotal > 0 ? (item.costoTotal / catTotal * 100).toFixed(1) + '%' : '0.0%'
+      return [
+        item.codigo,
+        item.descripcion,
+        item.isHM ? '% MO' : item.unidad,
+        item.isHM ? '—' : fmt(item.cantTotal),
+        item.isHM ? '—' : monFmt(item.costoBase),
+        monFmt(item.costoTotal),
+        pct,
+      ]
+    })
+    body.push(['', 'TOTAL ' + label.toUpperCase(), '', '', '', monFmt(catTotal), '100%'])
+
+    doc.autoTable({
+      head,
+      body,
+      startY: MT + 14,
+      margin: { left: ML, right: ML },
+      styles: { fontSize: 8, cellPadding: 2.5 },
+      headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold', halign: 'center' },
+      columnStyles: {
+        0: { cellWidth: 20 },
+        1: { cellWidth: 80 },
+        2: { cellWidth: 20, halign: 'center' },
+        3: { cellWidth: 30, halign: 'right' },
+        4: { cellWidth: 32, halign: 'right' },
+        5: { cellWidth: 36, halign: 'right', fontStyle: 'bold' },
+        6: { cellWidth: 18, halign: 'right' },
+      },
+      didParseCell: data => {
+        if (data.row.index === body.length - 1) {
+          data.cell.styles.fillColor = [15, 17, 21]
+          data.cell.styles.textColor = [245, 158, 11]
+          data.cell.styles.fontStyle = 'bold'
+        }
+      },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+    })
+  })
+
+  const suffix = actividadId ? `_actividad_${actividadId}` : '_general'
+  doc.save(`Explosion_${(budget.nombreProyecto || 'Proyecto').replace(/[^\w]+/g, '_')}${suffix}_${new Date().toISOString().slice(0, 10)}.pdf`)
 }

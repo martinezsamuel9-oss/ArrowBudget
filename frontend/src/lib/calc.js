@@ -127,6 +127,67 @@ export const findOrCreateInsumo = (cat, k, desc) => {
   return { catalogos: { ...cat, [k]: [...(cat[k] || []), ni] }, insumo: ni }
 }
 
+// ============ EXPLOSIÓN DE INSUMOS ============
+// Consolida todas las fichas del presupuesto y suma cantidades/costos por insumo.
+// filterFn(actividad) → incluir esa actividad (null = todas)
+export const calcExplosionInsumos = (items, catalogos, params, filterFn = null) => {
+  const CATS = ['materiales', 'manoObra', 'herramientaEquipo', 'subcontratos']
+  const map = { materiales: {}, manoObra: {}, herramientaEquipo: {}, subcontratos: {} }
+
+  const walk = its => {
+    its.forEach(it => {
+      if (it.tipo === 'actividad') {
+        if (filterFn && !filterFn(it)) return
+        const actQty = +it.cantidad || 0
+        if (actQty === 0) return
+        const f = it.ficha || {}
+
+        // Calcular costo MO por unidad de actividad (base para Herramienta Menor)
+        const totMo = round2(
+          (f.manoObra || []).reduce((s, c) => {
+            const ins = findInsumo(catalogos, 'manoObra', c.insumoId)
+            return s + round2((+c.rendimiento || 0) * (+ins?.costoBase || 0) * (1 + (+c.desperdicio || 0) / 100))
+          }, 0)
+        )
+
+        CATS.forEach(cat => {
+          ;(f[cat] || []).forEach(c => {
+            if (!c.insumoId) return
+            const ins = findInsumo(catalogos, cat, c.insumoId)
+            if (!ins) return
+            const isHM = cat === 'herramientaEquipo' && normalize(ins.descripcion) === 'herramienta menor'
+            let cantTotal, costoTotal
+            if (isHM) {
+              // HM: su costo = rendimiento (%) × totMo × cantidad actividad
+              costoTotal = round2(actQty * (+c.rendimiento || 0) * totMo * (1 + (+c.desperdicio || 0) / 100))
+              cantTotal = 0
+            } else {
+              cantTotal = round2(actQty * (+c.rendimiento || 0) * (1 + (+c.desperdicio || 0) / 100))
+              costoTotal = round2(cantTotal * (+ins.costoBase || 0))
+            }
+            if (!map[cat][ins.id]) {
+              map[cat][ins.id] = {
+                id: ins.id, codigo: ins.codigo || '', descripcion: ins.descripcion,
+                unidad: ins.unidad, costoBase: +ins.costoBase || 0,
+                cantTotal: 0, costoTotal: 0, isHM,
+              }
+            }
+            map[cat][ins.id].cantTotal = round2(map[cat][ins.id].cantTotal + cantTotal)
+            map[cat][ins.id].costoTotal = round2(map[cat][ins.id].costoTotal + costoTotal)
+          })
+        })
+      } else if (it.children) walk(it.children)
+    })
+  }
+  walk(items)
+
+  const result = {}
+  CATS.forEach(cat => {
+    result[cat] = Object.values(map[cat]).sort((a, b) => b.costoTotal - a.costoTotal)
+  })
+  return result
+}
+
 export const findPathById = (items, id, path = []) => {
   for (let i = 0; i < items.length; i++) {
     if (items[i].id === id) return [...path, i]
