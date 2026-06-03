@@ -2058,10 +2058,10 @@ function ExplosionTable({ items, catTotal, money }) {
           })}
         </tbody>
         <tfoot>
-          <tr style={{ background: 'var(--c-side)', color: '#fff' }}>
-            <td colSpan={5} style={{ padding: '10px 14px', fontWeight: 700, textAlign: 'right', color: 'rgba(255,255,255,0.7)' }}>TOTAL</td>
-            <td className="num" style={{ fontWeight: 800, fontSize: 14, color: '#f59e0b' }}>{money(catTotal)}</td>
-            <td className="num" style={{ fontWeight: 700, color: '#f59e0b' }}>100%</td>
+          <tr style={{ background: '#0f1115' }}>
+            <td colSpan={5} style={{ padding: '10px 14px', fontWeight: 700, textAlign: 'right', color: 'rgba(255,255,255,0.6)', fontSize: 12, letterSpacing: '0.05em' }}>TOTAL</td>
+            <td className="num" style={{ fontWeight: 800, fontSize: 15, color: '#f59e0b', padding: '10px 14px' }}>{money(catTotal)}</td>
+            <td className="num" style={{ fontWeight: 700, color: '#f59e0b', padding: '10px 14px' }}>100%</td>
           </tr>
         </tfoot>
       </table>
