@@ -1153,7 +1153,7 @@ function FichaSection({ title, k, total, ficha, catalogos, onAdd, onDel, onUpd, 
 }
 
 // ============ FICHA COSTO MODAL ============
-function FichaCostoModal({ open, onClose, actividad, budget, catalogos, params, onUpdate, onUpdateCatalogos, empresa = {} }) {
+function FichaCostoModal({ open, onClose, actividad, budget, catalogos, params, onUpdate, onUpdateCatalogos, empresa = {}, onExplosion }) {
   if (!open || !actividad) return null
   const money = makeMoneyFmt(budget?.moneda)
   const f = actividad.ficha || { materiales: [], manoObra: [], herramientaEquipo: [], subcontratos: [] }
