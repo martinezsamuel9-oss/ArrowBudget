@@ -1830,7 +1830,11 @@ function PresupuestoTableComp({ budget, setBudget, onOpenFicha, params }) {
           <td className="desc" style={{ paddingLeft: 14 + ind }}>
             <input value={it.descripcion} onChange={e => upd(cp, 'descripcion', e.target.value)} className="cell-input" style={{ width: '100%' }} />
           </td>
-          <td><span className="unit-chip">{it.unidad}</span></td>
+          <td style={{ textAlign: 'center' }}>
+            <input value={it.unidad} onChange={e => upd(cp, 'unidad', e.target.value)}
+              className="cell-input" onFocus={e => e.target.select()}
+              style={{ width: 60, textAlign: 'center', textTransform: 'uppercase', fontSize: 11, fontWeight: 600 }} />
+          </td>
           <td className="num"><MathInput value={it.cantidad} onChange={v => upd(cp, 'cantidad', v)} className="cell-input num" /></td>
           <td className="num" style={{ cursor: 'pointer' }} onDoubleClick={() => onOpenFicha(cp)} title="Doble clic para abrir ficha">
             <span style={{ fontWeight: 600 }}>{money(c.precioUnitario)}</span>
