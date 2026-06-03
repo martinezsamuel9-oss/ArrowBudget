@@ -562,6 +562,7 @@ export async function exportPlantilla(tipo) {
     subcontratos:{title:'PLANTILLA SUBCONTRATOS',headers:['Código','Descripción','Unidad','Precio Base','Proveedor','Notas'],sample:[['SC-001','Instalación eléctrica','GBL',5500,'Electro S.A.','']],notas:'Servicios contratados a terceros.'},
   }
   const c=cfgs[tipo]; if(!c) return
+  const MFMT = '#,##0.00'
   const wb=new ExcelJS.Workbook(); const ws=wb.addWorksheet('Plantilla')
   ws.columns=c.headers.map((_,i)=>({width:tipo==='presupuesto'&&i===1?50:18}))
   const last=String.fromCharCode(64+c.headers.length)
