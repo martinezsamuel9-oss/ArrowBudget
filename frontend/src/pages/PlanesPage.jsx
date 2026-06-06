@@ -17,6 +17,12 @@ const PADDLE_PRICES = {
   },
 }
 
+const PLAN_FEATURES = {
+  intermedio: ['5 proyectos', '5 usuarios', 'Fichas ilimitadas', 'Exportación PDF y Excel', 'Explosión de Insumos', 'Soporte por email'],
+  avanzado:   ['10 proyectos', '10 usuarios', 'Todo Intermedio', 'Plantillas catálogo', 'Logo personalizado', 'Soporte prioritario'],
+  enterprise: ['40 proyectos', '20 usuarios', 'Todo Avanzado', 'Acceso API', 'Onboarding personalizado', 'SLA 99.9%'],
+}
+
 const PLAN_ORDER = ['intermedio', 'avanzado', 'enterprise']
 
 function loadPaddleJs() {
@@ -62,7 +68,7 @@ export default function PlanesPage() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#1b2133', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: '#161c28', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
 
       {/* Header */}
       <div style={{ borderBottom: '1px solid rgba(255,255,255,.07)', padding: '18px 32px' }}>
@@ -71,11 +77,11 @@ export default function PlanesPage() {
         </span>
       </div>
 
-      <div style={{ maxWidth: 1000, margin: '0 auto', padding: '60px 24px 80px' }}>
+      <div style={{ maxWidth: 1080, margin: '0 auto', padding: '56px 24px 80px' }}>
 
         {/* Título */}
-        <div style={{ textAlign: 'center', marginBottom: 48 }}>
-          <h1 style={{ color: '#fff', fontSize: 36, fontWeight: 800, margin: '0 0 10px' }}>
+        <div style={{ textAlign: 'center', marginBottom: 44 }}>
+          <h1 style={{ color: '#fff', fontSize: 38, fontWeight: 800, margin: '0 0 10px' }}>
             Elige tu plan
           </h1>
           <p style={{ color: '#94a3b8', fontSize: 15, margin: 0 }}>
@@ -86,19 +92,19 @@ export default function PlanesPage() {
           <div style={{ display: 'inline-flex', background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 999, padding: 4, marginTop: 24, gap: 4 }}>
             {[['monthly','Mensual'], ['yearly','Anual']].map(([val, label]) => (
               <button key={val} onClick={() => setBilling(val)} style={{
-                padding: '8px 22px', borderRadius: 999, border: 'none', cursor: 'pointer',
+                padding: '8px 24px', borderRadius: 999, border: 'none', cursor: 'pointer',
                 fontWeight: 700, fontSize: 14,
                 background: billing === val ? '#f59e0b' : 'transparent',
                 color: billing === val ? '#0f1115' : '#94a3b8',
               }}>
-                {label}{val === 'yearly' && <span style={{ fontSize: 12, marginLeft: 5 }}>−20%</span>}
+                {label}{val === 'yearly' && <span style={{ fontSize: 12, marginLeft: 5 }}>-20%</span>}
               </button>
             ))}
           </div>
         </div>
 
         {/* Cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 20, alignItems: 'start' }}>
           {PLAN_ORDER.map(pid => {
             const p = planes.find(x => x.id === pid)
             if (!p) return null
@@ -108,48 +114,61 @@ export default function PlanesPage() {
 
             return (
               <div key={pid} style={{
-                background: rec ? '#212840' : '#1e2535',
-                border: `2px solid ${rec ? '#f59e0b' : 'rgba(255,255,255,.08)'}`,
+                background: 'rgba(255,255,255,.06)',
+                border: `2px solid ${rec ? '#f59e0b' : 'rgba(255,255,255,.1)'}`,
                 borderRadius: 16,
                 padding: '28px 24px 24px',
                 position: 'relative',
+                backdropFilter: 'blur(8px)',
               }}>
                 {rec && (
                   <div style={{
                     position: 'absolute', top: -13, left: '50%', transform: 'translateX(-50%)',
                     background: '#f59e0b', color: '#0f1115', fontSize: 11, fontWeight: 800,
-                    padding: '3px 14px', borderRadius: 999, whiteSpace: 'nowrap', letterSpacing: 1,
+                    padding: '3px 16px', borderRadius: 999, whiteSpace: 'nowrap', letterSpacing: 1,
                   }}>
                     MÁS POPULAR
                   </div>
                 )}
 
-                <div style={{ fontWeight: 800, fontSize: 20, color: '#f1f5f9', marginBottom: 12 }}>
+                {/* Nombre */}
+                <div style={{ fontWeight: 800, fontSize: 22, color: '#f1f5f9', marginBottom: 12 }}>
                   {p.nombre}
                 </div>
 
-                <div style={{ marginBottom: 22 }}>
-                  <span style={{ color: '#f59e0b', fontWeight: 900, fontSize: 40 }}>${precio}</span>
+                {/* Precio */}
+                <div style={{ marginBottom: 20 }}>
+                  <span style={{ color: '#f59e0b', fontWeight: 900, fontSize: 44 }}>${precio}</span>
                   <span style={{ color: '#64748b', fontSize: 14, marginLeft: 4 }}>{periodo}</span>
                 </div>
 
                 {/* Proyectos / Usuarios */}
-                <div style={{ display: 'flex', gap: 12, marginBottom: 24 }}>
+                <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
                   {[['proyectos', p.max_proyectos], ['usuarios', p.max_usuarios]].map(([lbl, val]) => (
                     <div key={lbl} style={{
-                      flex: 1, background: 'rgba(0,0,0,.25)', borderRadius: 10,
+                      flex: 1, background: 'rgba(0,0,0,.3)', borderRadius: 10,
                       padding: '12px 0', textAlign: 'center',
                     }}>
-                      <div style={{ color: '#f59e0b', fontWeight: 900, fontSize: 26 }}>{val}</div>
-                      <div style={{ color: '#64748b', fontSize: 12, marginTop: 2 }}>{lbl}</div>
+                      <div style={{ color: '#f59e0b', fontWeight: 900, fontSize: 28 }}>{val}</div>
+                      <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 2 }}>{lbl}</div>
                     </div>
                   ))}
                 </div>
 
+                {/* Features */}
+                <ul style={{ listStyle: 'none', margin: '0 0 24px', padding: 0 }}>
+                  {PLAN_FEATURES[pid].map(f => (
+                    <li key={f} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                      <span style={{ color: '#22c55e', fontWeight: 700, fontSize: 15 }}>✓</span>
+                      <span style={{ color: '#e2e8f0', fontSize: 14 }}>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+
                 <button onClick={() => handleCheckout(pid)} disabled={busy === pid} style={{
-                  width: '100%', padding: '12px 0', borderRadius: 10, border: 'none',
+                  width: '100%', padding: '13px 0', borderRadius: 10, border: 'none',
                   fontWeight: 700, fontSize: 15, cursor: busy === pid ? 'not-allowed' : 'pointer',
-                  background: rec ? '#f59e0b' : 'rgba(255,255,255,.08)',
+                  background: rec ? '#f59e0b' : 'rgba(255,255,255,.1)',
                   color: rec ? '#0f1115' : '#e2e8f0',
                   opacity: busy === pid ? .7 : 1,
                 }}>
@@ -161,9 +180,9 @@ export default function PlanesPage() {
         </div>
 
         <p style={{ textAlign: 'center', color: '#475569', fontSize: 13, marginTop: 36 }}>
-          Pagos procesados por{' '}
+          Pagos procesados de forma segura por{' '}
           <a href="https://paddle.com" target="_blank" rel="noreferrer" style={{ color: '#64748b' }}>Paddle</a>
-          {' '}·{' '}
+          {' '}· Cancela desde tu perfil en cualquier momento ·{' '}
           <a href="/reembolso.html" style={{ color: '#64748b' }}>Política de reembolso</a>
         </p>
       </div>
