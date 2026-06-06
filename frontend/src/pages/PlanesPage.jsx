@@ -71,10 +71,10 @@ export default function PlanesPage() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0f1115', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: '#1c2130', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
 
       {/* Header */}
-      <div style={{ borderBottom: '1px solid #1e2229', padding: '18px 32px', display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ borderBottom: '1px solid #2d3448', padding: '18px 32px', display: 'flex', alignItems: 'center', gap: 12 }}>
         <span style={{ color: '#fff', fontWeight: 800, fontSize: 20, letterSpacing: 1 }}>
           ARROW <span style={{ color: '#f59e0b' }}>BUDGET</span>
         </span>
@@ -93,7 +93,7 @@ export default function PlanesPage() {
 
           {/* Toggle mensual/anual */}
           <div style={{
-            display: 'inline-flex', background: '#1a1f27', border: '1px solid #2a303c',
+            display: 'inline-flex', background: '#252d40', border: '1px solid #3a4260',
             borderRadius: 999, padding: 4, marginTop: 24, gap: 4,
           }}>
             {['monthly', 'yearly'].map(b => (
@@ -120,10 +120,9 @@ export default function PlanesPage() {
 
             return (
               <div key={pid} style={{
-                background: isRecomendado ? '#1a1f27' : '#141820',
-                border: `2px solid ${isRecomendado ? '#f59e0b' : '#1e2229'}`,
+                background: isRecomendado ? '#252d40' : '#202636',
+                border: `2px solid ${isRecomendado ? '#f59e0b' : '#2d3448'}`,
                 borderRadius: 16, padding: '28px 24px', position: 'relative',
-                display: 'flex', flexDirection: 'column',
               }}>
                 {isRecomendado && (
                   <div style={{
@@ -146,7 +145,7 @@ export default function PlanesPage() {
 
                 {/* Límites */}
                 <div style={{
-                  background: '#0f1115', borderRadius: 8, padding: '10px 14px',
+                  background: '#161c2a', borderRadius: 8, padding: '10px 14px',
                   marginBottom: 16, display: 'flex', gap: 20,
                 }}>
                   <div style={{ textAlign: 'center' }}>
@@ -159,16 +158,6 @@ export default function PlanesPage() {
                     <div style={{ color: '#64748b', fontSize: 11 }}>usuarios</div>
                   </div>
                 </div>
-
-                {/* Features */}
-                <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 24px', flex: 1 }}>
-                  {(p.features || []).map(f => (
-                    <li key={f} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                      <span style={{ color: '#22c55e', fontWeight: 700, fontSize: 14 }}>✓</span>
-                      <span style={{ color: '#cbd5e1', fontSize: 14 }}>{f}</span>
-                    </li>
-                  ))}
-                </ul>
 
                 {/* Botón Paddle */}
                 <button
