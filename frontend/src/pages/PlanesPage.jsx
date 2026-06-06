@@ -1,85 +1,201 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+import { supabase } from '../lib/supabase'
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:4000'
+// Price IDs de Paddle (configurar en Cloudflare Pages → Settings → Environment Variables)
+const PADDLE_PRICES = {
+  intermedio: {
+    monthly: import.meta.env.VITE_PADDLE_PRICE_INTERMEDIO_MONTHLY || '',
+    yearly:  import.meta.env.VITE_PADDLE_PRICE_INTERMEDIO_YEARLY  || '',
+  },
+  avanzado: {
+    monthly: import.meta.env.VITE_PADDLE_PRICE_AVANZADO_MONTHLY || '',
+    yearly:  import.meta.env.VITE_PADDLE_PRICE_AVANZADO_YEARLY  || '',
+  },
+  enterprise: {
+    monthly: import.meta.env.VITE_PADDLE_PRICE_ENTERPRISE_MONTHLY || '',
+    yearly:  import.meta.env.VITE_PADDLE_PRICE_ENTERPRISE_YEARLY  || '',
+  },
+}
+
+const PLAN_ORDER = ['intermedio', 'avanzado', 'enterprise']
+
+function loadPaddleJs() {
+  if (window.Paddle) return Promise.resolve()
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script')
+    s.src = 'https://cdn.paddle.com/paddle/v2/paddle.js'
+    s.onload = () => {
+      window.Paddle.Initialize({ token: import.meta.env.VITE_PADDLE_CLIENT_TOKEN || '' })
+      resolve()
+    }
+    s.onerror = reject
+    document.head.appendChild(s)
+  })
+}
 
 export default function PlanesPage() {
   const { user } = useAuth()
-  const [planes, setPlanes] = useState([])
+  const [planes, setPlanes]   = useState([])
   const [billing, setBilling] = useState('monthly')
-  const [busy, setBusy] = useState(null)
+  const [busy, setBusy]       = useState(null)
 
   useEffect(() => {
-    supabase.from('planes').select('*').eq('activo', true).order('orden')
+    supabase.from('planes')
+      .select('*')
+      .in('id', PLAN_ORDER)
+      .eq('activo', true)
+      .order('orden')
       .then(({ data }) => setPlanes(data || []))
   }, [])
 
-  const checkout = async (planId, provider) => {
-    setBusy(`${planId}-${provider}`)
+  const handleCheckout = async (planId) => {
+    const priceId = PADDLE_PRICES[planId]?.[billing]
+    if (!priceId) {
+      alert('Configuración de precio no disponible. Contacta a soporte.')
+      return
+    }
+    setBusy(planId)
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch(`${API}/api/${provider}/checkout`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ plan_id: planId, billing_period: billing }),
-      })
-      const data = await res.json()
-      if (data.url) window.location.href = data.url
-      else if (data.approval_url) window.location.href = data.approval_url
-      else alert('No se pudo iniciar el pago')
+      await loadPaddleJs()
+      const opts = {
+        items: [{ priceId, quantity: 1 }],
+        successUrl: `${window.location.origin}/?checkout=success`,
+      }
+      if (user?.email) opts.customer = { email: user.email }
+      window.Paddle.Checkout.open(opts)
     } catch (e) {
-      alert(e.message)
+      alert('No se pudo abrir el checkout. Intenta de nuevo.')
     }
     setBusy(null)
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-6xl mx-auto">
-        <Link to="/" className="text-blue-700 text-sm">← Volver</Link>
-        <div className="text-center mb-8 mt-2">
-          <h1 className="text-3xl font-bold text-slate-800">Elige tu plan</h1>
-          <p className="text-gray-600 mt-2">Comenzá gratis 7 días. Cancelá cuando quieras.</p>
-          <div className="inline-flex bg-white border rounded-full p-1 mt-4">
-            <button onClick={() => setBilling('monthly')}
-              className={`px-4 py-1.5 rounded-full text-sm ${billing === 'monthly' ? 'bg-blue-700 text-white' : 'text-gray-600'}`}>
-              Mensual
-            </button>
-            <button onClick={() => setBilling('yearly')}
-              className={`px-4 py-1.5 rounded-full text-sm ${billing === 'yearly' ? 'bg-blue-700 text-white' : 'text-gray-600'}`}>
-              Anual <span className="text-xs">(-20%)</span>
-            </button>
+    <div style={{ minHeight: '100vh', background: '#0f1115', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
+
+      {/* Header */}
+      <div style={{ borderBottom: '1px solid #1e2229', padding: '18px 32px', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <span style={{ color: '#fff', fontWeight: 800, fontSize: 20, letterSpacing: 1 }}>
+          ARROW <span style={{ color: '#f59e0b' }}>BUDGET</span>
+        </span>
+      </div>
+
+      <div style={{ maxWidth: 1000, margin: '0 auto', padding: '56px 24px 80px' }}>
+
+        {/* Título */}
+        <div style={{ textAlign: 'center', marginBottom: 48 }}>
+          <h1 style={{ color: '#fff', fontSize: 36, fontWeight: 800, marginBottom: 10 }}>
+            Elige tu plan
+          </h1>
+          <p style={{ color: '#94a3b8', fontSize: 16 }}>
+            7 días de prueba gratis · Sin contrato · Cancela cuando quieras
+          </p>
+
+          {/* Toggle mensual/anual */}
+          <div style={{
+            display: 'inline-flex', background: '#1a1f27', border: '1px solid #2a303c',
+            borderRadius: 999, padding: 4, marginTop: 24, gap: 4,
+          }}>
+            {['monthly', 'yearly'].map(b => (
+              <button key={b} onClick={() => setBilling(b)} style={{
+                padding: '8px 22px', borderRadius: 999, border: 'none', cursor: 'pointer',
+                fontWeight: 600, fontSize: 14, transition: 'all .15s',
+                background: billing === b ? '#f59e0b' : 'transparent',
+                color: billing === b ? '#0f1115' : '#94a3b8',
+              }}>
+                {b === 'monthly' ? 'Mensual' : 'Anual'}{b === 'yearly' && <span style={{ fontSize: 12, marginLeft: 4 }}>-20%</span>}
+              </button>
+            ))}
           </div>
         </div>
-        <div className="grid md:grid-cols-3 gap-4">
-          {planes.map(p => (
-            <div key={p.id} className={`bg-white rounded-xl border-2 p-6 ${p.id === 'pro' ? 'border-blue-600 ring-2 ring-blue-500' : 'border-gray-200'}`}>
-              <h3 className="font-bold text-lg">{p.nombre}</h3>
-              <div className="my-3">
-                <span className="text-4xl font-bold">${billing === 'monthly' ? p.precio_mensual : p.precio_anual}</span>
-                <span className="text-gray-500 text-sm">/{billing === 'monthly' ? 'mes' : 'año'}</span>
-              </div>
-              <ul className="space-y-2 text-sm text-gray-700 mb-6">
-                {(p.features || []).map(f => <li key={f}>✓ {f}</li>)}
-              </ul>
-              <div className="space-y-2">
-                <button onClick={() => checkout(p.id, 'stripe')} disabled={busy === `${p.id}-stripe`}
-                  className="w-full bg-blue-700 hover:bg-blue-800 text-white py-2 rounded font-semibold disabled:opacity-60">
-                  {busy === `${p.id}-stripe` ? 'Procesando…' : 'Pagar con Stripe'}
+
+        {/* Cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 20 }}>
+          {PLAN_ORDER.map(pid => {
+            const p = planes.find(x => x.id === pid)
+            if (!p) return null
+            const isRecomendado = pid === 'avanzado'
+            const precio = billing === 'monthly' ? p.precio_mensual : p.precio_anual
+            const periodo = billing === 'monthly' ? '/mes' : '/año'
+
+            return (
+              <div key={pid} style={{
+                background: isRecomendado ? '#1a1f27' : '#141820',
+                border: `2px solid ${isRecomendado ? '#f59e0b' : '#1e2229'}`,
+                borderRadius: 16, padding: '28px 24px', position: 'relative',
+                display: 'flex', flexDirection: 'column',
+              }}>
+                {isRecomendado && (
+                  <div style={{
+                    position: 'absolute', top: -13, left: '50%', transform: 'translateX(-50%)',
+                    background: '#f59e0b', color: '#0f1115', fontSize: 12, fontWeight: 800,
+                    padding: '3px 14px', borderRadius: 999, whiteSpace: 'nowrap',
+                  }}>
+                    MÁS POPULAR
+                  </div>
+                )}
+
+                <div style={{ marginBottom: 6 }}>
+                  <span style={{ color: '#fff', fontWeight: 800, fontSize: 20 }}>{p.nombre}</span>
+                </div>
+
+                <div style={{ marginBottom: 20 }}>
+                  <span style={{ color: '#f59e0b', fontWeight: 800, fontSize: 38 }}>${precio}</span>
+                  <span style={{ color: '#64748b', fontSize: 14, marginLeft: 4 }}>{periodo}</span>
+                </div>
+
+                {/* Límites */}
+                <div style={{
+                  background: '#0f1115', borderRadius: 8, padding: '10px 14px',
+                  marginBottom: 16, display: 'flex', gap: 20,
+                }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ color: '#f59e0b', fontWeight: 800, fontSize: 20 }}>{p.max_proyectos}</div>
+                    <div style={{ color: '#64748b', fontSize: 11 }}>proyectos</div>
+                  </div>
+                  <div style={{ width: 1, background: '#1e2229' }} />
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ color: '#f59e0b', fontWeight: 800, fontSize: 20 }}>{p.max_usuarios}</div>
+                    <div style={{ color: '#64748b', fontSize: 11 }}>usuarios</div>
+                  </div>
+                </div>
+
+                {/* Features */}
+                <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 24px', flex: 1 }}>
+                  {(p.features || []).map(f => (
+                    <li key={f} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                      <span style={{ color: '#22c55e', fontWeight: 700, fontSize: 14 }}>✓</span>
+                      <span style={{ color: '#cbd5e1', fontSize: 14 }}>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                {/* Botón Paddle */}
+                <button
+                  onClick={() => handleCheckout(pid)}
+                  disabled={busy === pid}
+                  style={{
+                    width: '100%', padding: '12px 0', borderRadius: 8, border: 'none',
+                    fontWeight: 700, fontSize: 15, cursor: busy === pid ? 'not-allowed' : 'pointer',
+                    background: isRecomendado ? '#f59e0b' : '#1e2229',
+                    color: isRecomendado ? '#0f1115' : '#e2e8f0',
+                    opacity: busy === pid ? 0.7 : 1, transition: 'opacity .15s',
+                  }}
+                >
+                  {busy === pid ? 'Abriendo checkout…' : 'Suscribirme'}
                 </button>
-                <button onClick={() => checkout(p.id, 'paypal')} disabled={busy === `${p.id}-paypal`}
-                  className="w-full bg-yellow-400 hover:bg-yellow-500 text-blue-900 py-2 rounded font-semibold disabled:opacity-60">
-                  {busy === `${p.id}-paypal` ? 'Procesando…' : 'PayPal'}
-                </button>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
+
+        {/* Footer */}
+        <p style={{ textAlign: 'center', color: '#475569', fontSize: 13, marginTop: 40 }}>
+          Pagos procesados de forma segura por{' '}
+          <a href="https://paddle.com" target="_blank" rel="noreferrer" style={{ color: '#64748b' }}>Paddle</a>
+          {' '}· Cancela desde tu perfil en cualquier momento ·{' '}
+          <a href="/reembolso.html" style={{ color: '#64748b' }}>Política de reembolso</a>
+        </p>
       </div>
     </div>
   )
