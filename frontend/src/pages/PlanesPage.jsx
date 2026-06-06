@@ -128,12 +128,7 @@ function Nav() {
         </div>
       </a>
       <nav className="hidden items-center gap-8 md:flex">
-        {['Producto', 'Funciones', 'Planes', 'Recursos'].map((x) => (
-          <a key={x} href="#planes"
-            className={`text-sm font-500 transition-colors hover:text-white ${x === 'Planes' ? 'text-gold' : 'text-slate-300'}`}>
-            {x}
-          </a>
-        ))}
+        <a href="#planes" className="text-sm font-500 text-gold transition-colors hover:text-white">Planes</a>
       </nav>
       <div className="flex items-center gap-3">
         <button onClick={() => navigate('/login')}
@@ -309,7 +304,7 @@ function SuiteFooter() {
   const apps = [
     { n: 'Arrow',           d: 'Gestión de obras',         live: true,  here: false },
     { n: 'Arrow Budget',    d: 'Presupuestos',              live: true,  here: true  },
-    { n: 'Arrow Dovehawks', d: 'Inspección con drones',     live: false, here: false },
+    { n: 'Arrow Dovehawks', d: '',                           live: false, here: false },
   ]
   return (
     <footer className="relative z-10 mt-24 border-t border-white/10">
