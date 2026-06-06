@@ -357,9 +357,13 @@ export default function LoginPage() {
       {/* Footer */}
       <div style={{ textAlign: 'center', padding: '16px 24px', fontSize: 12, color: 'var(--c-text-3)' }}>
         &copy; {new Date().getFullYear()} Arrow Budget · Innova 504 &nbsp;·&nbsp;
+        <a href="/planes" target="_blank" style={{ color: 'var(--c-text-2)', textDecoration: 'none' }}>Precios</a>
+        &nbsp;·&nbsp;
         <a href="/privacidad.html" target="_blank" style={{ color: 'var(--c-text-2)', textDecoration: 'none' }}>Privacidad</a>
         &nbsp;·&nbsp;
         <a href="/terminos.html" target="_blank" style={{ color: 'var(--c-text-2)', textDecoration: 'none' }}>Términos</a>
+        &nbsp;·&nbsp;
+        <a href="/reembolso.html" target="_blank" style={{ color: 'var(--c-text-2)', textDecoration: 'none' }}>Reembolso</a>
         &nbsp;·&nbsp;
         <a href="/eliminar-cuenta.html" target="_blank" style={{ color: 'var(--c-text-2)', textDecoration: 'none' }}>Eliminar cuenta</a>
       </div>
