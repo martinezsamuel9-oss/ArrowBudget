@@ -34,7 +34,32 @@ ALTER TABLE public.presupuestos
 ALTER TABLE public.presupuestos
   ADD COLUMN IF NOT EXISTS pct_impuesto numeric(6,2) DEFAULT 15;
 
--- 4. Columnas dedicadas para m² (Bug fix: antes solo se guardaban dentro de catalogos_json)
+-- 4. Corregir trigger para guardar full_name al crear perfil
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger AS $$
+BEGIN
+  INSERT INTO public.profiles (id, email, full_name)
+  VALUES (
+    new.id,
+    new.email,
+    new.raw_user_meta_data->>'full_name'
+  )
+  ON CONFLICT (id) DO UPDATE SET
+    full_name = EXCLUDED.full_name;
+  RETURN new;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Backfill: actualizar usuarios existentes que tienen full_name en auth pero no en profiles
+UPDATE public.profiles p
+SET full_name = u.raw_user_meta_data->>'full_name'
+FROM auth.users u
+WHERE p.id = u.id
+  AND (p.full_name IS NULL OR p.full_name = '')
+  AND u.raw_user_meta_data->>'full_name' IS NOT NULL
+  AND u.raw_user_meta_data->>'full_name' != '';
+
+-- 5. Columnas dedicadas para m² (Bug fix: antes solo se guardaban dentro de catalogos_json)
 ALTER TABLE public.presupuestos
   ADD COLUMN IF NOT EXISTS m2_construccion numeric(12,2) DEFAULT 0,
   ADD COLUMN IF NOT EXISTS m2_estructura   numeric(12,2) DEFAULT 0;

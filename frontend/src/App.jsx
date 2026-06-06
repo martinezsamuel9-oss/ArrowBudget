@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
 import LoginPage from './pages/LoginPage'
 import MainApp from './pages/MainApp'
+import PlanesPage from './pages/PlanesPage'
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
@@ -18,6 +19,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/planes" element={<PlanesPage />} />
       <Route path="/*" element={<ProtectedRoute><MainApp /></ProtectedRoute>} />
     </Routes>
   )
