@@ -1917,6 +1917,8 @@ function CatalogoView({ budget, setBudget, categoria }) {
     e.preventDefault(); const desc = form.descripcion.trim(); if (!desc) return alert('Descripción obligatoria.')
     const n = normalize(desc); const dup = list.find(i => normalize(i.descripcion) === n && i.unidad === form.unidad && i.id !== editId)
     if (dup) return alert(`Ya existe: "${dup.descripcion}" (${dup.unidad}). Dos insumos pueden tener el mismo nombre si tienen diferente unidad.`)
+    const codTrim = form.codigo.trim()
+    if (codTrim) { const codDup = list.find(i => i.codigo && normalize(i.codigo) === normalize(codTrim) && i.id !== editId); if (codDup) return alert(`El código "${codTrim}" ya está en uso por "${codDup.descripcion}". Usa un código único para cada insumo.`) }
     const nc = { ...budget.catalogos }
     if (editId) nc[categoria.key] = list.map(i => i.id === editId ? { ...i, ...form, descripcion: desc, costoBase: +form.costoBase || 0 } : i)
     else nc[categoria.key] = [...list, { id: uid(), ...form, descripcion: desc, costoBase: +form.costoBase || 0 }]

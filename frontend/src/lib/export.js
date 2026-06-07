@@ -820,7 +820,9 @@ export async function importExcelCatalogo(file, budget, setBudget, catKey) {
     const r=rows[i]; const desc=String(r[1]||'').trim(); if(!desc) continue
     const n=normalize(desc)
     if(list.find(x=>normalize(x.descripcion)===n)){du++;continue}
-    list.push({id:uid(),codigo:String(r[0]||'').trim(),descripcion:desc,unidad:String(r[2]||'und').trim(),costoBase:parseFloat(r[3])||0,proveedor:String(r[4]||'').trim(),notas:String(r[5]||'').trim()}); ag++
+    const codigoRaw=String(r[0]||'').trim()
+    if(codigoRaw && list.find(x=>x.codigo && normalize(x.codigo)===normalize(codigoRaw))){du++;continue}
+    list.push({id:uid(),codigo:codigoRaw,descripcion:desc,unidad:String(r[2]||'und').trim(),costoBase:parseFloat(r[3])||0,proveedor:String(r[4]||'').trim(),notas:String(r[5]||'').trim()}); ag++
   }
   if(!ag&&!du) return alert('No se detectaron filas válidas.')
   if(!confirm(`Se agregarán ${ag} ${cat.label.toLowerCase()} (${du} duplicados omitidos). ¿Continuar?`)) return
