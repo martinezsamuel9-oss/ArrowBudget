@@ -2526,7 +2526,9 @@ export default function MainApp() {
     const CATS = ['materiales','manoObra','herramientaEquipo','subcontratos']
     const CAT_TAB = { materiales: 'cat-mat', manoObra: 'cat-mo', herramientaEquipo: 'cat-he', subcontratos: 'cat-sub' }
 
-    proyectos.forEach(p => {
+    // Solo alertas del proyecto activo; si no hay ninguno abierto, no mostrar nada
+    const scope = activeId ? proyectos.filter(p => p.id === activeId) : []
+    scope.forEach(p => {
       const alertedCostoBase = new Set()
 
       const walk = items => {
@@ -2572,7 +2574,7 @@ export default function MainApp() {
       walk(p.items || [])
     })
     return alerts
-  }, [proyectos])
+  }, [proyectos, activeId])
 
   // Cargar presupuestos
   useEffect(() => {
