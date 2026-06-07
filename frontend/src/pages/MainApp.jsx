@@ -502,7 +502,7 @@ function DescargasMenu({ budget, params, onRangoFichas, empresa = {} }) {
       </button>
     }>
       <div style={{ padding: '8px 14px 6px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--c-text-3)', background: 'var(--c-bg-2)', borderBottom: '1px solid var(--c-line)' }}>Presupuesto</div>
-      <Row label="Presupuesto completo" desc="Tabla con todos los capítulos" pdf={() => exportPDFPresupuesto(budget, params)} excel={() => exportExcelPresupuesto(budget, params)} />
+      <Row label="Presupuesto completo" desc="Tabla con todos los capítulos" pdf={() => exportPDFPresupuesto(budget, params, empresa)} excel={() => exportExcelPresupuesto(budget, params)} />
       <div style={{ padding: '8px 14px 6px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--c-text-3)', background: 'var(--c-bg-2)', borderBottom: '1px solid var(--c-line)', borderTop: '1px solid var(--c-line)' }}>Fichas de costo</div>
       <Row label="Rango de fichas" desc="Seleccionar varias actividades" pdf={onRangoFichas} excel={onRangoFichas} />
       <div style={{ padding: '8px 14px 6px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--c-text-3)', background: 'var(--c-bg-2)', borderBottom: '1px solid var(--c-line)', borderTop: '1px solid var(--c-line)' }}>General</div>
@@ -2265,7 +2265,7 @@ function ReportesPage({ proyectos, budget, params, userEmpresa }) {
                       icon={FileText}
                       title="Presupuesto General"
                       desc="Desglose completo por capítulos, subcapítulos y actividades con precios unitarios y subtotales."
-                      onPdf={()   => exportPDFPresupuesto(budget, params)}
+                      onPdf={()   => exportPDFPresupuesto(budget, params, { nombre: userEmpresa, logo: budget?.logoOfertante, headerBg: budget?.apuHeaderBg, headerText: budget?.apuHeaderText })}
                       onExcel={() => exportExcelPresupuesto(budget, params)}
                     />
                     <ReporteCard
