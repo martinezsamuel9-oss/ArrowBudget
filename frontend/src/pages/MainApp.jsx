@@ -2678,18 +2678,16 @@ export default function MainApp() {
   }
 
   const addProject = async () => {
-    const { data: orgId, error: orgErr } = await supabase.rpc('get_user_org_id')
-    console.log('[addProject] org_id:', orgId, 'err:', orgErr)
-    if (!orgId) { alert(`Sin org_id: ${orgErr?.message || 'null'}`); return }
+    const { data: orgId } = await supabase.rpc('get_user_org_id')
+    if (!orgId) { alert('No se encontró tu organización. Contacta a soporte.'); return }
 
-    const { data, error: insErr } = await supabase.from('presupuestos').insert({
+    const { data, error } = await supabase.from('presupuestos').insert({
       user_id: user.id, org_id: orgId,
       nombre_proyecto: 'Nuevo Proyecto', cotizante: userEmpresa,
       cliente: '', lugar: '', pct_indirectos: 10, pct_imprevistos: 1, pct_utilidad: 8, pct_impuesto: 15,
       catalogos_json: { ...EMPTY_CATALOGOS }, items_json: [], estado: 'borrador',
     }).select().single()
-    console.log('[addProject] insert data:', data, 'err:', insErr)
-    if (insErr) { alert(`Error al crear proyecto: ${insErr.message}`); return }
+    if (error) { alert('Error al crear proyecto: ' + error.message); return }
     if (data) { const nb = mapDb(data); setProyectos(ps => [nb, ...ps]); setActiveId(nb.id); setPage('proyecto'); setTabProject('presupuesto') }
   }
 
