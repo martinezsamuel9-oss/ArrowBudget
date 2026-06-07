@@ -74,8 +74,8 @@ const PLANS = [
       'Onboarding personalizado',
       'SLA garantizado de 99.9%',
     ],
-    cta:  'Contactar ventas',
-    kind: 'contact',
+    cta:  'Comenzar prueba gratis',
+    kind: 'subscribe',
   },
 ]
 
@@ -168,8 +168,9 @@ function BillingToggle({ annual, setAnnual }) {
 
 /* ─── Plan card ─── */
 function PlanCard({ plan, annual, onSubscribe, busy }) {
-  const price = annual ? plan.annual : plan.monthly
-  const [dollars, cents] = price.toFixed(2).split('.')
+  const monthlyEquiv = annual ? plan.annual : plan.monthly
+  const displayPrice = annual ? plan.annual * 12 : plan.monthly
+  const [dollars, cents] = displayPrice.toFixed(2).split('.')
   const popular = plan.popular
 
   return (
@@ -199,10 +200,10 @@ function PlanCard({ plan, annual, onSubscribe, busy }) {
           <span className="font-display text-2xl font-600 text-gold">$</span>
           <span className="font-display text-5xl font-700 leading-none tracking-tight text-gold">{dollars}</span>
           <span className="font-display text-2xl font-600 text-gold">.{cents}</span>
-          <span className="mb-1 ml-1 text-sm font-500 text-slate-400">/mes</span>
+          <span className="mb-1 ml-1 text-sm font-500 text-slate-400">{annual ? '/año' : '/mes'}</span>
         </div>
         <p className="mt-2 h-4 text-xs text-slate-500">
-          {annual ? `Facturado $${(price * 12).toFixed(2)} al año` : 'Facturación mensual · sin contrato'}
+          {annual ? `~$${monthlyEquiv.toFixed(2)}/mes · sin contrato` : 'Facturación mensual · sin contrato'}
         </p>
       </div>
 
@@ -417,7 +418,6 @@ export default function PlanesPage() {
         </section>
 
         <TrustStrip />
-        <EnterpriseBand />
         <SuiteFooter />
       </div>
     </div>
