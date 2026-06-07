@@ -125,12 +125,9 @@ const drawApuHeader = async (doc, budget, empresa = {}, opts = {}) => {
   const headerH = 32
 
   doc.setFillColor(bg[0],bg[1],bg[2]); doc.rect(0,0,w,headerH,'F')
-  // Logo empresa (contain-fit dentro de 24×18mm, centrado a la izquierda)
   await addImageContain(doc, empresa.logo, 5, 7, 24, 18)
-  // Título principal
   doc.setTextColor(txt[0],txt[1],txt[2]); doc.setFontSize(13); doc.setFont(undefined,'bold')
-  doc.text('FICHA DE COSTO UNITARIO', w/2, 12, {align:'center'})
-  // Nombre del proyecto — 90% del tamaño del título (~11.7pt → usamos 11)
+  doc.text(opts.title || 'FICHA DE COSTO UNITARIO', w/2, 12, {align:'center'})
   doc.setFontSize(11); doc.setFont(undefined,'bold')
   doc.text((budget.nombreProyecto||'').toUpperCase(), w/2, 24, {align:'center'})
   doc.setTextColor(0)
@@ -216,91 +213,95 @@ export const exportPDFCatalogo = (budget, catKey) => {
 
 export const exportPDFPresupuesto = async (budget, params, empresa = {}) => {
   const money = makeMoneyFmt(budget.moneda)
-  const doc   = new jsPDF({orientation:'landscape', unit:'mm', format:'letter'})
+  const doc   = new jsPDF({ orientation:'landscape', unit:'mm', format:'letter' })
   const pw    = doc.internal.pageSize.getWidth()
 
-  // ── Header con colores del usuario (mismo sistema que fichas) ──
-  const bg  = hexToRgb(empresa.headerBg)  || [15,17,21]
-  const txt = hexToRgb(empresa.headerText)|| [245,158,11]
-  const headerH = 32
-  doc.setFillColor(bg[0],bg[1],bg[2]); doc.rect(0,0,pw,headerH,'F')
-  await addImageContain(doc, empresa.logo, 5, 7, 24, 18)
-  doc.setTextColor(txt[0],txt[1],txt[2]); doc.setFontSize(13); doc.setFont(undefined,'bold')
-  doc.text('PRESUPUESTO DE OBRA', pw/2, 12, {align:'center'})
-  doc.setFontSize(11)
-  doc.text((budget.nombreProyecto||'').toUpperCase(), pw/2, 24, {align:'center'})
-  doc.setTextColor(0)
+  // ── Header (mismo sistema que fichas) ──
+  let y = await drawApuHeader(doc, budget, empresa, { title: 'PRESUPUESTO DE OBRA' })
 
   // ── Info del proyecto ──
-  let y = headerH + 6
-  doc.setFontSize(8.5); doc.setFont(undefined,'normal')
-  const left = 10, mid = pw/2
-  const row = (label, val, lx, rx) => {
-    doc.setFont(undefined,'bold'); doc.text(label, lx, y)
-    doc.setFont(undefined,'normal'); doc.text(val||'—', lx + rx, y)
+  const bg  = hexToRgb(empresa.headerBg)  || [15,17,21]
+  const acc = hexToRgb(empresa.headerText) || [245,158,11]
+  doc.setFontSize(8.5)
+  const mid = pw / 2
+  const lbl = (text, x, xv, val) => {
+    doc.setFont(undefined,'bold');   doc.text(text,    x,      y)
+    doc.setFont(undefined,'normal'); doc.text(val||'—', x+xv,  y)
   }
-  row('Cotizante:',  budget.cotizante||'',  left,  22); row('Cliente:',   budget.cliente||'',   mid,   16)
-  y+=5
-  row('Ofertante:',  budget.ofertante||'',  left,  22); row('Ubicación:', budget.lugar||'',      mid,   20)
-  y+=5
-  row('Rev:',       String(budget.revision||1), left, 10); row('Estado:',  budget.estado||'',    mid,    14)
-  y+=3
-  doc.setDrawColor(txt[0],txt[1],txt[2]); doc.setLineWidth(0.4); doc.line(10, y, pw-10, y)
-  y+=4
+  lbl('Cotizante:',    10, 22, budget.cotizante||''); lbl('Cliente:',   mid, 16, budget.cliente||'')
+  y += 5
+  lbl('Ofertante:',    10, 22, budget.ofertante||''); lbl('Ubicación:', mid, 20, budget.lugar||'')
+  y += 5
+  lbl('Realizado por:', 10, 27, budget.realizadoPor||''); lbl('Tipo:', mid, 12, budget.tipo||'')
+  y += 4
+  doc.setDrawColor(acc[0],acc[1],acc[2]); doc.setLineWidth(0.4); doc.line(10, y, pw-10, y)
+  y += 5
 
-  // ── Colores para capítulos / subcapítulos usando tema del usuario ──
+  // ── Colores de tema ──
   const capFill    = bg
-  const capText    = txt
-  const subcapFill = bg.map(v => Math.min(255, v + 55))   // versión más clara del bg
-  const subcapText = [255,255,255]
+  const capText    = acc
+  const subcapFill = bg.map(v => Math.min(255, v + 55))
+  const subcapText = [255, 255, 255]
 
-  const rows = []
-  const walk = (its, d=0) => {
+  // ── Filas ──
+  const tblRows = []
+  const walk = (its, d = 0) => {
     for (const it of its) {
       const c   = calcItem(it, budget.catalogos, params)
       const ind = '  '.repeat(d)
       if (it.tipo === 'capitulo') {
-        rows.push([
-          {content:it.id,          styles:{fontStyle:'bold', fillColor:capFill, textColor:capText}},
-          {content:ind+it.descripcion, styles:{fontStyle:'bold', fillColor:capFill, textColor:capText}},
+        tblRows.push([
+          { content: it.id,               styles: { fontStyle:'bold', fillColor:capFill,    textColor:capText    } },
+          { content: ind+it.descripcion,  styles: { fontStyle:'bold', fillColor:capFill,    textColor:capText    } },
           '','','',
-          {content:money(c.subtotal), styles:{fontStyle:'bold', halign:'right', fillColor:capFill, textColor:capText}},
+          { content: money(c.subtotal),   styles: { fontStyle:'bold', halign:'right', fillColor:capFill, textColor:capText } },
         ])
         if (it.children) walk(it.children, d+1)
       } else if (it.tipo === 'subcapitulo') {
-        rows.push([
-          {content:it.id,          styles:{fontStyle:'bold', fillColor:subcapFill, textColor:subcapText}},
-          {content:ind+it.descripcion, styles:{fontStyle:'bold', fillColor:subcapFill, textColor:subcapText}},
+        tblRows.push([
+          { content: it.id,               styles: { fontStyle:'bold', fillColor:subcapFill, textColor:subcapText } },
+          { content: ind+it.descripcion,  styles: { fontStyle:'bold', fillColor:subcapFill, textColor:subcapText } },
           '','','',
-          {content:money(c.subtotal), styles:{fontStyle:'bold', halign:'right', fillColor:subcapFill, textColor:subcapText}},
+          { content: money(c.subtotal),   styles: { fontStyle:'bold', halign:'right', fillColor:subcapFill, textColor:subcapText } },
         ])
         if (it.children) walk(it.children, d+1)
       } else {
-        rows.push([it.id, ind+it.descripcion, it.unidad, fmt(it.cantidad), money(c.precioUnitario), {content:money(c.subtotal), styles:{halign:'right'}}])
+        tblRows.push([
+          it.id, ind+it.descripcion, it.unidad,
+          { content:fmt(it.cantidad),        styles:{halign:'right'} },
+          { content:money(c.precioUnitario), styles:{halign:'right'} },
+          { content:money(c.subtotal),       styles:{halign:'right'} },
+        ])
       }
     }
   }
   walk(budget.items, 0)
 
   const tot = round2(budget.items.reduce((s,it) => s + calcItem(it,budget.catalogos,params).subtotal, 0))
-  rows.push([
-    {content:'TOTAL GENERAL', colSpan:5, styles:{fillColor:capFill, textColor:capText, fontStyle:'bold', halign:'right'}},
-    {content:money(tot),                  styles:{fillColor:capFill, textColor:capText, fontStyle:'bold', halign:'right'}},
+  tblRows.push([
+    { content:'TOTAL GENERAL', colSpan:5, styles:{ fillColor:capFill, textColor:capText, fontStyle:'bold', halign:'right' } },
+    { content:money(tot),                  styles:{ fillColor:capFill, textColor:capText, fontStyle:'bold', halign:'right' } },
   ])
 
   doc.autoTable({
     startY: y,
-    head: [['ID','Descripción','Unidad','Cantidad','P. Unitario','Subtotal']],
-    body: rows,
-    styles:       {fontSize:8, cellPadding:1.5},
-    headStyles:   {fillColor:capFill, textColor:capText},
-    columnStyles: {0:{cellWidth:20}, 2:{halign:'center',cellWidth:20}, 3:{halign:'right',cellWidth:22}, 4:{halign:'right',cellWidth:28}, 5:{halign:'right',cellWidth:30}},
-    margin: {bottom:14},
+    head:   [['ID','Descripción','Unidad','Cantidad','P. Unitario','Subtotal']],
+    body:   tblRows,
+    styles:       { fontSize:8, cellPadding:2 },
+    headStyles:   { fillColor:capFill, textColor:capText, fontStyle:'bold' },
+    columnStyles: {
+      0: { cellWidth:18 },
+      2: { halign:'center', cellWidth:18 },
+      3: { halign:'right',  cellWidth:24 },
+      4: { halign:'right',  cellWidth:28 },
+      5: { halign:'right',  cellWidth:30 },
+    },
+    margin: { top:10, left:10, right:10, bottom:16 },
   })
 
   // ── Footer en todas las páginas ──
-  const total = doc.internal.getNumberOfPages()
-  for (let i=1; i<=total; i++) { doc.setPage(i); drawApuFooter(doc, budget, i, total) }
+  const totalPages = doc.internal.getNumberOfPages()
+  for (let i=1; i<=totalPages; i++) { doc.setPage(i); drawApuFooter(doc, budget, i, totalPages) }
 
   doc.save((budget.nombreProyecto||'Presupuesto').replace(/[^\w\s-]+/g,'_')+'_Presupuesto.pdf')
 }
