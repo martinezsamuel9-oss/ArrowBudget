@@ -105,7 +105,7 @@ function loadPaddleJs() {
     const s = document.createElement('script')
     s.src = 'https://cdn.paddle.com/paddle/v2/paddle.js'
     s.onload = () => {
-      window.Paddle.Initialize({ token: import.meta.env.VITE_PADDLE_CLIENT_TOKEN || '' })
+      window.Paddle.Initialize({ environment: 'production', token: import.meta.env.VITE_PADDLE_CLIENT_TOKEN || '' })
       resolve()
     }
     s.onerror = reject
