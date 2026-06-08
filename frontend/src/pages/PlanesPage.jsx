@@ -24,7 +24,7 @@ const PLANS = [
     name: 'Intermedio',
     tagline: 'Para equipos pequeños que dejan atrás el Excel.',
     monthly: 29.99,
-    annual:  23.99,
+    annual:  25.49,
     proyectos: '5',
     usuarios:  '5',
     features: [
@@ -43,7 +43,7 @@ const PLANS = [
     name: 'Experto',
     tagline: 'El favorito de las constructoras en crecimiento.',
     monthly: 59.99,
-    annual:  47.99,
+    annual:  50.99,
     proyectos: '10',
     usuarios:  '10',
     popular: true,
@@ -63,7 +63,7 @@ const PLANS = [
     name: 'Enterprise',
     tagline: 'Operaciones a gran escala con control total.',
     monthly: 119.99,
-    annual:  95.99,
+    annual:  101.99,
     proyectos: '40',
     usuarios:  '20',
     features: [
@@ -159,7 +159,7 @@ function BillingToggle({ annual, setAnnual }) {
         Anual
         <span className={`rounded-full px-2 py-0.5 text-[11px] font-700
           ${annual ? 'bg-navy-deep/20 text-navy-deep' : 'bg-gold/15 text-gold'}`}>
-          −20%
+          −15%
         </span>
       </button>
     </div>
