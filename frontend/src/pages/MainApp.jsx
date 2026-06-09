@@ -1862,7 +1862,7 @@ function InicioPage({ proyectos, openProject, addProject, setPage, userName }) {
                   </div>
                   <div style={{ textAlign: 'right', flexShrink: 0 }}>
                     <div className="proj-amount-label">Total</div>
-                    <div className="proj-amount">{money(k.total)}</div>
+                    <div className="proj-amount">{formatMoney(k.total, p.moneda)}</div>
                   </div>
                 </div>
               )
@@ -1889,7 +1889,7 @@ function InicioPage({ proyectos, openProject, addProject, setPage, userName }) {
                     <div style={{ width: 36, height: 36, borderRadius: 8, background: getCover(idx), flexShrink: 0 }}></div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--c-ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.nombreProyecto}</div>
-                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--c-text-3)' }}>{money(k.total)}</div>
+                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--c-text-3)' }}>{formatMoney(k.total, p.moneda)}</div>
                     </div>
                     <ArrowUpRight size={14} style={{ color: 'var(--c-text-3)' }} />
                   </div>
@@ -1992,7 +1992,7 @@ function ProyectosPage({ proyectos, openProject, addProject, deleteProject }) {
                   <div className="proj-foot">
                     <div>
                       <div className="proj-amount-label">Total Estimado</div>
-                      <div className="proj-amount">{money(k.total)}</div>
+                      <div className="proj-amount">{formatMoney(k.total, p.moneda)}</div>
                     </div>
                     <ArrowUpRight size={16} style={{ color: 'var(--c-text-3)' }} />
                   </div>
@@ -2016,7 +2016,7 @@ function ProyectosPage({ proyectos, openProject, addProject, deleteProject }) {
                       <td><div style={{ fontWeight: 600, color: 'var(--c-ink)' }}>{p.nombreProyecto}</div><div style={{ fontSize: 11, color: 'var(--c-text-3)' }}>Rev {p.revision} · {p.tipo}</div></td>
                       <td>{p.cliente || '—'}</td><td>{p.lugar || '—'}</td>
                       <td><StatusBadge status={p.estado} /></td>
-                      <td className="num" style={{ fontWeight: 600 }}>{money(k.total)}</td>
+                      <td className="num" style={{ fontWeight: 600 }}>{formatMoney(k.total, p.moneda)}</td>
                       <td style={{ fontSize: 12, color: 'var(--c-text-3)' }}>{p.ultimaEdicion}</td>
                       <td className="actions"><button className="btn ghost icon sm" onClick={e => { e.stopPropagation(); deleteProject(p.id, p.nombreProyecto) }}><Trash2 size={13} style={{ color: 'var(--c-danger)' }} /></button></td>
                     </tr>
