@@ -1088,44 +1088,56 @@ function UserSettingsModal({ open, onClose, profile, user, onSaved }) {
 
       {/* ── Plan ── */}
       {tab === 'plan' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {/* Toggle mensual/anual */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'center', marginBottom: 4 }}>
-            <button onClick={() => setPlanAnual(false)} style={{ padding: '4px 14px', borderRadius: 20, fontSize: 12, fontWeight: planAnual ? 500 : 700, background: planAnual ? 'transparent' : 'var(--c-accent)', color: planAnual ? 'var(--c-text-2)' : '#fff', border: '1.5px solid var(--c-accent)', cursor: 'pointer' }}>Mensual</button>
-            <button onClick={() => setPlanAnual(true)}  style={{ padding: '4px 14px', borderRadius: 20, fontSize: 12, fontWeight: planAnual ? 700 : 500, background: planAnual ? 'var(--c-accent)' : 'transparent', color: planAnual ? '#fff' : 'var(--c-text-2)', border: '1.5px solid var(--c-accent)', cursor: 'pointer' }}>
-              Anual <span style={{ fontSize: 10, fontWeight: 700, background: '#10b981', color: '#fff', padding: '1px 6px', borderRadius: 10, marginLeft: 4 }}>−15%</span>
-            </button>
+          <div style={{ display: 'flex', alignItems: 'center', background: 'var(--c-bg-2)', borderRadius: 24, padding: 3, gap: 2, alignSelf: 'center', border: '1px solid var(--c-line)' }}>
+            {[{ v: false, lbl: 'Mensual' }, { v: true, lbl: 'Anual' }].map(({ v, lbl }) => (
+              <button key={String(v)} onClick={() => setPlanAnual(v)}
+                style={{ padding: '5px 18px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: 'none', transition: 'all 0.15s',
+                  background: planAnual === v ? 'var(--c-accent)' : 'transparent',
+                  color: planAnual === v ? '#fff' : 'var(--c-text-2)' }}>
+                {lbl}{v && <span style={{ fontSize: 10, fontWeight: 700, background: '#10b981', color: '#fff', padding: '1px 5px', borderRadius: 8, marginLeft: 5 }}>−15%</span>}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ fontSize: 11, color: 'var(--c-text-3)', textAlign: 'center', marginBottom: 2 }}>
+            15 días de prueba gratis · Sin tarjeta requerida
           </div>
 
           {PLANES.map(p => (
-            <div key={p.id} style={{ border: `1.5px solid ${p.pop ? p.color : 'var(--c-line)'}`, borderRadius: 'var(--r-lg)', padding: '16px 18px', position: 'relative', background: p.pop ? `${p.color}12` : 'var(--c-bg)' }}>
-              {p.pop && <span style={{ position: 'absolute', top: -10, right: 14, background: p.color, color: '#fff', fontSize: 10, fontWeight: 700, padding: '2px 10px', borderRadius: 20 }}>MÁS POPULAR</span>}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+            <div key={p.id} style={{ border: `1.5px solid ${p.pop ? p.color : 'var(--c-line)'}`, borderRadius: 10, padding: '14px 16px', position: 'relative', background: p.pop ? `${p.color}10` : 'var(--c-bg)' }}>
+              {p.pop && <span style={{ position: 'absolute', top: -9, right: 12, background: p.color, color: '#fff', fontSize: 9, fontWeight: 700, padding: '2px 9px', borderRadius: 20, letterSpacing: '0.04em' }}>MÁS POPULAR</span>}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--c-ink)' }}>{p.nombre}</div>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--c-ink)' }}>{p.nombre}</div>
                   {planAnual
-                    ? <div style={{ fontSize: 12, color: 'var(--c-text-3)', marginTop: 2 }}><b style={{ color: 'var(--c-ink)' }}>${p.yPerM}/mes</b> · <span style={{ color: '#10b981' }}>${p.y}/año</span></div>
-                    : <div style={{ fontSize: 12, color: 'var(--c-text-3)', marginTop: 2 }}><b style={{ color: 'var(--c-ink)' }}>${p.m}/mes</b></div>
+                    ? <div style={{ fontSize: 12, marginTop: 1 }}>
+                        <b style={{ color: 'var(--c-ink)' }}>${p.yPerM}/mes</b>
+                        <span style={{ color: 'var(--c-text-3)', marginLeft: 6 }}>· <span style={{ color: '#10b981', fontWeight: 600 }}>${p.y}/año</span></span>
+                      </div>
+                    : <div style={{ fontSize: 12, marginTop: 1 }}><b style={{ color: 'var(--c-ink)' }}>${p.m}/mes</b></div>
                   }
                 </div>
-                <button className="btn sm" onClick={() => openPaddleCheckout(p)} disabled={planBusy === p.id}
-                  style={{ background: p.color, borderColor: p.color, color: '#fff', flexShrink: 0, opacity: planBusy === p.id ? 0.6 : 1 }}>
-                  {planBusy === p.id ? '…' : 'Seleccionar'}
+                <button onClick={() => openPaddleCheckout(p)} disabled={planBusy === p.id}
+                  style={{ padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700, background: p.color, color: '#fff', border: 'none', cursor: 'pointer', flexShrink: 0, opacity: planBusy === p.id ? 0.6 : 1, whiteSpace: 'nowrap' }}>
+                  {planBusy === p.id ? '…' : 'Comenzar gratis'}
                 </button>
               </div>
-              <ul style={{ margin: 0, padding: '0 0 0 16px', fontSize: 12, color: 'var(--c-text-2)', display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <ul style={{ margin: '10px 0 0 0', padding: '0 0 0 14px', fontSize: 11.5, color: 'var(--c-text-2)', display: 'flex', flexDirection: 'column', gap: 3 }}>
                 {p.features.map(f => <li key={f}>{f}</li>)}
               </ul>
             </div>
           ))}
 
-          {/* Gestionar suscripción existente */}
-          <div style={{ marginTop: 8, padding: '12px 16px', background: 'var(--c-bg-2)', borderRadius: 'var(--r-md)', border: '1px solid var(--c-line)' }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--c-text-2)', marginBottom: 6 }}>¿Ya tienes una suscripción?</div>
-            <div style={{ fontSize: 12, color: 'var(--c-text-3)', marginBottom: 8 }}>Gestiona, cambia o cancela tu plan desde el portal de Paddle.</div>
+          <div style={{ padding: '10px 14px', background: 'var(--c-bg-2)', borderRadius: 8, border: '1px solid var(--c-line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--c-text-2)' }}>¿Ya tienes suscripción?</div>
+              <div style={{ fontSize: 11, color: 'var(--c-text-3)', marginTop: 2 }}>Cambia de plan o cancela cuando quieras.</div>
+            </div>
             <a href="https://customer.paddle.com/" target="_blank" rel="noopener noreferrer"
-              style={{ fontSize: 12, fontWeight: 600, color: 'var(--c-accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              Gestionar suscripción →
+              style={{ fontSize: 12, fontWeight: 600, color: 'var(--c-accent)', textDecoration: 'none', whiteSpace: 'nowrap' }}>
+              Gestionar →
             </a>
           </div>
         </div>
@@ -1187,7 +1199,7 @@ function NotificationsDropdown({ notifs, onClose, onNavigate }) {
 
 // ============ INSUMO SELECT ============
 // Dropdown con position:fixed para escapar de cualquier overflow:hidden padre
-function InsumoSelect({ catalogos, categoria, value, onChange, onCreateNew }) {
+function InsumoSelect({ catalogos, categoria, value, onChange, onCreateNew, moneda = 'USD' }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
   const [pos, setPos] = useState({ top: 0, left: 0, width: 320 })
@@ -1220,6 +1232,7 @@ function InsumoSelect({ catalogos, categoria, value, onChange, onCreateNew }) {
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
+  const moneyFmt = makeMoneyFmt(moneda)
   const sel = (catalogos[categoria] || []).find(i => i.id === value)
   const qn = normalize(q)
   const list = (catalogos[categoria] || []).filter(i => !qn || normalize(i.descripcion).includes(qn) || normalize(i.codigo).includes(qn))
@@ -1277,7 +1290,7 @@ function InsumoSelect({ catalogos, categoria, value, onChange, onCreateNew }) {
                   {i.codigo && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, background: 'var(--c-bg)', color: 'var(--c-text-3)', padding: '1px 5px', borderRadius: 3 }}>{i.codigo}</span>}
                   <span style={{ fontWeight: 500 }}>{i.descripcion}</span>
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--c-text-3)', marginTop: 2 }}>{i.unidad} · {money(i.costoBase)}</div>
+                <div style={{ fontSize: 11, color: 'var(--c-text-3)', marginTop: 2 }}>{i.unidad} · {moneyFmt(i.costoBase)}</div>
               </div>
             ))}
           </div>
@@ -1295,7 +1308,8 @@ function InsumoSelect({ catalogos, categoria, value, onChange, onCreateNew }) {
 }
 
 // ============ FICHA SECTION ============
-function FichaSection({ title, k, total, ficha, catalogos, onAdd, onDel, onUpd, onCreateIns, moTotal = 0 }) {
+function FichaSection({ title, k, total, ficha, catalogos, onAdd, onDel, onUpd, onCreateIns, moTotal = 0, moneda = 'USD' }) {
+  const moneyFmt = makeMoneyFmt(moneda)
   return (
     <div style={{ marginBottom: 16, border: '1px solid var(--c-line)', borderRadius: 'var(--r-lg)', overflow: 'hidden' }}>
       <div style={{ background: 'var(--c-ink)', color: '#fff', padding: '8px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1324,23 +1338,23 @@ function FichaSection({ title, k, total, ficha, catalogos, onAdd, onDel, onUpd, 
               <tr key={c.id} className="activity">
                 <td className="id" style={{ fontSize: 11, color: 'var(--c-text-3)', fontFamily: 'var(--font-mono)' }}>{ins?.codigo || (i + 1)}</td>
                 <td style={{ padding: 0 }}>
-                  <InsumoSelect catalogos={catalogos} categoria={k} value={c.insumoId} onChange={v => onUpd(k, i, 'insumoId', v)} onCreateNew={d => onCreateIns(k, i, d)} />
+                  <InsumoSelect catalogos={catalogos} categoria={k} value={c.insumoId} onChange={v => onUpd(k, i, 'insumoId', v)} onCreateNew={d => onCreateIns(k, i, d)} moneda={moneda} />
                 </td>
                 <td className="num" style={{ color: 'var(--c-text-2)', fontSize: 12 }}>{ins ? ins.unidad : '—'}</td>
                 <td className="num"><MathInput className="cell-input num" value={c.rendimiento} onChange={v => onUpd(k, i, 'rendimiento', v)} /></td>
                 <td className="num"><MathInput className="cell-input num" value={c.desperdicio} onChange={v => onUpd(k, i, 'desperdicio', v)} /></td>
                 <td className="num" style={{ color: isMoBased ? 'var(--c-accent)' : 'var(--c-text-2)' }} title={isMoBased ? 'Calculado sobre el total MO' : undefined}>
-                  {ins ? money(effectiveBase) : '—'}
+                  {ins ? moneyFmt(effectiveBase) : '—'}
                   {isMoBased && <span style={{ fontSize: 9, marginLeft: 3, color: 'var(--c-accent)' }}>MO</span>}
                 </td>
-                <td className="num" style={{ fontWeight: 600 }}>{money(conceptoCost(c, catalogos, k, { moTotal }))}</td>
+                <td className="num" style={{ fontWeight: 600 }}>{moneyFmt(conceptoCost(c, catalogos, k, { moTotal }))}</td>
                 <td style={{ textAlign: 'center' }}><button onClick={() => onDel(k, i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--c-danger)', fontSize: 16, lineHeight: 1 }}>×</button></td>
               </tr>
             )
           })}
           <tr className="subtotal">
             <td colSpan={6} style={{ textAlign: 'right', fontStyle: 'italic', fontSize: 12, color: 'var(--c-text-2)', padding: '6px 14px' }}>SUBTOTAL {title}</td>
-            <td className="num" style={{ fontWeight: 700, color: 'var(--c-ink)' }}>{money(total)}</td>
+            <td className="num" style={{ fontWeight: 700, color: 'var(--c-ink)' }}>{moneyFmt(total)}</td>
             <td></td>
           </tr>
         </tbody>
@@ -1383,7 +1397,7 @@ function FichaCostoModal({ open, onClose, actividad, budget, catalogos, params, 
             <FichaSection key={cat.key} title={cat.label.toUpperCase()} k={cat.key}
               total={cat.key === 'materiales' ? calc.totMat : cat.key === 'manoObra' ? calc.totMo : cat.key === 'herramientaEquipo' ? calc.totHe : calc.totSub}
               ficha={f} catalogos={catalogos} onAdd={add} onDel={del} onUpd={upd} onCreateIns={createIns}
-              moTotal={calc.totMo} />
+              moTotal={calc.totMo} moneda={budget?.moneda || 'USD'} />
           ))}
           <div style={{ marginTop: 24, border: '1px solid var(--c-line)', borderRadius: 'var(--r-lg)', overflow: 'hidden', maxWidth: 340, marginLeft: 'auto' }}>
             <div style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', padding: '8px 12px', background: 'var(--c-bg-2)', borderBottom: '1px solid var(--c-line)', color: 'var(--c-text)' }}>Resumen</div>
@@ -2121,9 +2135,16 @@ function CatalogoView({ budget, setBudget, categoria }) {
     else nc[categoria.key] = [...list, { id: uid(), ...form, descripcion: desc, costoBase: +form.costoBase || 0 }]
     setBudget({ ...budget, catalogos: nc }); setShowForm(false); setEditId(null); setForm({ codigo: '', descripcion: '', unidad: 'und', costoBase: 0, proveedor: '', notas: '' })
   }
+  const editRowRef = useRef(null)
+  const openEdit = (i) => {
+    setForm({ codigo: i.codigo || '', descripcion: i.descripcion, unidad: i.unidad, costoBase: i.costoBase, proveedor: i.proveedor || '', notas: i.notas || '' })
+    setEditId(i.id); setShowForm(true)
+    setTimeout(() => editRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50)
+  }
   return (
     <div className="card" style={{ padding: 0 }}>
-      <div className="card-header">
+      {/* Header sticky */}
+      <div className="card-header" style={{ position: 'sticky', top: 0, zIndex: 4, background: 'var(--c-surface)', borderBottom: '1px solid var(--c-line)' }}>
         <div className="card-title">{categoria.icon} Lista de {categoria.label}</div>
         <div style={{ display: 'flex', gap: 8 }}>
           <div className="topbar-search" style={{ width: 200 }}>
@@ -2150,7 +2171,7 @@ function CatalogoView({ budget, setBudget, categoria }) {
       )}
       <div style={{ overflowX: 'auto' }}>
         <table className="bt">
-          <thead><tr>
+          <thead style={{ position: 'sticky', top: 56, zIndex: 3, background: 'var(--c-surface)' }}><tr>
             <th style={{ width: 90 }}>Código</th><th>Descripción</th>
             <th style={{ width: 80 }}>Unidad</th><th className="num" style={{ width: 110 }}>Precio Base</th>
             <th style={{ width: 120 }}>Proveedor</th><th className="num" style={{ width: 100 }}>Cant. Total</th><th style={{ width: 110 }}></th>
@@ -2164,7 +2185,7 @@ function CatalogoView({ budget, setBudget, categoria }) {
               // Form de EDICIÓN inline — reemplaza el row
               if (editId === i.id && showForm) {
                 return (
-                  <tr key={i.id} style={{ background: 'var(--c-accent-soft)' }}>
+                  <tr key={i.id} ref={editRowRef} style={{ background: 'var(--c-accent-soft)' }}>
                     <td colSpan={7} style={{ padding: '12px 18px' }}>
                       <form onSubmit={submit} style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 10 }}>
                         <div className="field"><label className="field-label">Código</label><input className="input sm" value={form.codigo} onChange={e => setForm({ ...form, codigo: e.target.value })} /></div>
@@ -2199,7 +2220,7 @@ function CatalogoView({ budget, setBudget, categoria }) {
                     }
                   </td>
                   <td className="actions">
-                    <button className="btn xs ghost" onClick={() => { setForm({ codigo: i.codigo || '', descripcion: i.descripcion, unidad: i.unidad, costoBase: i.costoBase, proveedor: i.proveedor || '', notas: i.notas || '' }); setEditId(i.id); setShowForm(true) }}>
+                    <button className="btn xs ghost" onClick={() => openEdit(i)}>
                       <Edit2 size={11} /> Editar
                     </button>
                     <button className="btn xs danger icon" style={{ marginLeft: 4 }} onClick={() => { if (u > 0) return alert(`Usado en ${u} ficha(s). No se puede eliminar.`); if (!confirm(`¿Eliminar "${i.descripcion}"?`)) return; setBudget({ ...budget, catalogos: { ...budget.catalogos, [categoria.key]: list.filter(x => x.id !== i.id) } }) }}>
