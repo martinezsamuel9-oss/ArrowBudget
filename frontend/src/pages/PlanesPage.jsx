@@ -248,7 +248,7 @@ function PlanCard({ plan, annual, onSubscribe, busy }) {
           {busy !== plan.id && <span aria-hidden="true">→</span>}
         </button>
         {plan.kind !== 'contact' && (
-          <p className="mt-3 text-center text-[11px] text-slate-500">7 días gratis · no se requiere tarjeta</p>
+          <p className="mt-3 text-center text-[11px] text-slate-500">15 días gratis · cancela cuando quieras</p>
         )}
       </div>
     </div>

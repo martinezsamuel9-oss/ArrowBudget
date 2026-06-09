@@ -1102,7 +1102,7 @@ function UserSettingsModal({ open, onClose, profile, user, onSaved }) {
           </div>
 
           <div style={{ fontSize: 11, color: 'var(--c-text-3)', textAlign: 'center', marginBottom: 2 }}>
-            15 días de prueba gratis · Sin tarjeta requerida
+            15 días de prueba gratis · Cancela cuando quieras
           </div>
 
           {PLANES.map(p => (
