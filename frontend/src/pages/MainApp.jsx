@@ -597,6 +597,149 @@ function GuardarVersionDialog({ open, onClose, budget, setBudget }) {
   )
 }
 
+// ============ CLONAR PROYECTO MODAL ============
+function ClonarProyectoModal({ open, onClose, budget, user, onCloned }) {
+  const [nombre, setNombre] = useState('')
+  useEffect(() => { if (open) setNombre(`Copia de ${budget?.nombreProyecto || ''}`) }, [open, budget])
+  if (!open) return null
+  const clonar = async () => {
+    const n = nombre.trim(); if (!n) return alert('Ingresa un nombre.')
+    const { data: orgId } = await supabase.rpc('get_user_org_id')
+    if (!orgId) { alert('No se encontró tu organización.'); return }
+    const { data, error } = await supabase.from('presupuestos').insert({
+      user_id: user.id, org_id: orgId,
+      nombre_proyecto: n,
+      cotizante: budget.cotizante, cliente: budget.cliente, ofertante: budget.ofertante,
+      realizado_por: budget.realizadoPor, lugar: budget.lugar,
+      fecha: new Date().toISOString().slice(0,10),
+      revision: 1, moneda: budget.moneda, tipo: budget.tipo, estado: 'borrador',
+      pct_indirectos: budget.pctIndirectos, pct_imprevistos: budget.pctImprevistos,
+      pct_utilidad: budget.pctUtilidad, pct_impuesto: budget.pctImpuesto,
+      logo_ofertante: budget.logoOfertante, logo_cliente: budget.logoCliente,
+      m2_construccion: budget.m2Construccion ?? 0, m2_estructura: budget.m2Estructura ?? 0,
+      catalogos_json: {
+        ...budget.catalogos,
+        _apu: { headerBg: budget.apuHeaderBg || '#0f1115', headerText: budget.apuHeaderText || '#f59e0b' },
+        _indirectos: (budget.indirectos || []).map(x => ({ ...x, id: uid() })),
+        _m2c: budget.m2Construccion ?? 0, _m2e: budget.m2Estructura ?? 0,
+      },
+      items_json: JSON.parse(JSON.stringify(budget.items)),
+      versiones_json: [],
+    }).select().single()
+    if (error) { alert('Error al clonar: ' + error.message); return }
+    onCloned(mapDb(data)); onClose()
+  }
+  return (
+    <Modal open={open} onClose={onClose} title="Clonar proyecto"
+      footer={<>
+        <button onClick={onClose} className="btn ghost">Cancelar</button>
+        <button onClick={clonar} disabled={!nombre.trim()} className="btn brand" style={{ opacity: nombre.trim() ? 1 : 0.4 }}>
+          <Copy size={13} /> Clonar
+        </button>
+      </>}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <p style={{ fontSize: 13, color: 'var(--c-text-2)', margin: 0 }}>
+          Se copiará el proyecto completo: presupuesto, fichas, catálogos e indirectos.
+        </p>
+        <div className="field">
+          <label className="field-label">Nombre del nuevo proyecto *</label>
+          <input className="input" value={nombre} onChange={e => setNombre(e.target.value)} autoFocus />
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+// ============ COPIAR CATÁLOGOS MODAL ============
+const CATS_COPY = [
+  { key: 'materiales',         label: 'Materiales' },
+  { key: 'manoObra',           label: 'Mano de Obra' },
+  { key: 'herramientaEquipo',  label: 'Herramientas/Equipo' },
+  { key: 'subcontratos',       label: 'Subcontratos' },
+  { key: '_indirectos',        label: 'Indirectos' },
+]
+function CopiarCatalogosModal({ open, onClose, budget, proyectos, onCopied }) {
+  const [targetId, setTargetId] = useState('')
+  const [sel, setSel]   = useState({ materiales: true, manoObra: true, herramientaEquipo: true, subcontratos: true, _indirectos: true })
+  useEffect(() => { if (open) setTargetId('') }, [open])
+  if (!open) return null
+  const others = proyectos.filter(p => p.id !== budget.id)
+  const toggle = k => setSel(s => ({ ...s, [k]: !s[k] }))
+  const copiar = async () => {
+    if (!targetId) return alert('Selecciona un proyecto destino.')
+    if (!Object.values(sel).some(Boolean)) return alert('Selecciona al menos un catálogo.')
+    const dest = proyectos.find(p => p.id === targetId)
+    if (!dest) return
+    const nc = { ...dest.catalogos }
+    CATS_COPY.forEach(({ key }) => {
+      if (!sel[key]) return
+      if (key === '_indirectos') return  // handled separately
+      const srcList = budget.catalogos[key] || []
+      const dstList = nc[key] || []
+      let added = 0
+      srcList.forEach(item => {
+        const nd = normalize(item.descripcion)
+        if (!dstList.find(x => normalize(x.descripcion) === nd && x.unidad === item.unidad)) {
+          dstList.push({ ...item, id: uid() }); added++
+        }
+      })
+      nc[key] = dstList
+    })
+    // indirectos
+    let newIndirectos = dest.indirectos || []
+    if (sel._indirectos) {
+      const srcInd = budget.indirectos || []
+      srcInd.forEach(item => {
+        const nd = normalize(item.descripcion)
+        if (!newIndirectos.find(x => normalize(x.descripcion) === nd)) {
+          newIndirectos = [...newIndirectos, { ...item, id: uid() }]
+        }
+      })
+    }
+    const updDest = { ...dest, catalogos: nc, indirectos: newIndirectos }
+    const { error } = await supabase.from('presupuestos').update(toDb(updDest)).eq('id', dest.id)
+    if (error) { alert('Error al copiar: ' + error.message); return }
+    onCopied(updDest); onClose()
+    alert(`Catálogos copiados a "${dest.nombreProyecto}" exitosamente.`)
+  }
+  return (
+    <Modal open={open} onClose={onClose} title="Copiar catálogos a otro proyecto"
+      footer={<>
+        <button onClick={onClose} className="btn ghost">Cancelar</button>
+        <button onClick={copiar} disabled={!targetId} className="btn brand" style={{ opacity: targetId ? 1 : 0.4 }}>
+          <Copy size={13} /> Copiar
+        </button>
+      </>}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div className="field">
+          <label className="field-label">Proyecto destino *</label>
+          <select className="input" value={targetId} onChange={e => setTargetId(e.target.value)}>
+            <option value="">— Selecciona un proyecto —</option>
+            {others.map(p => <option key={p.id} value={p.id}>{p.nombreProyecto}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--c-text-3)', marginBottom: 8 }}>¿Qué copiar?</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {CATS_COPY.map(({ key, label }) => (
+              <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 13 }}>
+                <input type="checkbox" checked={sel[key]} onChange={() => toggle(key)} style={{ width: 15, height: 15, accentColor: 'var(--c-accent)' }} />
+                {label}
+                <span style={{ fontSize: 11, color: 'var(--c-text-3)' }}>
+                  ({key === '_indirectos' ? (budget.indirectos || []).length : (budget.catalogos[key] || []).length} ítems)
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+        <p style={{ fontSize: 12, color: 'var(--c-text-3)', margin: 0 }}>
+          Los ítems duplicados (misma descripción y unidad) serán omitidos.
+        </p>
+      </div>
+    </Modal>
+  )
+}
+
 // ============ CONFIG PROYECTO MODAL ============
 // Definido fuera del modal para evitar re-mount en cada keystroke
 function ConfigField({ label, k, type = 'text', form, setForm }) {
@@ -2505,6 +2648,8 @@ export default function MainApp() {
   const [showConfig, setShowConfig] = useState(false)
   const [showVersion, setShowVersion] = useState(false)
   const [showRango, setShowRango] = useState(false)
+  const [showClonar, setShowClonar] = useState(false)
+  const [showCopiarCat, setShowCopiarCat] = useState(false)
   const [showUserSettings, setShowUserSettings] = useState(false)
   const [showNotifs, setShowNotifs] = useState(false)
   const [explosionActividad, setExplosionActividad] = useState(null)
@@ -2826,6 +2971,12 @@ export default function MainApp() {
                 </div>
               </div>
               <div className="page-head-actions">
+                <button className="btn sm ghost" title="Clonar proyecto completo" onClick={() => setShowClonar(true)}>
+                  <Copy size={13} /> Clonar
+                </button>
+                <button className="btn sm ghost" title="Copiar catálogos a otro proyecto" onClick={() => setShowCopiarCat(true)}>
+                  <Layers size={13} /> Copiar catálogos
+                </button>
                 {tabProject === 'presupuesto' && (
                   <button className="btn sm" onClick={() => triggerImport('presupuesto')}><Upload size={13} /> Importar</button>
                 )}
@@ -2941,6 +3092,10 @@ export default function MainApp() {
       {budget && <ConfigProyectoModal  open={showConfig}  onClose={() => setShowConfig(false)}  budget={budget} setBudget={setBudget} />}
       {budget && <GuardarVersionDialog open={showVersion} onClose={() => setShowVersion(false)} budget={budget} setBudget={setBudget} />}
       {budget && <RangoFichasDialog    open={showRango}   onClose={() => setShowRango(false)}   budget={budget} params={params} empresa={{ nombre: userEmpresa, logo: budget.logoOfertante, headerBg: budget.apuHeaderBg, headerText: budget.apuHeaderText }} />}
+      {budget && <ClonarProyectoModal  open={showClonar} onClose={() => setShowClonar(false)}  budget={budget} user={user}
+        onCloned={nb => { setProyectos(ps => [nb, ...ps]); setActiveId(nb.id); setTabProject('presupuesto') }} />}
+      {budget && <CopiarCatalogosModal open={showCopiarCat} onClose={() => setShowCopiarCat(false)} budget={budget} proyectos={proyectos}
+        onCopied={updDest => setProyectos(ps => ps.map(p => p.id === updDest.id ? updDest : p))} />}
       <UserSettingsModal
         open={showUserSettings}
         onClose={() => setShowUserSettings(false)}
