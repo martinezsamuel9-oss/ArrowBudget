@@ -2580,9 +2580,15 @@ function EquipoPage({ user, orgId }) {
   const roleColor = { dueno: '#f59e0b', administrador: '#7c3aed', estimador: '#2563eb', visualizador: '#6b7280' }
 
   const loadMembers = async () => {
-    if (!orgId) return
+    if (!orgId || !user?.id) return
     setLoading(true)
-    const { data: mems } = await supabase.from('org_members').select('user_id, role, assigned_at').eq('org_id', orgId)
+    let { data: mems } = await supabase.from('org_members').select('user_id, role, assigned_at').eq('org_id', orgId)
+    // Auto-seed: si el usuario actual no aparece en org_members, insertarlo como dueño
+    if (!mems?.find(m => m.user_id === user.id)) {
+      await supabase.from('org_members').upsert({ org_id: orgId, user_id: user.id, role: 'dueno' }, { onConflict: 'org_id,user_id' })
+      const { data: refreshed } = await supabase.from('org_members').select('user_id, role, assigned_at').eq('org_id', orgId)
+      mems = refreshed
+    }
     if (!mems?.length) { setMembers([]); setLoading(false); return }
     const { data: profs } = await supabase.from('profiles').select('id, nombre, email').in('id', mems.map(m => m.user_id))
     const profMap = Object.fromEntries((profs||[]).map(p => [p.id, p]))
