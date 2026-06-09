@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef, Fragment } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+import { ROLES_ARROW, TRANSICIONES_PERMITIDAS, puedeHacer, ORG_TO_PROJECT_ROLE, PROJECT_TO_ORG_ROLE } from '../lib/permissions'
 import {
   Home, Folder, FileText, Package, HardHat, Wrench, Users, BarChart2,
   BookOpen, CreditCard, Search, Bell, Settings, LogOut, Plus, Upload,
@@ -9,6 +10,7 @@ import {
   MapPin, Building2, ArrowUpRight, Layers, Grid, List, Filter,
   MoreHorizontal, ChevronRight, X, Check, Briefcase, Calendar,
   FileSpreadsheet, Copy, Edit2, Trash2, Download, ChevronDown, Crown, Coins, RefreshCw, AlertTriangle,
+  ShieldCheck, UserPlus,
 } from 'lucide-react'
 import {
   round2, fmt, money, moneyK, makeMoneyFmt, uid, normalize,
@@ -67,6 +69,7 @@ const UI2DB = { 'Borrador':'borrador', 'Activo':'activo', 'En revisión':'en_rev
 
 const mapDb = row => ({
   id:            row.id,
+  userId:        row.user_id,
   cotizante:     row.cotizante     || '',
   cliente:       row.cliente       || '',
   ofertante:     row.ofertante     || '',
@@ -444,17 +447,20 @@ function Modal({ open, onClose, title, children, footer }) {
 }
 
 // ============ ESTADO MENU ============
-function EstadoMenu({ budget, setBudget }) {
-  const estados = [
-    { v: 'Borrador',    cls: '',        dot: 'var(--c-text-3)' },
-    { v: 'Activo',      cls: 'success', dot: 'var(--c-success)' },
-    { v: 'En revisión', cls: 'warn',    dot: 'var(--c-warn)' },
-    { v: 'Aprobado',    cls: 'primary', dot: 'var(--c-primary)' },
-    { v: 'Rechazado',   cls: 'danger',  dot: 'var(--c-danger)' },
-    { v: 'En ejecución',cls: '',        dot: '#7c3aed' },
+function EstadoMenu({ budget, setBudget, role }) {
+  const TODOS = [
+    { v: 'Borrador',     cls: '',        dot: 'var(--c-text-3)' },
+    { v: 'Activo',       cls: 'success', dot: 'var(--c-success)' },
+    { v: 'En revisión',  cls: 'warn',    dot: 'var(--c-warn)' },
+    { v: 'Aprobado',     cls: 'primary', dot: 'var(--c-primary)' },
+    { v: 'Rechazado',    cls: 'danger',  dot: 'var(--c-danger)' },
+    { v: 'En ejecución', cls: '',        dot: '#7c3aed' },
   ]
+  const allowed = TRANSICIONES_PERMITIDAS[role || 'cliente'] || []
+  // If no transitions allowed, show badge only (no dropdown)
+  if (allowed.length === 0) return <StatusBadge status={budget.estado} />
   return (
-    <Dropdown align="left" minWidth={180} trigger={
+    <Dropdown align="left" minWidth={190} trigger={
       <button className="btn sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
         <StatusBadge status={budget.estado} />
         <ChevronDown size={12} />
@@ -462,14 +468,18 @@ function EstadoMenu({ budget, setBudget }) {
     }>
       <div style={{ padding: '6px 0' }}>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--c-text-3)', padding: '4px 12px 8px' }}>Cambiar estado</div>
-        {estados.map(e => (
-          <button key={e.v} onClick={() => setBudget({ ...budget, estado: e.v })}
-            style={{ width: '100%', textAlign: 'left', padding: '7px 12px', display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: e.dot, flexShrink: 0 }}></span>
-            {e.v}
-            {e.v === budget.estado && <Check size={13} style={{ marginLeft: 'auto', color: 'var(--c-success)' }} />}
-          </button>
-        ))}
+        {TODOS.map(e => {
+          const canTransition = allowed.includes(e.v)
+          return (
+            <button key={e.v}
+              onClick={() => canTransition && setBudget({ ...budget, estado: e.v })}
+              style={{ width: '100%', textAlign: 'left', padding: '7px 12px', display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', fontSize: 13, cursor: canTransition ? 'pointer' : 'default', opacity: canTransition ? 1 : 0.35 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: e.dot, flexShrink: 0 }}></span>
+              {e.v}
+              {e.v === budget.estado && <Check size={13} style={{ marginLeft: 'auto', color: 'var(--c-success)' }} />}
+            </button>
+          )
+        })}
       </div>
     </Dropdown>
   )
@@ -593,6 +603,135 @@ function GuardarVersionDialog({ open, onClose, budget, setBudget }) {
           </div>
         )}
       </div>
+    </Modal>
+  )
+}
+
+// ============ PROJECT TEAM MODAL ============
+function ProjectTeamModal({ open, onClose, budget, user, orgId, projectRole }) {
+  const [members, setMembers] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const canManage = puedeHacer(projectRole, 'gestionarEquipo')
+
+  const loadMembers = async () => {
+    if (!orgId || !budget?.id) return
+    setLoading(true)
+    const [{ data: orgMs }, { data: projMs }] = await Promise.all([
+      supabase.from('org_members')
+        .select('user_id, role, profiles:user_id(id, email, nombre, full_name)')
+        .eq('org_id', orgId),
+      supabase.from('project_members')
+        .select('user_id, role, rol_especifico')
+        .eq('presupuesto_id', budget.id),
+    ])
+    const projMap = Object.fromEntries((projMs || []).map(m => [m.user_id, m]))
+    setMembers((orgMs || []).map(om => ({
+      userId:      om.user_id,
+      email:       om.profiles?.email || '',
+      nombre:      om.profiles?.nombre || om.profiles?.full_name || om.profiles?.email?.split('@')[0] || 'Usuario',
+      orgRole:     om.role,
+      projectRole: projMap[om.user_id]?.rol_especifico || null,
+      inProject:   !!projMap[om.user_id],
+    })))
+    setLoading(false)
+  }
+
+  useEffect(() => { if (open) loadMembers() }, [open, orgId, budget?.id]) // eslint-disable-line
+
+  const setMemberRole = async (userId, rol) => {
+    if (!canManage) return
+    setSaving(true)
+    if (!rol) {
+      await supabase.from('project_members')
+        .delete()
+        .eq('presupuesto_id', budget.id)
+        .eq('user_id', userId)
+    } else {
+      await supabase.from('project_members').upsert({
+        presupuesto_id: budget.id,
+        user_id:        userId,
+        role:           PROJECT_TO_ORG_ROLE[rol] || 'visualizador',
+        rol_especifico: rol,
+        assigned_by:    user.id,
+      }, { onConflict: 'presupuesto_id,user_id' })
+    }
+    await loadMembers()
+    setSaving(false)
+  }
+
+  if (!open) return null
+  return (
+    <Modal open={open} onClose={onClose} title="Equipo del Proyecto"
+      subtitle={budget?.nombreProyecto}
+      footer={<button onClick={onClose} className="btn ghost">Cerrar</button>}>
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--c-text-3)' }}>Cargando equipo…</div>
+      ) : (
+        <div>
+          {!canManage && (
+            <div style={{ background: 'var(--c-accent-soft)', border: '1px solid var(--c-primary)', borderRadius: 'var(--r-md)', padding: '8px 12px', fontSize: 12, color: 'var(--c-primary)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <ShieldCheck size={14} /> Solo el Gerente puede asignar roles
+            </div>
+          )}
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--c-line)' }}>
+                <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--c-text-3)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Usuario</th>
+                <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--c-text-3)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Rol en este proyecto</th>
+              </tr>
+            </thead>
+            <tbody>
+              {members.map(m => {
+                const isOwner = m.userId === budget.userId
+                const roleInfo = m.projectRole ? ROLES_ARROW[m.projectRole] : null
+                return (
+                  <tr key={m.userId} style={{ borderBottom: '1px solid var(--c-line-2)' }}>
+                    <td style={{ padding: '10px 8px' }}>
+                      <div style={{ fontWeight: 600, color: 'var(--c-text)' }}>{m.nombre}</div>
+                      <div style={{ fontSize: 11, color: 'var(--c-text-3)' }}>{m.email}</div>
+                    </td>
+                    <td style={{ padding: '10px 8px' }}>
+                      {isOwner ? (
+                        <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: '#f59e0b20', color: '#f59e0b' }}>Propietario</span>
+                      ) : canManage ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <select
+                            value={m.projectRole || ''}
+                            onChange={e => setMemberRole(m.userId, e.target.value || null)}
+                            disabled={saving}
+                            style={{ fontSize: 12, padding: '5px 8px', borderRadius: 'var(--r-md)', border: '1px solid var(--c-line)', background: 'var(--c-bg-2)', color: 'var(--c-text)', cursor: 'pointer', maxWidth: 200 }}>
+                            <option value="">— Sin acceso —</option>
+                            {Object.entries(ROLES_ARROW).filter(([k]) => k !== 'dueno').map(([k, v]) => (
+                              <option key={k} value={k}>{v.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: roleInfo ? roleInfo.color + '20' : 'var(--c-bg-3)', color: roleInfo ? roleInfo.color : 'var(--c-text-3)' }}>
+                          {roleInfo ? roleInfo.label : 'Sin rol'}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+              {members.length === 0 && (
+                <tr>
+                  <td colSpan={2} style={{ padding: '24px 8px', textAlign: 'center', color: 'var(--c-text-3)', fontSize: 13 }}>
+                    No hay miembros en la organización
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          {canManage && (
+            <div style={{ marginTop: 16, padding: '10px 12px', background: 'var(--c-bg-2)', borderRadius: 'var(--r-md)', fontSize: 12, color: 'var(--c-text-3)', lineHeight: 1.5 }}>
+              <strong style={{ color: 'var(--c-text-2)' }}>Para agregar más personas:</strong> invítalas primero a la organización desde Configuración → Equipo.
+            </div>
+          )}
+        </div>
+      )}
     </Modal>
   )
 }
@@ -2725,9 +2864,12 @@ export default function MainApp() {
   const [showRango, setShowRango] = useState(false)
   const [showClonar, setShowClonar] = useState(false)
   const [showCopiarCat, setShowCopiarCat] = useState(false)
+  const [showTeam, setShowTeam] = useState(false)
   const [showUserSettings, setShowUserSettings] = useState(false)
   const [showNotifs, setShowNotifs] = useState(false)
   const [explosionActividad, setExplosionActividad] = useState(null)
+  const [projectRole, setProjectRole] = useState(null)   // presupuesto_role del usuario actual
+  const [orgId, setOrgId] = useState(null)
   const [profileOverride, setProfileOverride] = useState(null)
   const [saving, setSaving] = useState(false)
   const fileRef = useRef(null)
@@ -2804,6 +2946,40 @@ export default function MainApp() {
     supabase.from('presupuestos').select('*').eq('user_id', user.id).order('updated_at', { ascending: false })
       .then(({ data }) => { setProyectos((data || []).map(mapDb)); setLoadingData(false) })
   }, [user])
+
+  // Cargar orgId del usuario una sola vez
+  useEffect(() => {
+    if (!user) return
+    supabase.rpc('get_user_org_id').then(({ data }) => { if (data) setOrgId(data) })
+  }, [user])
+
+  // Determinar el rol del usuario en el proyecto activo
+  useEffect(() => {
+    if (!activeId || !user) { setProjectRole(null); return }
+    const proj = proyectos.find(p => p.id === activeId)
+    // Si el usuario es el dueño del proyecto, siempre tiene acceso total
+    if (proj?.userId === user.id) { setProjectRole('dueno'); return }
+    // Si no, consultar project_members
+    supabase.from('project_members')
+      .select('role, rol_especifico')
+      .eq('presupuesto_id', activeId)
+      .eq('user_id', user.id)
+      .maybeSingle()
+      .then(({ data: pm }) => {
+        if (pm?.rol_especifico) {
+          setProjectRole(pm.rol_especifico)
+        } else if (pm?.role) {
+          setProjectRole(ORG_TO_PROJECT_ROLE[pm.role] || 'cliente')
+        } else {
+          // Fallback: obtener rol en la org
+          supabase.from('org_members').select('role').eq('user_id', user.id)
+            .maybeSingle()
+            .then(({ data: om }) => {
+              setProjectRole(om ? (ORG_TO_PROJECT_ROLE[om.role] || 'cliente') : 'dueno')
+            })
+        }
+      })
+  }, [activeId, user, proyectos])
 
   const budget    = useMemo(() => proyectos.find(p => p.id === activeId) || null, [proyectos, activeId])
   const setBudget = b => setProyectos(ps => ps.map(p => p.id === b.id ? b : p))
@@ -3030,36 +3206,74 @@ export default function MainApp() {
               <div className="page-head-title">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--c-text-3)', fontWeight: 500 }}>
                   <span className="badge brand">{budget.tipo}</span>
-                  <EstadoMenu budget={budget} setBudget={setBudget} />
+                  <EstadoMenu budget={budget} setBudget={setBudget} role={projectRole} />
                   <span className="badge">Rev {budget.revision}</span>
                   <span className="badge" style={{ fontFamily: 'var(--font-mono)' }}>{budget.moneda}</span>
+                  {/* Rol badge del usuario actual */}
+                  {projectRole && ROLES_ARROW[projectRole] && (
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 12, background: ROLES_ARROW[projectRole].color + '22', color: ROLES_ARROW[projectRole].color, border: `1px solid ${ROLES_ARROW[projectRole].color}44` }}>
+                      {ROLES_ARROW[projectRole].label}
+                    </span>
+                  )}
                 </div>
                 <h1>
                   {budget.nombreProyecto}
-                  <button className="icon-btn" style={{ width: 26, height: 26, marginLeft: 4 }} title="Configuración" onClick={() => setShowConfig(true)}><Edit2 size={13} /></button>
+                  {puedeHacer(projectRole, 'editarPresupuesto') && (
+                    <button className="icon-btn" style={{ width: 26, height: 26, marginLeft: 4 }} title="Configuración" onClick={() => setShowConfig(true)}><Edit2 size={13} /></button>
+                  )}
                 </h1>
                 <div className="page-head-meta">
-                  {budget.fecha   && <span style={{ fontSize: 13, color: 'var(--c-text-2)', display: 'flex', alignItems: 'center', gap: 4 }}><Calendar size={13} />  {budget.fecha}</span>}
+                  {budget.fecha && <span style={{ fontSize: 13, color: 'var(--c-text-2)', display: 'flex', alignItems: 'center', gap: 4 }}><Calendar size={13} /> {budget.fecha}</span>}
                   <span className="save-state">
                     {saving ? <><span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--c-warn)', display: 'inline-block' }}></span> Guardando…</> : <><span className="pulse"></span> Guardado · {budget.ultimaEdicion}</>}
                   </span>
                 </div>
               </div>
               <div className="page-head-actions">
-                <button className="btn sm ghost" title="Clonar proyecto completo" onClick={() => setShowClonar(true)}>
-                  <Copy size={13} /> Clonar
-                </button>
+                {/* Botones de aprobación rápida */}
+                {budget.estado === 'En revisión' && puedeHacer(projectRole, 'aprobarPresupuesto') && (
+                  <button className="btn sm" style={{ background: '#16a34a', borderColor: '#16a34a', color: '#fff' }}
+                    onClick={() => setBudget({ ...budget, estado: 'Aprobado' })}>
+                    <Check size={13} /> Aprobar
+                  </button>
+                )}
+                {budget.estado === 'En revisión' && puedeHacer(projectRole, 'rechazarPresupuesto') && (
+                  <button className="btn sm" style={{ background: 'var(--c-danger)', borderColor: 'var(--c-danger)', color: '#fff' }}
+                    onClick={() => setBudget({ ...budget, estado: 'Rechazado' })}>
+                    <X size={13} /> Rechazar
+                  </button>
+                )}
+                {budget.estado === 'Aprobado' && puedeHacer(projectRole, 'enviarAEjecucion') && (
+                  <button className="btn sm" style={{ background: '#7c3aed', borderColor: '#7c3aed', color: '#fff' }}
+                    onClick={() => setBudget({ ...budget, estado: 'En ejecución' })}>
+                    <ArrowRight size={13} /> Enviar a ejecución
+                  </button>
+                )}
+                {/* Equipo */}
+                {puedeHacer(projectRole, 'gestionarEquipo') && (
+                  <button className="btn sm ghost" title="Gestionar equipo del proyecto" onClick={() => setShowTeam(true)}>
+                    <Users size={13} /> Equipo
+                  </button>
+                )}
+                {/* Clonar */}
+                {puedeHacer(projectRole, 'clonarProyecto') && (
+                  <button className="btn sm ghost" title="Clonar proyecto completo" onClick={() => setShowClonar(true)}>
+                    <Copy size={13} /> Clonar
+                  </button>
+                )}
                 <button className="btn sm ghost" title="Copiar catálogos a otro proyecto" onClick={() => setShowCopiarCat(true)}>
                   <Layers size={13} /> Copiar catálogos
                 </button>
-                {tabProject === 'presupuesto' && (
+                {puedeHacer(projectRole, 'editarPresupuesto') && tabProject === 'presupuesto' && (
                   <button className="btn sm" onClick={() => triggerImport('presupuesto')}><Upload size={13} /> Importar</button>
                 )}
-                {tabProject !== 'presupuesto' && tabToCat[tabProject] && (
+                {puedeHacer(projectRole, 'editarCatalogos') && tabProject !== 'presupuesto' && tabToCat[tabProject] && (
                   <button className="btn sm" onClick={() => triggerImport('cat-' + tabToCat[tabProject])}><Upload size={13} /> Importar</button>
                 )}
                 <input ref={fileRef} type="file" style={{ display: 'none' }} onChange={handleImport} />
-                <button className="btn sm" onClick={() => setShowVersion(true)}>💾 Versión</button>
+                {puedeHacer(projectRole, 'editarPresupuesto') && (
+                  <button className="btn sm" onClick={() => setShowVersion(true)}>💾 Versión</button>
+                )}
                 {tabProject === 'presupuesto' && <DescargasMenu budget={budget} params={params} onRangoFichas={() => setShowRango(true)} empresa={{ nombre: userEmpresa, logo: budget.logoOfertante, headerBg: budget.apuHeaderBg, headerText: budget.apuHeaderText }} />}
                 {tabProject !== 'presupuesto' && tabToCat[tabProject] && (
                   <button className="btn sm" style={{ background: 'var(--c-success)', borderColor: 'var(--c-success)', color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}
@@ -3167,6 +3381,7 @@ export default function MainApp() {
       {budget && <ConfigProyectoModal  open={showConfig}  onClose={() => setShowConfig(false)}  budget={budget} setBudget={setBudget} />}
       {budget && <GuardarVersionDialog open={showVersion} onClose={() => setShowVersion(false)} budget={budget} setBudget={setBudget} />}
       {budget && <RangoFichasDialog    open={showRango}   onClose={() => setShowRango(false)}   budget={budget} params={params} empresa={{ nombre: userEmpresa, logo: budget.logoOfertante, headerBg: budget.apuHeaderBg, headerText: budget.apuHeaderText }} />}
+      {budget && <ProjectTeamModal open={showTeam} onClose={() => setShowTeam(false)} budget={budget} user={user} orgId={orgId} projectRole={projectRole} />}
       {budget && <ClonarProyectoModal  open={showClonar} onClose={() => setShowClonar(false)}  budget={budget} user={user}
         onCloned={nb => { setProyectos(ps => [nb, ...ps]); setActiveId(nb.id); setTabProject('presupuesto') }} />}
       {budget && <CopiarCatalogosModal open={showCopiarCat} onClose={() => setShowCopiarCat(false)} budget={budget} proyectos={proyectos}
