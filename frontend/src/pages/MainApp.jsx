@@ -1381,9 +1381,9 @@ function InsumoSelect({ catalogos, categoria, value, onChange, onCreateNew, mone
     <div ref={triggerRef} style={{ position: 'relative', width: '100%' }}>
       <button
         onClick={handleOpen}
-        style={{ width: '100%', textAlign: 'left', padding: '4px 8px', background: 'none', border: 'none', cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13 }}>
+        style={{ width: '100%', textAlign: 'left', padding: '4px 8px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.4 }}>
         {sel
-          ? <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{sel.descripcion}</span>
+          ? <span>{sel.descripcion}</span>
           : <span style={{ color: 'var(--c-text-4)', fontStyle: 'italic', fontSize: 12 }}>— seleccionar —</span>}
       </button>
 
@@ -1459,7 +1459,7 @@ function FichaSection({ title, k, total, ficha, catalogos, onAdd, onDel, onUpd, 
         <thead>
           <tr>
             <th style={{ width: 80 }}>#</th>
-            <th>Insumo</th>
+            <th style={{ minWidth: 120 }}>Insumo</th>
             <th style={{ width: 70 }}>Unidad</th>
             <th className="num" style={{ width: 80 }}>Rend.</th>
             <th className="num" style={{ width: 70 }}>Desp.%</th>
@@ -2275,40 +2275,50 @@ function CatalogoView({ budget, setBudget, categoria }) {
     setBudget({ ...budget, catalogos: nc }); setShowForm(false); setEditId(null); setForm({ codigo: '', descripcion: '', unidad: 'und', costoBase: 0, proveedor: '', notas: '' })
   }
   const editRowRef = useRef(null)
+  const newRowRef  = useRef(null)
   const openEdit = (i) => {
     setForm({ codigo: i.codigo || '', descripcion: i.descripcion, unidad: i.unidad, costoBase: i.costoBase, proveedor: i.proveedor || '', notas: i.notas || '' })
     setEditId(i.id); setShowForm(true)
     setTimeout(() => editRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50)
   }
+  const openNew = () => {
+    setShowForm(true); setEditId(null)
+    setForm({ codigo: '', descripcion: '', unidad: 'und', costoBase: 0, proveedor: '', notas: '' })
+    setTimeout(() => newRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }), 80)
+  }
+  const FormRow = ({ isNew }) => (
+    <tr ref={isNew ? newRowRef : editRowRef} style={{ background: 'var(--c-accent-soft)' }}>
+      <td colSpan={7} style={{ padding: '14px 18px', borderTop: isNew ? '2px solid var(--c-primary)' : undefined }}>
+        <form onSubmit={submit} style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 10 }}>
+          <div className="field"><label className="field-label">Código</label><input className="input sm" value={form.codigo} onChange={e => setForm({ ...form, codigo: e.target.value })} /></div>
+          <div className="field" style={{ gridColumn: 'span 2' }}><label className="field-label">Descripción *</label><input required autoFocus className="input sm" value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} /></div>
+          <div className="field"><label className="field-label">Unidad</label><input className="input sm" value={form.unidad} onChange={e => setForm({ ...form, unidad: e.target.value })} /></div>
+          <div className="field"><label className="field-label">Precio Base</label><MathInput className="input sm" style={{ textAlign: 'right' }} value={form.costoBase} onChange={v => setForm({ ...form, costoBase: v })} /></div>
+          <div className="field"><label className="field-label">Proveedor</label><input className="input sm" value={form.proveedor} onChange={e => setForm({ ...form, proveedor: e.target.value })} /></div>
+          <div style={{ gridColumn: 'span 6', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <button type="button" className="btn sm ghost" onClick={() => { setShowForm(false); setEditId(null) }}>Cancelar</button>
+            <button type="submit" className="btn sm primary">{isNew ? 'Agregar' : 'Actualizar'}</button>
+          </div>
+        </form>
+      </td>
+    </tr>
+  )
   return (
     <div className="card" style={{ padding: 0 }}>
-      {/* Header sticky */}
+      {/* Header sticky — top:0 relativo al scroll container (page-body) */}
       <div className="card-header" style={{ position: 'sticky', top: 0, zIndex: 4, background: 'var(--c-surface)', borderBottom: '1px solid var(--c-line)' }}>
         <div className="card-title">{categoria.icon} Lista de {categoria.label}</div>
         <div style={{ display: 'flex', gap: 8 }}>
           <div className="topbar-search" style={{ width: 200 }}>
             <Search size={13} /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar…" />
           </div>
-          <button className="btn brand sm" onClick={() => { setShowForm(true); setEditId(null); setForm({ codigo: '', descripcion: '', unidad: 'und', costoBase: 0, proveedor: '', notas: '' }) }}>
+          <button className="btn brand sm" onClick={openNew}>
             <Plus size={13} /> Nuevo
           </button>
         </div>
       </div>
-      {/* Form de NUEVO insumo — aparece arriba */}
-      {showForm && !editId && (
-        <form onSubmit={submit} style={{ background: 'var(--c-accent-soft)', borderBottom: '1px solid var(--c-line)', padding: '14px 18px', display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 10 }}>
-          <div className="field"><label className="field-label">Código</label><input className="input sm" value={form.codigo} onChange={e => setForm({ ...form, codigo: e.target.value })} /></div>
-          <div className="field" style={{ gridColumn: 'span 2' }}><label className="field-label">Descripción *</label><input required className="input sm" autoFocus value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} /></div>
-          <div className="field"><label className="field-label">Unidad</label><input className="input sm" value={form.unidad} onChange={e => setForm({ ...form, unidad: e.target.value })} /></div>
-          <div className="field"><label className="field-label">Precio Base</label><MathInput className="input sm" style={{ textAlign: 'right' }} value={form.costoBase} onChange={v => setForm({ ...form, costoBase: v })} /></div>
-          <div className="field"><label className="field-label">Proveedor</label><input className="input sm" value={form.proveedor} onChange={e => setForm({ ...form, proveedor: e.target.value })} /></div>
-          <div style={{ gridColumn: 'span 6', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-            <button type="button" className="btn sm ghost" onClick={() => { setShowForm(false); setEditId(null) }}>Cancelar</button>
-            <button type="submit" className="btn sm primary">Agregar</button>
-          </div>
-        </form>
-      )}
-      <div style={{ overflowX: 'auto' }}>
+      {/* overflow-x:clip no crea nuevo stacking context → sticky thead funciona */}
+      <div style={{ overflowX: 'clip' }}>
         <table className="bt">
           <thead style={{ position: 'sticky', top: 56, zIndex: 3, background: 'var(--c-surface)' }}><tr>
             <th style={{ width: 90 }}>Código</th><th>Descripción</th>
@@ -2320,34 +2330,16 @@ function CatalogoView({ budget, setBudget, categoria }) {
             {filtered.map(i => {
               const u = usagesOf(i.id)
               const cantTotal = cantTotalOf(i.id)
-
-              // Form de EDICIÓN inline — reemplaza el row
-              if (editId === i.id && showForm) {
-                return (
-                  <tr key={i.id} ref={editRowRef} style={{ background: 'var(--c-accent-soft)' }}>
-                    <td colSpan={7} style={{ padding: '12px 18px' }}>
-                      <form onSubmit={submit} style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 10 }}>
-                        <div className="field"><label className="field-label">Código</label><input className="input sm" value={form.codigo} onChange={e => setForm({ ...form, codigo: e.target.value })} /></div>
-                        <div className="field" style={{ gridColumn: 'span 2' }}><label className="field-label">Descripción *</label><input required autoFocus className="input sm" value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} /></div>
-                        <div className="field"><label className="field-label">Unidad</label><input className="input sm" value={form.unidad} onChange={e => setForm({ ...form, unidad: e.target.value })} /></div>
-                        <div className="field"><label className="field-label">Precio Base</label><MathInput className="input sm" style={{ textAlign: 'right' }} value={form.costoBase} onChange={v => setForm({ ...form, costoBase: v })} /></div>
-                        <div className="field"><label className="field-label">Proveedor</label><input className="input sm" value={form.proveedor} onChange={e => setForm({ ...form, proveedor: e.target.value })} /></div>
-                        <div style={{ gridColumn: 'span 6', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                          <button type="button" className="btn sm ghost" onClick={() => { setShowForm(false); setEditId(null) }}>Cancelar</button>
-                          <button type="submit" className="btn sm primary">Actualizar</button>
-                        </div>
-                      </form>
-                    </td>
-                  </tr>
-                )
-              }
-
+              // Inline edit — reemplaza el row
+              if (editId === i.id && showForm) return <FormRow key={i.id} isNew={false} />
               return (
                 <tr key={i.id}>
                   <td className="id">{i.codigo}</td>
-                  <td style={{ fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {(!i.costoBase || i.costoBase === 0) && <AlertTriangle size={13} style={{ color: 'var(--c-danger)', flexShrink: 0 }} title="Sin costo asignado" />}
-                    {i.descripcion}
+                  <td style={{ fontWeight: 500 }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                      {(!i.costoBase || i.costoBase === 0) && <AlertTriangle size={13} style={{ color: 'var(--c-danger)', flexShrink: 0, marginTop: 2 }} title="Sin costo asignado" />}
+                      <span style={{ wordBreak: 'break-word', lineHeight: 1.4 }}>{i.descripcion}</span>
+                    </div>
                   </td>
                   <td style={{ textAlign: 'center', color: 'var(--c-text-2)' }}>{i.unidad}</td>
                   <td className="num" style={{ fontWeight: 600, color: (!i.costoBase || i.costoBase === 0) ? 'var(--c-danger)' : undefined }}>{money(i.costoBase)}</td>
@@ -2359,9 +2351,7 @@ function CatalogoView({ budget, setBudget, categoria }) {
                     }
                   </td>
                   <td className="actions">
-                    <button className="btn xs ghost" onClick={() => openEdit(i)}>
-                      <Edit2 size={11} /> Editar
-                    </button>
+                    <button className="btn xs ghost" onClick={() => openEdit(i)}><Edit2 size={11} /> Editar</button>
                     <button className="btn xs danger icon" style={{ marginLeft: 4 }} onClick={() => { if (u > 0) return alert(`Usado en ${u} ficha(s). No se puede eliminar.`); if (!confirm(`¿Eliminar "${i.descripcion}"?`)) return; setBudget({ ...budget, catalogos: { ...budget.catalogos, [categoria.key]: list.filter(x => x.id !== i.id) } }) }}>
                       <Trash2 size={11} />
                     </button>
@@ -2369,6 +2359,8 @@ function CatalogoView({ budget, setBudget, categoria }) {
                 </tr>
               )
             })}
+            {/* Form de NUEVO insumo — siempre al pie de la tabla */}
+            {showForm && !editId && <FormRow isNew={true} />}
           </tbody>
         </table>
       </div>
