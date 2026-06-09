@@ -220,6 +220,7 @@ function Sidebar({ page, setPage, projectActivo, setTabProject, tabProject, user
   const toolNav = [
     { id: 'reportes',   label: 'Reportes',             Icon: BarChart2 },
     { id: 'plantillas', label: 'Biblioteca',           Icon: BookOpen },
+    { id: 'equipo',     label: 'Equipo',               Icon: Users },
     { id: 'planes',     label: 'Planes y Facturación', Icon: CreditCard },
   ]
 
@@ -1116,15 +1117,15 @@ function UserSettingsModal({ open, onClose, profile, user, onSaved }) {
     { id: 'intermedio',  nombre: 'Intermedio',  m: 29.99,  y: 305.90,  yPerM: 25.49,  color: '#6366f1',
       priceMonthly: import.meta.env.VITE_PADDLE_PRICE_INTERMEDIO_MONTHLY,
       priceYearly:  import.meta.env.VITE_PADDLE_PRICE_INTERMEDIO_YEARLY,
-      features: ['5 proyectos activos', '5 usuarios', 'Fichas ilimitadas', 'Exportación PDF y Excel', 'Explosión de insumos', 'Soporte por email'] },
+      features: ['5 proyectos activos', '5 usuarios', 'Fichas ilimitadas', 'Exportación PDF y Excel', 'Explosión de insumos', 'Biblioteca de plantillas de importación', 'Informe de presupuesto', 'Soporte por email'] },
     { id: 'experto',     nombre: 'Experto',      m: 59.99,  y: 611.90,  yPerM: 50.99,  color: '#f59e0b', pop: true,
       priceMonthly: import.meta.env.VITE_PADDLE_PRICE_AVANZADO_MONTHLY,
       priceYearly:  import.meta.env.VITE_PADDLE_PRICE_AVANZADO_YEARLY,
-      features: ['10 proyectos activos', '10 usuarios', 'Todo lo de Intermedio', 'Plantillas de catálogo', 'Logo personalizado', 'Soporte prioritario'] },
+      features: ['10 proyectos activos', '10 usuarios', 'Plan Intermedio', 'Cronograma de ejecución de obra', 'Flujo de caja'] },
     { id: 'enterprise',  nombre: 'Enterprise',   m: 119.99, y: 1223.90, yPerM: 101.99, color: '#10b981',
       priceMonthly: import.meta.env.VITE_PADDLE_PRICE_ENTERPRISE_MONTHLY,
       priceYearly:  import.meta.env.VITE_PADDLE_PRICE_ENTERPRISE_YEARLY,
-      features: ['40 proyectos activos', '20 usuarios', 'Todo lo de Experto', 'Acceso a la API', 'Onboarding personalizado', 'SLA garantizado de 99.9%'] },
+      features: ['40 proyectos activos', '20 usuarios', 'Plan Experto', 'Módulo de ejecución de obra', 'Elaboración y control de planillas de obra', 'Estimaciones cliente–ejecutor', 'Órdenes de cambio cliente–ejecutor', 'Otras herramientas avanzadas de presupuesto'] },
   ]
 
   const openPaddleCheckout = async (p) => {
@@ -1341,7 +1342,7 @@ function NotificationsDropdown({ notifs, onClose, onNavigate }) {
 function InsumoSelect({ catalogos, categoria, value, onChange, onCreateNew, moneda = 'USD' }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
-  const [pos, setPos] = useState({ top: 0, left: 0, width: 320 })
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 320, listMaxH: 240 })
   const triggerRef = useRef(null)
   const dropRef = useRef(null)
 
@@ -1349,12 +1350,20 @@ function InsumoSelect({ catalogos, categoria, value, onChange, onCreateNew, mone
   const handleOpen = () => {
     if (!open && triggerRef.current) {
       const r = triggerRef.current.getBoundingClientRect()
-      const dropH = 320 // altura aprox del dropdown
-      const spaceBelow = window.innerHeight - r.bottom
-      const top = spaceBelow < dropH && r.top > dropH
-        ? r.top - dropH - 4   // abre hacia arriba si no hay espacio abajo
-        : r.bottom + 4
-      setPos({ top, left: r.left, width: Math.max(r.width, 320) })
+      const dropW = Math.max(r.width, 320)
+      const spaceBelow = window.innerHeight - r.bottom - 8
+      const spaceAbove = r.top - 8
+      // Clamp horizontal para no salirse de pantalla
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - dropW - 8))
+      if (spaceBelow >= 120 || spaceBelow >= spaceAbove) {
+        // Abre hacia ABAJO
+        const listMaxH = Math.max(80, Math.min(240, spaceBelow - 52))
+        setPos({ top: r.bottom + 4, left, width: dropW, listMaxH })
+      } else {
+        // Abre hacia ARRIBA: la base del dropdown toca el borde superior del trigger
+        const maxH = Math.min(300, spaceAbove)
+        setPos({ top: r.top - maxH - 4, left, width: dropW, listMaxH: Math.max(80, maxH - 52) })
+      }
     }
     setOpen(o => !o)
   }
@@ -1416,7 +1425,7 @@ function InsumoSelect({ catalogos, categoria, value, onChange, onCreateNew, mone
               ↵ Asignar código <strong>{exact.codigo}</strong>
             </div>
           )}
-          <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+          <div style={{ maxHeight: pos.listMaxH ?? 240, overflowY: 'auto' }}>
             {!list.length && <div style={{ padding: 12, fontSize: 12, color: 'var(--c-text-3)' }}>Sin coincidencias.</div>}
             {list.map(i => (
               <div
@@ -2281,9 +2290,16 @@ function CatalogoView({ budget, setBudget, categoria }) {
     setEditId(i.id); setShowForm(true)
     setTimeout(() => editRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50)
   }
+  const catPrefix = { materiales: 'MAT', manoObra: 'MO', herramientaEquipo: 'HE', subcontratos: 'SUB' }[categoria.key] || categoria.key.slice(0,3).toUpperCase()
+  const nextCode = () => {
+    const re = new RegExp(`^${catPrefix}-(\\d+)$`, 'i')
+    const nums = list.map(i => { const m = (i.codigo || '').match(re); return m ? parseInt(m[1], 10) : 0 })
+    const next = (nums.length ? Math.max(...nums) : 0) + 1
+    return `${catPrefix}-${String(next).padStart(3, '0')}`
+  }
   const openNew = () => {
     setShowForm(true); setEditId(null)
-    setForm({ codigo: '', descripcion: '', unidad: 'und', costoBase: 0, proveedor: '', notas: '' })
+    setForm({ codigo: nextCode(), descripcion: '', unidad: 'und', costoBase: 0, proveedor: '', notas: '' })
     setTimeout(() => newRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }), 80)
   }
   const FormRow = ({ isNew }) => (
@@ -2544,6 +2560,166 @@ function ExplosionActividadModal({ open, onClose, actividad, budget, params }) {
 }
 
 // ============ PLANTILLAS PAGE ============
+
+// ============ EQUIPO PAGE ============
+function EquipoPage({ user, orgId }) {
+  const [members, setMembers] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteRole, setInviteRole] = useState('estimador')
+  const [inviting, setInviting] = useState(false)
+  const [msg, setMsg] = useState(null)
+  const [savingId, setSavingId] = useState(null)
+
+  const ORG_ROLES = [
+    { value: 'dueno',         label: 'Propietario' },
+    { value: 'administrador', label: 'Administrador' },
+    { value: 'estimador',     label: 'Estimador' },
+    { value: 'visualizador',  label: 'Visualizador' },
+  ]
+  const roleColor = { dueno: '#f59e0b', administrador: '#7c3aed', estimador: '#2563eb', visualizador: '#6b7280' }
+
+  const loadMembers = async () => {
+    if (!orgId) return
+    setLoading(true)
+    const { data: mems } = await supabase.from('org_members').select('user_id, role, assigned_at').eq('org_id', orgId)
+    if (!mems?.length) { setMembers([]); setLoading(false); return }
+    const { data: profs } = await supabase.from('profiles').select('id, nombre, email').in('id', mems.map(m => m.user_id))
+    const profMap = Object.fromEntries((profs||[]).map(p => [p.id, p]))
+    setMembers(mems.map(m => ({ ...m, profile: profMap[m.user_id] || {} })))
+    setLoading(false)
+  }
+
+  useEffect(() => { loadMembers() }, [orgId]) // eslint-disable-line
+
+  const isOwner = members.some(m => m.user_id === user?.id && m.role === 'dueno')
+
+  const changeRole = async (userId, newRole) => {
+    setSavingId(userId)
+    const { error } = await supabase.from('org_members').update({ role: newRole }).eq('org_id', orgId).eq('user_id', userId)
+    if (error) setMsg({ ok: false, txt: 'Error al actualizar el rol' })
+    else { await loadMembers() }
+    setSavingId(null)
+  }
+
+  const inviteMember = async () => {
+    if (!inviteEmail.trim()) return
+    setInviting(true)
+    const { error } = await supabase.from('invitations').insert({ org_id: orgId, invited_by: user.id, email: inviteEmail.trim().toLowerCase(), role: inviteRole })
+    if (error) setMsg({ ok: false, txt: error.message || 'Error al invitar' })
+    else { setMsg({ ok: true, txt: `Invitación enviada a ${inviteEmail}` }); setInviteEmail('') }
+    setInviting(false)
+    setTimeout(() => setMsg(null), 4000)
+  }
+
+  return (
+    <div className="page-body" style={{ maxWidth: 760 }}>
+      <div className="page-head" style={{ borderBottom: 0, paddingLeft: 0, paddingRight: 0 }}>
+        <div className="page-head-title">
+          <h1><Users size={22} /> Equipo</h1>
+          <p className="page-head-meta" style={{ fontSize: 13, color: 'var(--c-text-3)', marginTop: 4 }}>
+            Miembros de tu organización y sus roles de acceso
+          </p>
+        </div>
+      </div>
+
+      {/* Invitar nuevo miembro */}
+      {isOwner && (
+        <div className="card card-pad" style={{ marginBottom: 16 }}>
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <UserPlus size={15} /> Invitar persona
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px auto', gap: 10, alignItems: 'end' }}>
+            <div className="field">
+              <label className="field-label">Email</label>
+              <input className="input" placeholder="correo@ejemplo.com" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && inviteMember()} />
+            </div>
+            <div className="field">
+              <label className="field-label">Rol</label>
+              <select className="input" value={inviteRole} onChange={e => setInviteRole(e.target.value)}>
+                {ORG_ROLES.filter(r => r.value !== 'dueno').map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+              </select>
+            </div>
+            <button className="btn primary" onClick={inviteMember} disabled={inviting || !inviteEmail.trim()}>
+              {inviting ? '…' : 'Invitar'}
+            </button>
+          </div>
+          {msg && (
+            <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 8, fontSize: 13,
+              background: msg.ok ? 'var(--c-success-soft,#d1fae5)' : 'var(--c-danger-soft,#fee2e2)',
+              color: msg.ok ? '#065f46' : '#991b1b' }}>
+              {msg.txt}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Lista de miembros */}
+      <div className="card" style={{ padding: 0 }}>
+        <div className="card-header">
+          <div className="card-title"><Users size={15} /> Miembros ({members.length})</div>
+        </div>
+        {loading
+          ? <div style={{ padding: 32, textAlign: 'center', color: 'var(--c-text-3)' }}>Cargando…</div>
+          : members.length === 0
+            ? <div style={{ padding: 32, textAlign: 'center', color: 'var(--c-text-3)', fontSize: 13 }}>Sin miembros aún.</div>
+            : (
+              <table className="bt">
+                <thead><tr>
+                  <th>Nombre</th>
+                  <th>Email</th>
+                  <th style={{ width: 160 }}>Rol</th>
+                  <th style={{ width: 110 }}>Desde</th>
+                </tr></thead>
+                <tbody>
+                  {members.map(m => {
+                    const isMe = m.user_id === user?.id
+                    const isMeOwner = m.role === 'dueno'
+                    return (
+                      <tr key={m.user_id}>
+                        <td style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ width: 28, height: 28, borderRadius: '50%', background: roleColor[m.role] || '#6b7280', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                            {(m.profile.nombre || m.profile.email || '?').slice(0,2).toUpperCase()}
+                          </div>
+                          <span>{m.profile.nombre || '—'} {isMe && <span style={{ fontSize: 10, color: 'var(--c-text-3)' }}>(tú)</span>}</span>
+                        </td>
+                        <td style={{ fontSize: 12, color: 'var(--c-text-2)' }}>{m.profile.email || '—'}</td>
+                        <td>
+                          {isOwner && !isMeOwner
+                            ? (
+                              <select className="input sm" value={m.role} disabled={savingId === m.user_id}
+                                onChange={e => changeRole(m.user_id, e.target.value)}
+                                style={{ fontSize: 12 }}>
+                                {ORG_ROLES.filter(r => r.value !== 'dueno').map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                              </select>
+                            )
+                            : (
+                              <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: (roleColor[m.role]||'#6b7280') + '22', color: roleColor[m.role]||'#6b7280' }}>
+                                {ORG_ROLES.find(r => r.value === m.role)?.label || m.role}
+                              </span>
+                            )
+                          }
+                        </td>
+                        <td style={{ fontSize: 12, color: 'var(--c-text-3)' }}>
+                          {m.assigned_at ? new Date(m.assigned_at).toLocaleDateString('es', { day:'2-digit', month:'short', year:'numeric' }) : '—'}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )
+        }
+      </div>
+
+      <p style={{ fontSize: 12, color: 'var(--c-text-3)', marginTop: 12 }}>
+        Los roles de acceso por proyecto se asignan desde el botón <strong>Equipo</strong> dentro de cada proyecto.
+      </p>
+    </div>
+  )
+}
+
 // ============ REPORTES PAGE ============
 function ReportesPage({ proyectos, budget, params, userEmpresa }) {
   const [tab, setTab] = useState('proyecto')
@@ -2616,7 +2792,7 @@ function ReportesPage({ proyectos, budget, params, userEmpresa }) {
                       icon={FileText}
                       title="Presupuesto General"
                       desc="Desglose completo por capítulos, subcapítulos y actividades con precios unitarios y subtotales."
-                      onPdf={()   => exportPDFPresupuesto(budget, params, { nombre: userEmpresa, logo: budget?.logoOfertante, headerBg: budget?.apuHeaderBg, headerText: budget?.apuHeaderText })}
+                      onPdf={()   => exportPDFPresupuesto(budget, params, { nombre: userEmpresa, logo: budget?.logoOfertante, logoCliente: budget?.logoCliente, headerBg: budget?.apuHeaderBg, headerText: budget?.apuHeaderText })}
                       onExcel={() => exportExcelPresupuesto(budget, params)}
                     />
                     <ReporteCard
@@ -2629,7 +2805,7 @@ function ReportesPage({ proyectos, budget, params, userEmpresa }) {
                       icon={Layers}
                       title="Todos los APU / Fichas"
                       desc="Exporta la ficha de costo unitario de cada actividad del presupuesto."
-                      onPdf={() => exportPDFGeneral(budget, params, { nombre: userEmpresa, logo: budget?.logoOfertante, headerBg: budget?.apuHeaderBg, headerText: budget?.apuHeaderText })}
+                      onPdf={() => exportPDFGeneral(budget, params, { nombre: userEmpresa, logo: budget?.logoOfertante, logoCliente: budget?.logoCliente, headerBg: budget?.apuHeaderBg, headerText: budget?.apuHeaderText })}
                       onExcel={() => exportExcelGeneral(budget, params)}
                     />
                     <ReporteCard
@@ -3133,6 +3309,7 @@ export default function MainApp() {
   else if (page === 'proyecto' && budget) crumbs = ['Proyectos', budget.nombreProyecto]
   else if (page === 'reportes')           crumbs = ['Reportes']
   else if (page === 'plantillas')        crumbs = ['Biblioteca']
+  else if (page === 'equipo')            crumbs = ['Equipo']
   else if (page === 'explosion' && budget) crumbs = [budget.nombreProyecto, 'Explosión de Insumos']
   else if (page === 'planes')            crumbs = ['Planes']
 
@@ -3187,6 +3364,7 @@ export default function MainApp() {
         {page === 'proyectos'  && <ProyectosPage proyectos={proyectos} openProject={openProject} addProject={addProject} deleteProject={deleteProject} />}
         {page === 'reportes'   && <ReportesPage  proyectos={proyectos} budget={budget} params={params} userEmpresa={userEmpresa} />}
         {page === 'plantillas' && <PlantillasPage budget={budget} setBudget={setBudget} />}
+        {page === 'equipo'     && <EquipoPage user={user} orgId={orgId} />}
         {page === 'explosion'  && budget && <ExplosionView budget={budget} params={params} />}
         {page === 'planes'     && <PlanesPage />}
 
@@ -3202,11 +3380,6 @@ export default function MainApp() {
                   <span className="badge">Rev {budget.revision}</span>
                   <span className="badge" style={{ fontFamily: 'var(--font-mono)' }}>{budget.moneda}</span>
                   {/* Rol badge del usuario actual */}
-                  {projectRole && ROLES_ARROW[projectRole] && (
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 12, background: ROLES_ARROW[projectRole].color + '22', color: ROLES_ARROW[projectRole].color, border: `1px solid ${ROLES_ARROW[projectRole].color}44` }}>
-                      {ROLES_ARROW[projectRole].label}
-                    </span>
-                  )}
                 </div>
                 <h1>
                   {budget.nombreProyecto}
@@ -3266,7 +3439,7 @@ export default function MainApp() {
                 {puedeHacer(projectRole, 'editarPresupuesto') && (
                   <button className="btn sm" onClick={() => setShowVersion(true)}>💾 Versión</button>
                 )}
-                {tabProject === 'presupuesto' && <DescargasMenu budget={budget} params={params} onRangoFichas={() => setShowRango(true)} empresa={{ nombre: userEmpresa, logo: budget.logoOfertante, headerBg: budget.apuHeaderBg, headerText: budget.apuHeaderText }} />}
+                {tabProject === 'presupuesto' && <DescargasMenu budget={budget} params={params} onRangoFichas={() => setShowRango(true)} empresa={{ nombre: userEmpresa, logo: budget.logoOfertante, logoCliente: budget.logoCliente, headerBg: budget.apuHeaderBg, headerText: budget.apuHeaderText }} />}
                 {tabProject !== 'presupuesto' && tabToCat[tabProject] && (
                   <button className="btn sm" style={{ background: 'var(--c-success)', borderColor: 'var(--c-success)', color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}
                     onClick={() => exportExcelCatalogo(budget, tabToCat[tabProject])}>
@@ -3286,7 +3459,7 @@ export default function MainApp() {
             </div>
 
             {/* Body */}
-            <div className="page-body" style={{ minHeight: 0, ...(tabProject === 'presupuesto' ? { overflow: 'hidden', padding: 0 } : {}) }}>
+            <div className="page-body" style={{ minHeight: 0, ...(tabProject === 'presupuesto' ? { overflow: 'hidden', padding: 0 } : { paddingTop: 0 }) }}>
               {tabProject === 'presupuesto' && (
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
                   {/* ── Fixed top: KPIs + Params + Toolbar ── */}
@@ -3358,7 +3531,7 @@ export default function MainApp() {
         catalogos={budget?.catalogos || EMPTY_CATALOGOS}
         params={params} onUpdate={updFicha}
         onUpdateCatalogos={nc => setBudget({ ...budget, catalogos: nc })}
-        empresa={{ nombre: userEmpresa, logo: budget?.logoOfertante, headerBg: budget?.apuHeaderBg, headerText: budget?.apuHeaderText }}
+        empresa={{ nombre: userEmpresa, logo: budget?.logoOfertante, logoCliente: budget?.logoCliente, headerBg: budget?.apuHeaderBg, headerText: budget?.apuHeaderText }}
         onExplosion={() => { setExplosionActividad(fichaActividad); setFichaPath(null) }}
       />
       {budget && explosionActividad && (
@@ -3372,7 +3545,7 @@ export default function MainApp() {
       )}
       {budget && <ConfigProyectoModal  open={showConfig}  onClose={() => setShowConfig(false)}  budget={budget} setBudget={setBudget} />}
       {budget && <GuardarVersionDialog open={showVersion} onClose={() => setShowVersion(false)} budget={budget} setBudget={setBudget} />}
-      {budget && <RangoFichasDialog    open={showRango}   onClose={() => setShowRango(false)}   budget={budget} params={params} empresa={{ nombre: userEmpresa, logo: budget.logoOfertante, headerBg: budget.apuHeaderBg, headerText: budget.apuHeaderText }} />}
+      {budget && <RangoFichasDialog    open={showRango}   onClose={() => setShowRango(false)}   budget={budget} params={params} empresa={{ nombre: userEmpresa, logo: budget.logoOfertante, logoCliente: budget.logoCliente, headerBg: budget.apuHeaderBg, headerText: budget.apuHeaderText }} />}
       {budget && <ProjectTeamModal open={showTeam} onClose={() => setShowTeam(false)} budget={budget} user={user} orgId={orgId} projectRole={projectRole} />}
       {budget && <ClonarProyectoModal  open={showClonar} onClose={() => setShowClonar(false)}  budget={budget} user={user}
         onCloned={nb => { setProyectos(ps => [nb, ...ps]); setActiveId(nb.id); setTabProject('presupuesto') }} />}
