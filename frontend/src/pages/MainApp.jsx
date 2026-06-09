@@ -1740,7 +1740,17 @@ function InicioPage({ proyectos, openProject, addProject, setPage, userName }) {
   const saludo = h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches'
   const firstName = (userName || 'Usuario').split(' ')[0]
 
-  const totalCartera   = proyectos.reduce((s, p) => s + calcKPIs(p).total, 0)
+  // Agrupar totales por moneda para evitar mezclar HNL y USD
+  const carteraPorMoneda = proyectos.reduce((acc, p) => {
+    const moneda = p.moneda || 'USD'
+    acc[moneda] = (acc[moneda] || 0) + calcKPIs(p).total
+    return acc
+  }, {})
+  const carteraLabel = Object.entries(carteraPorMoneda).map(([cur, val]) => {
+    const sym = cur === 'HNL' ? 'L' : '$'
+    const n = val >= 1e6 ? `${sym}${(val/1e6).toFixed(2)}M` : val >= 1e3 ? `${sym}${(val/1e3).toFixed(1)}K` : `${sym}${val.toFixed(2)}`
+    return cur !== 'USD' ? `${n} ${cur}` : n
+  }).join(' + ')
   const activos        = proyectos.filter(p => p.estado === 'Activo').length
   const enRevision     = proyectos.filter(p => p.estado === 'En revisión').length
   const aprobados      = proyectos.filter(p => p.estado === 'Aprobado').length
@@ -1783,7 +1793,7 @@ function InicioPage({ proyectos, openProject, addProject, setPage, userName }) {
       <div className="kpi-row">
         <div className="kpi highlight">
           <div className="kpi-label"><DollarSign size={12} className="ico" /> Valor Total Cartera</div>
-          <div className="kpi-val">{moneyK(totalCartera)}</div>
+          <div className="kpi-val" style={{ fontSize: Object.keys(carteraPorMoneda).length > 1 ? 16 : undefined }}>{carteraLabel || '$0.00'}</div>
           <div className="kpi-foot">Suma de {proyectos.length} proyecto{proyectos.length !== 1 ? 's' : ''}</div>
         </div>
         <div className="kpi">
@@ -2978,9 +2988,9 @@ function PlantillasPage({ budget, setBudget }) {
 function PlanesPage() {
   const [billing, setBilling] = useState('m')
   const planes = [
-    { name: 'Básico',      m: 9.99,  y: 99,  features: ['5 proyectos', 'Fichas ilimitadas', 'Exportación PDF', 'Soporte email'] },
-    { name: 'Profesional', m: 24.99, y: 249, pop: true, features: ['Proyectos ilimitados', 'PDF + Excel', 'Plantillas', 'Logo personalizado', 'Soporte prioritario'] },
-    { name: 'Empresarial', m: 49.99, y: 499, features: ['Todo Profesional', 'Multi-usuario (5)', 'API', 'Onboarding', 'SLA 99.9%'] },
+    { name: 'Intermedio',  m: 29.99, y: 305.90, features: ['5 proyectos activos', '5 usuarios', 'Fichas ilimitadas', 'Exportación PDF y Excel', 'Explosión de insumos', 'Biblioteca de plantillas', 'Informe de presupuesto', 'Soporte por email'] },
+    { name: 'Experto',     m: 59.99, y: 611.90, pop: true, features: ['10 proyectos activos', '10 usuarios', 'Todo Intermedio', 'Cronograma de ejecución de obra', 'Flujo de caja'] },
+    { name: 'Enterprise',  m: 119.99, y: 1223.90, features: ['40 proyectos activos', '20 usuarios', 'Todo Experto', 'Módulo de ejecución de obra', 'Planillas de obra', 'Estimaciones cliente–ejecutor', 'Órdenes de cambio', 'Otras herramientas avanzadas'] },
   ]
   return (
     <Fragment>
