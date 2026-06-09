@@ -125,7 +125,11 @@ const drawApuHeader = async (doc, budget, empresa = {}, opts = {}) => {
   const headerH = 32
 
   doc.setFillColor(bg[0],bg[1],bg[2]); doc.rect(0,0,w,headerH,'F')
+  // Logo ofertante — izquierda
   await addImageContain(doc, empresa.logo, 5, 7, 24, 18)
+  // Logo cliente — derecha
+  const clientLogo = empresa.logoCliente || budget.logoCliente
+  if (clientLogo) await addImageContain(doc, clientLogo, w - 29, 7, 24, 18)
   doc.setTextColor(txt[0],txt[1],txt[2]); doc.setFontSize(13); doc.setFont(undefined,'bold')
   doc.text(opts.title || 'FICHA DE COSTO UNITARIO', w/2, 12, {align:'center'})
   doc.setFontSize(11); doc.setFont(undefined,'bold')
@@ -135,12 +139,14 @@ const drawApuHeader = async (doc, budget, empresa = {}, opts = {}) => {
   return headerH + 4
 }
 
-// footer: rev info on left, page number on right
-const drawApuFooter = (doc, budget, pageNum, totalPages) => {
+// footer: rev info on left, page number on right — usa los colores configurados
+const drawApuFooter = (doc, budget, pageNum, totalPages, empresa = {}) => {
   const w = doc.internal.pageSize.getWidth()
   const h = doc.internal.pageSize.getHeight()
-  doc.setFillColor(15,17,21); doc.rect(0,h-10,w,10,'F')
-  doc.setTextColor(180,180,180); doc.setFontSize(7); doc.setFont(undefined,'normal')
+  const bg  = hexToRgb(empresa.headerBg)  || [15,17,21]
+  const txt = hexToRgb(empresa.headerText) || [180,180,180]
+  doc.setFillColor(bg[0],bg[1],bg[2]); doc.rect(0,h-10,w,10,'F')
+  doc.setTextColor(txt[0],txt[1],txt[2]); doc.setFontSize(7); doc.setFont(undefined,'normal')
   doc.text(`Rev ${budget.revision||1} · ${budget.estado||'Borrador'} · ${budget.moneda||'USD'} · ${budget.fecha||''}`, 10, h-4)
   doc.text(`Pág. ${pageNum} de ${totalPages}`, w-10, h-4, {align:'right'})
   doc.setTextColor(0)
@@ -301,7 +307,7 @@ export const exportPDFPresupuesto = async (budget, params, empresa = {}) => {
 
   // ── Footer en todas las páginas ──
   const totalPages = doc.internal.getNumberOfPages()
-  for (let i=1; i<=totalPages; i++) { doc.setPage(i); drawApuFooter(doc, budget, i, totalPages) }
+  for (let i=1; i<=totalPages; i++) { doc.setPage(i); drawApuFooter(doc, budget, i, totalPages, empresa) }
 
   doc.save((budget.nombreProyecto||'Presupuesto').replace(/[^\w\s-]+/g,'_')+'_Presupuesto.pdf')
 }
@@ -362,7 +368,7 @@ export const exportPDFFicha = async (budget, act, params, empresa = {}) => {
 
   // Footers on all pages
   const total = doc.internal.getNumberOfPages()
-  for (let i=1;i<=total;i++) { doc.setPage(i); drawApuFooter(doc,budget,i,total) }
+  for (let i=1;i<=total;i++) { doc.setPage(i); drawApuFooter(doc,budget,i,total,empresa) }
   doc.save(`Ficha_${act.id}.pdf`)
 }
 
@@ -434,7 +440,7 @@ export const exportPDFRangoFichas = async (budget, params, ids, empresa = {}) =>
 
   // Footers on every page
   const totalPages = doc.internal.getNumberOfPages()
-  for (let i=1;i<=totalPages;i++) { doc.setPage(i); drawApuFooter(doc,budget,i,totalPages) }
+  for (let i=1;i<=totalPages;i++) { doc.setPage(i); drawApuFooter(doc,budget,i,totalPages,empresa) }
   doc.save((budget.nombreProyecto||'Fichas').replace(/[^\w]+/g,'_')+'_APU.pdf')
 }
 
