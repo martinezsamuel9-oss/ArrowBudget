@@ -970,11 +970,42 @@ function UserSettingsModal({ open, onClose, profile, user, onSaved }) {
     { id: 'plan',      label: 'Plan' },
   ]
 
+  const [planAnual, setPlanAnual] = useState(false)
+  const [planBusy, setPlanBusy]  = useState(null)
+
   const PLANES = [
-    { id: 'estimador',    nombre: 'Estimador',       m: 29,  y: 290,  color: '#6366f1', features: ['Presupuesto APU completo', 'Exportación PDF y Excel', 'Fichas de costo ilimitadas', 'Catálogos de insumos'] },
-    { id: 'planificador', nombre: 'Planificador',     m: 59,  y: 590,  color: '#f59e0b', pop: true, features: ['Todo lo de Estimador', 'Cronograma (Gantt)', 'Flujo de caja', 'Análisis de recursos'] },
-    { id: 'director',     nombre: 'Director de Obra', m: 99,  y: 990,  color: '#10b981', features: ['Todo lo de Planificador', 'Órdenes de cambio', 'Planillas a contratistas', 'Control de gastos y KPIs'] },
+    { id: 'intermedio',  nombre: 'Intermedio',  m: 29.99,  y: 305.90,  yPerM: 25.49,  color: '#6366f1',
+      priceMonthly: import.meta.env.VITE_PADDLE_PRICE_INTERMEDIO_MONTHLY,
+      priceYearly:  import.meta.env.VITE_PADDLE_PRICE_INTERMEDIO_YEARLY,
+      features: ['5 proyectos activos', '5 usuarios', 'Fichas ilimitadas', 'Exportación PDF y Excel', 'Explosión de insumos', 'Soporte por email'] },
+    { id: 'experto',     nombre: 'Experto',      m: 59.99,  y: 611.90,  yPerM: 50.99,  color: '#f59e0b', pop: true,
+      priceMonthly: import.meta.env.VITE_PADDLE_PRICE_AVANZADO_MONTHLY,
+      priceYearly:  import.meta.env.VITE_PADDLE_PRICE_AVANZADO_YEARLY,
+      features: ['10 proyectos activos', '10 usuarios', 'Todo lo de Intermedio', 'Plantillas de catálogo', 'Logo personalizado', 'Soporte prioritario'] },
+    { id: 'enterprise',  nombre: 'Enterprise',   m: 119.99, y: 1223.90, yPerM: 101.99, color: '#10b981',
+      priceMonthly: import.meta.env.VITE_PADDLE_PRICE_ENTERPRISE_MONTHLY,
+      priceYearly:  import.meta.env.VITE_PADDLE_PRICE_ENTERPRISE_YEARLY,
+      features: ['40 proyectos activos', '20 usuarios', 'Todo lo de Experto', 'Acceso a la API', 'Onboarding personalizado', 'SLA garantizado de 99.9%'] },
   ]
+
+  const openPaddleCheckout = async (p) => {
+    const priceId = planAnual ? p.priceYearly : p.priceMonthly
+    if (!priceId) return alert('Precio no configurado. Contacta a soporte.')
+    setPlanBusy(p.id)
+    try {
+      if (!window.Paddle) {
+        await new Promise((res, rej) => {
+          const s = document.createElement('script')
+          s.src = 'https://cdn.paddle.com/paddle/v2/paddle.js'
+          s.onload = () => { window.Paddle.Initialize({ environment: 'production', token: import.meta.env.VITE_PADDLE_CLIENT_TOKEN || '' }); res() }
+          s.onerror = rej
+          document.head.appendChild(s)
+        })
+      }
+      window.Paddle.Checkout.open({ items: [{ priceId, quantity: 1 }], successUrl: `${window.location.origin}/?checkout=success` })
+    } catch { alert('No se pudo abrir el checkout. Intenta de nuevo.') }
+    setPlanBusy(null)
+  }
 
   const savePerfil = async () => {
     if (!nombre.trim()) return setMsg({ ok: false, txt: 'El nombre es requerido' })
@@ -1058,22 +1089,45 @@ function UserSettingsModal({ open, onClose, profile, user, onSaved }) {
       {/* ── Plan ── */}
       {tab === 'plan' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ fontSize: 13, color: 'var(--c-text-2)', marginBottom: 4 }}>Selecciona el plan que mejor se adapte a tus necesidades.</div>
+          {/* Toggle mensual/anual */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'center', marginBottom: 4 }}>
+            <button onClick={() => setPlanAnual(false)} style={{ padding: '4px 14px', borderRadius: 20, fontSize: 12, fontWeight: planAnual ? 500 : 700, background: planAnual ? 'transparent' : 'var(--c-accent)', color: planAnual ? 'var(--c-text-2)' : '#fff', border: '1.5px solid var(--c-accent)', cursor: 'pointer' }}>Mensual</button>
+            <button onClick={() => setPlanAnual(true)}  style={{ padding: '4px 14px', borderRadius: 20, fontSize: 12, fontWeight: planAnual ? 700 : 500, background: planAnual ? 'var(--c-accent)' : 'transparent', color: planAnual ? '#fff' : 'var(--c-text-2)', border: '1.5px solid var(--c-accent)', cursor: 'pointer' }}>
+              Anual <span style={{ fontSize: 10, fontWeight: 700, background: '#10b981', color: '#fff', padding: '1px 6px', borderRadius: 10, marginLeft: 4 }}>−15%</span>
+            </button>
+          </div>
+
           {PLANES.map(p => (
             <div key={p.id} style={{ border: `1.5px solid ${p.pop ? p.color : 'var(--c-line)'}`, borderRadius: 'var(--r-lg)', padding: '16px 18px', position: 'relative', background: p.pop ? `${p.color}12` : 'var(--c-bg)' }}>
               {p.pop && <span style={{ position: 'absolute', top: -10, right: 14, background: p.color, color: '#fff', fontSize: 10, fontWeight: 700, padding: '2px 10px', borderRadius: 20 }}>MÁS POPULAR</span>}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
                 <div>
                   <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--c-ink)' }}>{p.nombre}</div>
-                  <div style={{ fontSize: 12, color: 'var(--c-text-3)', marginTop: 2 }}>desde <b style={{ color: 'var(--c-ink)' }}>${p.m}/mes</b> · ${p.y}/año</div>
+                  {planAnual
+                    ? <div style={{ fontSize: 12, color: 'var(--c-text-3)', marginTop: 2 }}><b style={{ color: 'var(--c-ink)' }}>${p.yPerM}/mes</b> · <span style={{ color: '#10b981' }}>${p.y}/año</span></div>
+                    : <div style={{ fontSize: 12, color: 'var(--c-text-3)', marginTop: 2 }}><b style={{ color: 'var(--c-ink)' }}>${p.m}/mes</b></div>
+                  }
                 </div>
-                <button className="btn sm" style={{ background: p.color, borderColor: p.color, color: '#fff', flexShrink: 0 }}>Seleccionar</button>
+                <button className="btn sm" onClick={() => openPaddleCheckout(p)} disabled={planBusy === p.id}
+                  style={{ background: p.color, borderColor: p.color, color: '#fff', flexShrink: 0, opacity: planBusy === p.id ? 0.6 : 1 }}>
+                  {planBusy === p.id ? '…' : 'Seleccionar'}
+                </button>
               </div>
               <ul style={{ margin: 0, padding: '0 0 0 16px', fontSize: 12, color: 'var(--c-text-2)', display: 'flex', flexDirection: 'column', gap: 3 }}>
                 {p.features.map(f => <li key={f}>{f}</li>)}
               </ul>
             </div>
           ))}
+
+          {/* Gestionar suscripción existente */}
+          <div style={{ marginTop: 8, padding: '12px 16px', background: 'var(--c-bg-2)', borderRadius: 'var(--r-md)', border: '1px solid var(--c-line)' }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--c-text-2)', marginBottom: 6 }}>¿Ya tienes una suscripción?</div>
+            <div style={{ fontSize: 12, color: 'var(--c-text-3)', marginBottom: 8 }}>Gestiona, cambia o cancela tu plan desde el portal de Paddle.</div>
+            <a href="https://customer.paddle.com/" target="_blank" rel="noopener noreferrer"
+              style={{ fontSize: 12, fontWeight: 600, color: 'var(--c-accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              Gestionar suscripción →
+            </a>
+          </div>
         </div>
       )}
     </Drawer>
