@@ -2584,19 +2584,25 @@ function EquipoPage({ user, orgId }) {
   const ORG_ROLES = Object.entries(ROLES_ARROW).map(([value, { label }]) => ({ value, label }))
 
   const loadMembers = async () => {
-    if (!orgId || !user?.id) return
+    if (!orgId || !user?.id) { setLoading(false); return }
     setLoading(true)
-    let { data: mems } = await supabase.from('org_members').select('user_id, role, assigned_at').eq('org_id', orgId)
-    // Auto-seed: si el usuario actual no aparece en org_members, insertarlo como dueño
-    if (!mems?.find(m => m.user_id === user.id)) {
-      await supabase.from('org_members').upsert({ org_id: orgId, user_id: user.id, role: 'gerente' }, { onConflict: 'org_id,user_id' })
-      const { data: refreshed } = await supabase.from('org_members').select('user_id, role, assigned_at').eq('org_id', orgId)
-      mems = refreshed
+    try {
+      let { data: mems, error } = await supabase.from('org_members').select('user_id, role, assigned_at').eq('org_id', orgId)
+      if (error) throw error
+      // Auto-seed: si el usuario actual no aparece en org_members, insertarlo como gerente
+      if (!mems?.find(m => m.user_id === user.id)) {
+        await supabase.from('org_members').upsert({ org_id: orgId, user_id: user.id, role: 'gerente' }, { onConflict: 'org_id,user_id' })
+        const { data: refreshed } = await supabase.from('org_members').select('user_id, role, assigned_at').eq('org_id', orgId)
+        mems = refreshed || []
+      }
+      if (!mems?.length) { setMembers([]); setLoading(false); return }
+      const { data: profs } = await supabase.from('profiles').select('id, nombre, email').in('id', mems.map(m => m.user_id))
+      const profMap = Object.fromEntries((profs||[]).map(p => [p.id, p]))
+      setMembers(mems.map(m => ({ ...m, profile: profMap[m.user_id] || {} })))
+    } catch(e) {
+      console.error('loadMembers error:', e)
+      setMembers([])
     }
-    if (!mems?.length) { setMembers([]); setLoading(false); return }
-    const { data: profs } = await supabase.from('profiles').select('id, nombre, email').in('id', mems.map(m => m.user_id))
-    const profMap = Object.fromEntries((profs||[]).map(p => [p.id, p]))
-    setMembers(mems.map(m => ({ ...m, profile: profMap[m.user_id] || {} })))
     setLoading(false)
   }
 
@@ -2999,7 +3005,7 @@ function PlanesPage() {
         <div className="page-head-actions">
           <div className="seg">
             <button className={billing === 'm' ? 'on' : ''} onClick={() => setBilling('m')}>Mensual</button>
-            <button className={billing === 'y' ? 'on' : ''} onClick={() => setBilling('y')}>Anual (-20%)</button>
+            <button className={billing === 'y' ? 'on' : ''} onClick={() => setBilling('y')}>Anual (-15%)</button>
           </div>
         </div>
       </div>
