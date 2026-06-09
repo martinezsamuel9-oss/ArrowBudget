@@ -3,19 +3,13 @@
 // =========================================================
 
 /**
- * Definición de los 8 roles específicos de Arrow Budget
- * (más 'dueno' interno para el propietario de la org)
+ * Los 8 roles de Arrow Budget
  */
 export const ROLES_ARROW = {
-  dueno: {
-    label: 'Propietario',
-    color: '#f59e0b',
-    desc: 'Acceso total al proyecto y la organización',
-  },
   gerente: {
     label: 'Gerente',
     color: '#7c3aed',
-    desc: 'Aprueba presupuestos y envía a fase de ejecución',
+    desc: 'Aprueba presupuestos y envía a fase de impresión/ejecución',
   },
   ing_costos_1: {
     label: 'Ing. Costos I',
@@ -45,7 +39,7 @@ export const ROLES_ARROW = {
   administrador_empresa: {
     label: 'Administrador',
     color: '#6b7280',
-    desc: 'Aprueba órdenes de compra; visibilidad total sin crear ni aprobar presupuestos',
+    desc: 'Aprueba órdenes de compra; visibilidad total',
   },
   cliente: {
     label: 'Cliente',
@@ -57,43 +51,43 @@ export const ROLES_ARROW = {
 // ─── Acciones y qué roles las pueden realizar ───────────────────────────────
 const PERMISOS = {
   /** Crear/editar estructura del presupuesto (capítulos, actividades) */
-  editarPresupuesto:    ['dueno', 'gerente', 'ing_costos_1', 'ing_costos_2', 'ing_residente'],
+  editarPresupuesto:    ['gerente', 'ing_costos_1', 'ing_costos_2', 'ing_residente'],
 
   /** Editar fichas de costo (conceptos, cantidades, insumos) */
-  editarFichas:         ['dueno', 'gerente', 'ing_costos_1', 'ing_costos_2', 'ing_residente'],
+  editarFichas:         ['gerente', 'ing_costos_1', 'ing_costos_2', 'ing_residente'],
 
   /** Aprobar el presupuesto (pasar a estado Aprobado) */
-  aprobarPresupuesto:   ['dueno', 'gerente', 'cliente'],
+  aprobarPresupuesto:   ['gerente', 'cliente'],
 
   /** Rechazar el presupuesto */
-  rechazarPresupuesto:  ['dueno', 'gerente', 'cliente'],
+  rechazarPresupuesto:  ['gerente', 'cliente'],
 
   /** Enviar presupuesto a revisión (pasar a En revisión) */
-  enviarARevision:      ['dueno', 'gerente', 'ing_costos_1', 'ing_costos_2', 'ing_residente'],
+  enviarARevision:      ['gerente', 'ing_costos_1', 'ing_costos_2', 'ing_residente'],
 
-  /** Enviar presupuesto a ejecución (pasar a En ejecución) */
-  enviarAEjecucion:     ['dueno', 'gerente'],
+  /** Enviar presupuesto a ejecución / impresión */
+  enviarAEjecucion:     ['gerente'],
 
   /** Editar catálogos de insumos */
-  editarCatalogos:      ['dueno', 'gerente', 'ing_costos_1', 'ing_costos_2', 'ing_residente', 'compras'],
+  editarCatalogos:      ['gerente', 'ing_costos_1', 'ing_costos_2', 'ing_residente', 'compras'],
 
   /** Cotizaciones: actualizar precios en catálogos */
-  cotizaciones:         ['dueno', 'compras', 'administrador_empresa'],
+  cotizaciones:         ['compras', 'administrador_empresa'],
 
   /** Aprobar órdenes de compra */
-  aprobarOC:            ['dueno', 'administrador_empresa'],
+  aprobarOC:            ['administrador_empresa'],
 
   /** Aprobar fichas de costo y estimaciones */
-  aprobarFichas:        ['dueno', 'supervisor', 'cliente'],
+  aprobarFichas:        ['supervisor', 'cliente'],
 
   /** Gestionar equipo del proyecto (asignar roles) */
-  gestionarEquipo:      ['dueno', 'gerente'],
+  gestionarEquipo:      ['gerente'],
 
   /** Clonar proyecto */
-  clonarProyecto:       ['dueno', 'gerente', 'ing_costos_1', 'ing_costos_2'],
+  clonarProyecto:       ['gerente', 'ing_costos_1', 'ing_costos_2'],
 
   /** Eliminar proyecto */
-  eliminarProyecto:     ['dueno', 'gerente'],
+  eliminarProyecto:     ['gerente'],
 
   /** Ver/leer el proyecto (todos los roles pueden ver) */
   verProyecto:          Object.keys(ROLES_ARROW),
@@ -110,9 +104,22 @@ export const puedeHacer = (rol, accion) => {
   return PERMISOS[accion]?.includes(rol) ?? false
 }
 
+// ─── Mapeos de compatibilidad (org_role ↔ presupuesto_role) ─────────────────
+// Ahora org_members.role usa presupuesto_role directamente — mapeo identidad
+export const ORG_TO_PROJECT_ROLE = {
+  gerente:               'gerente',
+  ing_costos_1:          'ing_costos_1',
+  ing_costos_2:          'ing_costos_2',
+  ing_residente:         'ing_residente',
+  supervisor:            'supervisor',
+  compras:               'compras',
+  administrador_empresa: 'administrador_empresa',
+  cliente:               'cliente',
+}
+export const PROJECT_TO_ORG_ROLE = { ...ORG_TO_PROJECT_ROLE }
+
 // ─── Transiciones de estado permitidas por rol ───────────────────────────────
 export const TRANSICIONES_PERMITIDAS = {
-  dueno:                ['Borrador', 'Activo', 'En revisión', 'Aprobado', 'Rechazado', 'En ejecución'],
   gerente:              ['Borrador', 'Activo', 'En revisión', 'Aprobado', 'Rechazado', 'En ejecución'],
   ing_costos_1:         ['Borrador', 'Activo', 'En revisión'],
   ing_costos_2:         ['Borrador', 'Activo', 'En revisión'],
@@ -121,25 +128,4 @@ export const TRANSICIONES_PERMITIDAS = {
   compras:              [],
   administrador_empresa:[],
   cliente:              ['Aprobado', 'Rechazado'],
-}
-
-// ─── Mapeo de org_role genérico → presupuesto_role Arrow ────────────────────
-export const ORG_TO_PROJECT_ROLE = {
-  dueno:         'dueno',
-  administrador: 'gerente',
-  estimador:     'ing_costos_1',
-  visualizador:  'cliente',
-}
-
-// ─── Mapeo inverso: presupuesto_role → org_role para RLS ────────────────────
-export const PROJECT_TO_ORG_ROLE = {
-  dueno:                 'dueno',
-  gerente:               'administrador',
-  ing_costos_1:          'estimador',
-  ing_costos_2:          'estimador',
-  ing_residente:         'estimador',
-  supervisor:            'estimador',
-  compras:               'estimador',
-  administrador_empresa: 'visualizador',
-  cliente:               'visualizador',
 }

@@ -1318,7 +1318,7 @@ function NotificationsDropdown({ notifs, onClose, onNavigate }) {
                 </div>
                 {items.map(n => (
                   <button key={n.id} onClick={() => onNavigate(n)}
-                    style={{ width: '100%', textAlign: 'left', padding: '10px 16px', borderBottom: '1px solid var(--c-line-2)', background: 'none', border: 'none', borderBottom: '1px solid var(--c-line-2)', cursor: 'pointer', display: 'block' }}
+                    style={{ width: '100%', textAlign: 'left', padding: '10px 16px', borderBottom: '1px solid var(--c-line-2)', background: 'none', border: 'none', cursor: 'pointer', display: 'block' }}
                     onMouseEnter={e => e.currentTarget.style.background = 'var(--c-bg)'}
                     onMouseLeave={e => e.currentTarget.style.background = 'none'}>
                     <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--c-text)', lineHeight: 1.45, wordBreak: 'break-word' }}>{n.msg}</div>
@@ -2566,18 +2566,12 @@ function EquipoPage({ user, orgId }) {
   const [members, setMembers] = useState([])
   const [loading, setLoading] = useState(true)
   const [inviteEmail, setInviteEmail] = useState('')
-  const [inviteRole, setInviteRole] = useState('estimador')
+  const [inviteRole, setInviteRole] = useState('ing_costos_1')
   const [inviting, setInviting] = useState(false)
   const [msg, setMsg] = useState(null)
   const [savingId, setSavingId] = useState(null)
 
-  const ORG_ROLES = [
-    { value: 'dueno',         label: 'Propietario' },
-    { value: 'administrador', label: 'Administrador' },
-    { value: 'estimador',     label: 'Estimador' },
-    { value: 'visualizador',  label: 'Visualizador' },
-  ]
-  const roleColor = { dueno: '#f59e0b', administrador: '#7c3aed', estimador: '#2563eb', visualizador: '#6b7280' }
+  const ORG_ROLES = Object.entries(ROLES_ARROW).map(([value, { label }]) => ({ value, label }))
 
   const loadMembers = async () => {
     if (!orgId || !user?.id) return
@@ -2585,7 +2579,7 @@ function EquipoPage({ user, orgId }) {
     let { data: mems } = await supabase.from('org_members').select('user_id, role, assigned_at').eq('org_id', orgId)
     // Auto-seed: si el usuario actual no aparece en org_members, insertarlo como dueño
     if (!mems?.find(m => m.user_id === user.id)) {
-      await supabase.from('org_members').upsert({ org_id: orgId, user_id: user.id, role: 'dueno' }, { onConflict: 'org_id,user_id' })
+      await supabase.from('org_members').upsert({ org_id: orgId, user_id: user.id, role: 'gerente' }, { onConflict: 'org_id,user_id' })
       const { data: refreshed } = await supabase.from('org_members').select('user_id, role, assigned_at').eq('org_id', orgId)
       mems = refreshed
     }
@@ -2685,7 +2679,7 @@ function EquipoPage({ user, orgId }) {
                     return (
                       <tr key={m.user_id}>
                         <td style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <div style={{ width: 28, height: 28, borderRadius: '50%', background: roleColor[m.role] || '#6b7280', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                          <div style={{ width: 28, height: 28, borderRadius: '50%', background: ROLES_ARROW[m.role]?.color || '#6b7280', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
                             {(m.profile.nombre || m.profile.email || '?').slice(0,2).toUpperCase()}
                           </div>
                           <span>{m.profile.nombre || '—'} {isMe && <span style={{ fontSize: 10, color: 'var(--c-text-3)' }}>(tú)</span>}</span>
@@ -3149,7 +3143,7 @@ export default function MainApp() {
           supabase.from('org_members').select('role').eq('user_id', user.id)
             .maybeSingle()
             .then(({ data: om }) => {
-              setProjectRole(om ? (ORG_TO_PROJECT_ROLE[om.role] || 'cliente') : 'dueno')
+              setProjectRole(om ? (ORG_TO_PROJECT_ROLE[om.role] || 'cliente') : 'gerente')
             })
         }
       })
