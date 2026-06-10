@@ -112,10 +112,17 @@ Deno.serve(async (req) => {
             <a href="https://budget.innova504.com/login" style="display:inline-block;background:#F59E0B;color:#0F1115;font-weight:bold;padding:12px 24px;border-radius:8px;text-decoration:none">Iniciar sesión</a>
             <p style="color:#94a3b8;font-size:12px;margin-bottom:0">Si no esperabas este correo, ignóralo.</p>
           </div>`
+        // Versión texto plano: los correos solo-HTML puntúan peor en filtros de spam
+        const text = `Te crearon una cuenta en Arrow Budget.\n\n` +
+          `Organización: ${org?.nombre || ''}\n` +
+          `Usuario: ${mail}\n` +
+          `Clave temporal: ${temp}\n\n` +
+          `Ingresa en https://budget.innova504.com/login — al entrar por primera vez deberás cambiar la clave.\n\n` +
+          `Si no esperabas este correo, ignóralo.`
         const r = await fetch('https://api.resend.com/emails', {
           method: 'POST',
           headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ from, to: [mail], subject: 'Tu cuenta en Arrow Budget — clave temporal', html }),
+          body: JSON.stringify({ from, to: [mail], subject: 'Tu cuenta en Arrow Budget', html, text }),
         })
         emailSent = r.ok
       } catch { emailSent = false }
