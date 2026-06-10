@@ -2485,16 +2485,17 @@ function ExplosionTable({ items, catTotal, money }) {
   if (!items.length) return <div style={{ padding: '32px 20px', textAlign: 'center', color: 'var(--c-text-3)', fontSize: 13 }}>Sin insumos en esta categoría.</div>
   return (
     <div style={{ overflowX: 'auto' }}>
-      <table className="bt">
+      {/* width auto: la tabla se ciñe al contenido y los números quedan junto a la descripción */}
+      <table className="bt" style={{ width: 'auto', minWidth: 720 }}>
         <thead>
           <tr>
             <th style={{ width: 90 }}>Código</th>
-            <th>Descripción</th>
+            <th style={{ width: 440 }}>Descripción</th>
             <th style={{ width: 80, textAlign: 'center' }}>Unidad</th>
-            <th className="num" style={{ width: 120 }}>Cant. Total</th>
-            <th className="num" style={{ width: 120 }}>Costo Unit.</th>
-            <th className="num" style={{ width: 130 }}>Costo Total</th>
-            <th className="num" style={{ width: 64 }}>%</th>
+            <th className="num" style={{ width: 110 }}>Cant. Total</th>
+            <th className="num" style={{ width: 110 }}>Costo Unit.</th>
+            <th className="num" style={{ width: 125 }}>Costo Total</th>
+            <th className="num" style={{ width: 56 }}>%</th>
           </tr>
         </thead>
         <tbody>
@@ -2503,7 +2504,7 @@ function ExplosionTable({ items, catTotal, money }) {
             return (
               <tr key={item.id} style={{ background: ri % 2 ? 'var(--c-bg)' : undefined }}>
                 <td className="id">{item.codigo}</td>
-                <td style={{ fontWeight: 500 }}>{item.descripcion}</td>
+                <td style={{ fontWeight: 500, maxWidth: 440, overflowWrap: 'break-word' }}>{item.descripcion}</td>
                 <td style={{ textAlign: 'center', color: 'var(--c-text-2)' }}>{item.isHM ? '% MO' : item.unidad}</td>
                 <td className="num">{item.isHM ? <span style={{ color: 'var(--c-text-3)' }}>—</span> : fmt(item.cantTotal)}</td>
                 <td className="num">{item.isHM ? <span style={{ color: 'var(--c-text-3)' }}>—</span> : money(item.costoBase)}</td>
