@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
@@ -84,6 +84,18 @@ export default function LoginPage() {
   const [err,  setErr]  = useState(null)
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState(false)
+  const [invited, setInvited] = useState(false)
+
+  // Link de invitación (?invite=token): guardar el token y abrir registro.
+  // MainApp lo aplica vía accept_invitation al entrar autenticado.
+  useEffect(() => {
+    const tok = new URLSearchParams(window.location.search).get('invite')
+    if (tok) {
+      localStorage.setItem('arrow_invite', tok)
+      setInvited(true)
+      setMode('register')
+    }
+  }, [])
 
   const switchMode = m => { setMode(m); setErr(null); setDone(false); setFpDone(false) }
 
@@ -169,6 +181,14 @@ export default function LoginPage() {
 
         {/* Body */}
         <div className="login-body">
+
+          {/* Banner de invitación */}
+          {invited && (
+            <div style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 10, fontSize: 13, background: '#d1fae5', color: '#065f46', textAlign: 'center' }}>
+              🎉 Te invitaron a una organización en <b>Arrow Budget</b>.<br />
+              Crea tu cuenta (o inicia sesión si ya tienes una) para unirte.
+            </div>
+          )}
 
           {/* Tabs (solo login / register) */}
           {mode !== 'forgot' && (

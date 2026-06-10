@@ -2580,166 +2580,357 @@ function ExplosionActividadModal({ open, onClose, actividad, budget, params }) {
 // ============ PLANTILLAS PAGE ============
 
 // ============ EQUIPO PAGE ============
-function EquipoPage({ user, orgId }) {
+function CrearUsuarioModal({ open, onClose, orgId, user, onCreated }) {
+  const [email, setEmail] = useState('')
+  const [rol, setRol] = useState('ing_costos_1')
+  const [link, setLink] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+  const [copied, setCopied] = useState(false)
+  useEffect(() => { if (open) { setEmail(''); setRol('ing_costos_1'); setLink(null); setErr(null); setCopied(false) } }, [open])
+  if (!open) return null
+
+  const generar = async () => {
+    const mail = email.trim().toLowerCase()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) { setErr('Ingresa un correo válido.'); return }
+    setBusy(true); setErr(null)
+    // Si ya había invitación para ese correo, se regenera
+    await supabase.from('invitations').delete().eq('org_id', orgId).eq('email', mail)
+    const { data, error } = await supabase.from('invitations')
+      .insert({ org_id: orgId, invited_by: user.id, email: mail, role: rol })
+      .select('token').single()
+    setBusy(false)
+    if (error) { setErr(error.message); return }
+    setLink(`${window.location.origin}/login?invite=${data.token}`)
+    onCreated?.()
+  }
+
+  const copiar = async () => {
+    try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2000) }
+    catch { prompt('Copia el link:', link) }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Crear nuevo usuario"
+      footer={<>
+        <button className="btn ghost" onClick={onClose}>{link ? 'Cerrar' : 'Cancelar'}</button>
+        {!link && (
+          <button className="btn primary" onClick={generar} disabled={busy || !email.trim()}>
+            <UserPlus size={13} /> {busy ? 'Generando…' : 'Generar link'}
+          </button>
+        )}
+      </>}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {!link ? (
+          <Fragment>
+            <p style={{ fontSize: 13, color: 'var(--c-text-2)', margin: 0 }}>
+              Genera un link de creación de cuenta. La persona se registra con ese link y entra
+              directo a tu organización con el rol que elijas. El link vence en 7 días.
+            </p>
+            <div className="field">
+              <label className="field-label">Correo electrónico *</label>
+              <input className="input" placeholder="correo@ejemplo.com" value={email} autoFocus
+                onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && generar()} />
+            </div>
+            <div className="field">
+              <label className="field-label">Rol en la organización</label>
+              <select className="input" value={rol} onChange={e => setRol(e.target.value)}>
+                {Object.entries(ROLES_ARROW).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+              </select>
+              <div style={{ fontSize: 11, color: 'var(--c-text-3)', marginTop: 4 }}>{ROLES_ARROW[rol]?.desc}</div>
+            </div>
+            {err && <div style={{ padding: '8px 12px', borderRadius: 8, fontSize: 13, background: '#fee2e2', color: '#991b1b' }}>{err}</div>}
+          </Fragment>
+        ) : (
+          <Fragment>
+            <div style={{ padding: '10px 12px', borderRadius: 8, fontSize: 13, background: '#d1fae5', color: '#065f46', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Check size={15} /> Link generado para <b>{email}</b>
+            </div>
+            <div className="field">
+              <label className="field-label">Link de creación de cuenta</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input className="input" readOnly value={link} onFocus={e => e.target.select()} style={{ fontSize: 12, fontFamily: 'var(--font-mono)' }} />
+                <button className="btn primary" onClick={copiar} style={{ flexShrink: 0 }}>
+                  {copied ? <><Check size={13} /> Copiado</> : <><Copy size={13} /> Copiar</>}
+                </button>
+              </div>
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--c-text-3)', margin: 0 }}>
+              Comparte este link por WhatsApp o correo. Vence en 7 días; puedes regenerarlo desde la lista de invitaciones.
+            </p>
+          </Fragment>
+        )}
+      </div>
+    </Modal>
+  )
+}
+
+function EquipoPage({ user, orgId: orgIdProp, proyectos = [] }) {
+  const [orgId, setOrgId] = useState(orgIdProp || null)
   const [members, setMembers] = useState([])
+  const [invites, setInvites] = useState([])
   const [loading, setLoading] = useState(true)
-  const [inviteEmail, setInviteEmail] = useState('')
-  const [inviteRole, setInviteRole] = useState('ing_costos_1')
-  const [inviting, setInviting] = useState(false)
-  const [msg, setMsg] = useState(null)
-  const [savingId, setSavingId] = useState(null)
+  const [errMsg, setErrMsg] = useState(null)
+  const [expanded, setExpanded] = useState(null)
+  const [showCrear, setShowCrear] = useState(false)
+  const [busyId, setBusyId] = useState(null)
+  const [asigProyecto, setAsigProyecto] = useState({})
+  const [asigRol, setAsigRol] = useState({})
 
   const ORG_ROLES = Object.entries(ROLES_ARROW).map(([value, { label }]) => ({ value, label }))
 
-  const loadMembers = async () => {
-    if (!orgId || !user?.id) { setLoading(false); return }
-    setLoading(true)
+  const loadAll = async () => {
+    if (!user?.id) return
+    setLoading(true); setErrMsg(null)
     try {
-      let { data: mems, error } = await supabase.from('org_members').select('user_id, role, assigned_at').eq('org_id', orgId)
-      if (error) throw error
-      // Auto-seed: si el usuario actual no aparece en org_members, insertarlo como gerente
-      if (!mems?.find(m => m.user_id === user.id)) {
-        await supabase.from('org_members').upsert({ org_id: orgId, user_id: user.id, role: 'gerente' }, { onConflict: 'org_id,user_id' })
-        const { data: refreshed } = await supabase.from('org_members').select('user_id, role, assigned_at').eq('org_id', orgId)
-        mems = refreshed || []
+      // Resolver org: prop del RPC global, o directo de org_members como fallback
+      let oid = orgIdProp || orgId
+      if (!oid) {
+        const { data: own } = await supabase.from('org_members').select('org_id').eq('user_id', user.id).limit(1).maybeSingle()
+        oid = own?.org_id || null
       }
-      if (!mems?.length) { setMembers([]); setLoading(false); return }
-      const { data: profs } = await supabase.from('profiles').select('id, nombre, email').in('id', mems.map(m => m.user_id))
-      const profMap = Object.fromEntries((profs||[]).map(p => [p.id, p]))
-      setMembers(mems.map(m => ({ ...m, profile: profMap[m.user_id] || {} })))
-    } catch(e) {
+      if (!oid) { setErrMsg('No se encontró tu organización. Contacta a soporte.'); setMembers([]); setLoading(false); return }
+      setOrgId(oid)
+
+      let { data: mems, error } = await supabase.from('org_members').select('*').eq('org_id', oid)
+      if (error) throw error
+      // Auto-seed: si el usuario actual no aparece, insertarlo como gerente
+      if (!mems?.find(m => m.user_id === user.id)) {
+        await supabase.from('org_members').upsert({ org_id: oid, user_id: user.id, role: 'gerente' }, { onConflict: 'org_id,user_id' })
+        const { data: refreshed } = await supabase.from('org_members').select('*').eq('org_id', oid)
+        mems = refreshed || mems || []
+      }
+      const ids = (mems || []).map(m => m.user_id)
+      const [profsRes, pmsRes, invsRes] = await Promise.all([
+        ids.length ? supabase.from('profiles').select('id, nombre, email').in('id', ids) : Promise.resolve({ data: [] }),
+        ids.length ? supabase.from('project_members').select('user_id, presupuesto_id, rol_especifico').in('user_id', ids) : Promise.resolve({ data: [] }),
+        supabase.from('invitations').select('id, email, role, token, expires_at').eq('org_id', oid).is('accepted_at', null),
+      ])
+      const profMap = Object.fromEntries((profsRes.data || []).map(p => [p.id, p]))
+      setMembers((mems || []).map(m => ({
+        ...m,
+        profile: profMap[m.user_id] || {},
+        proyectos: (pmsRes.data || []).filter(pm => pm.user_id === m.user_id),
+      })))
+      setInvites(invsRes.data || [])
+    } catch (e) {
       console.error('loadMembers error:', e)
+      setErrMsg('Error al cargar el equipo: ' + (e.message || e))
       setMembers([])
     }
     setLoading(false)
   }
 
-  useEffect(() => { loadMembers() }, [orgId]) // eslint-disable-line
+  useEffect(() => { loadAll() }, [orgIdProp, user?.id]) // eslint-disable-line
 
-  const isOwner = members.some(m => m.user_id === user?.id && m.role === 'gerente')
+  const me = members.find(m => m.user_id === user?.id)
+  const isGerente = me?.role === 'gerente' && (me?.status || 'activo') === 'activo'
 
-  const changeRole = async (userId, newRole) => {
-    setSavingId(userId)
-    const { error } = await supabase.from('org_members').update({ role: newRole }).eq('org_id', orgId).eq('user_id', userId)
-    if (error) setMsg({ ok: false, txt: 'Error al actualizar el rol' })
-    else { await loadMembers() }
-    setSavingId(null)
+  const changeRole = async (m, newRole) => {
+    setBusyId(m.user_id)
+    const { error } = await supabase.from('org_members').update({ role: newRole }).eq('org_id', orgId).eq('user_id', m.user_id)
+    if (error) alert('Error al cambiar rol: ' + error.message)
+    await loadAll(); setBusyId(null)
   }
 
-  const inviteMember = async () => {
-    if (!inviteEmail.trim()) return
-    setInviting(true)
-    const { error } = await supabase.from('invitations').insert({ org_id: orgId, invited_by: user.id, email: inviteEmail.trim().toLowerCase(), role: inviteRole })
-    if (error) setMsg({ ok: false, txt: error.message || 'Error al invitar' })
-    else { setMsg({ ok: true, txt: `Invitación enviada a ${inviteEmail}` }); setInviteEmail('') }
-    setInviting(false)
-    setTimeout(() => setMsg(null), 4000)
+  const toggleStatus = async (m) => {
+    const nuevo = (m.status || 'activo') === 'activo' ? 'suspendido' : 'activo'
+    const nombre = m.profile.nombre || m.profile.email || 'este usuario'
+    if (nuevo === 'suspendido' && !confirm(`¿Suspender a ${nombre}?\n\nPerderá acceso a los proyectos de la organización hasta que lo reactives.`)) return
+    setBusyId(m.user_id)
+    const { error } = await supabase.from('org_members').update({ status: nuevo }).eq('org_id', orgId).eq('user_id', m.user_id)
+    if (error) alert('Error al cambiar estado: ' + error.message)
+    await loadAll(); setBusyId(null)
+  }
+
+  const asignarProyecto = async (m) => {
+    const pid = asigProyecto[m.user_id]
+    const rol = asigRol[m.user_id] || m.role
+    if (!pid) return
+    setBusyId(m.user_id)
+    const { error } = await supabase.from('project_members').upsert(
+      { presupuesto_id: pid, user_id: m.user_id, role: rol, rol_especifico: rol, assigned_by: user.id },
+      { onConflict: 'presupuesto_id,user_id' })
+    if (error) alert('Error al asignar proyecto: ' + error.message)
+    else setAsigProyecto(prev => ({ ...prev, [m.user_id]: '' }))
+    await loadAll(); setBusyId(null)
+  }
+
+  const quitarProyecto = async (m, pid) => {
+    setBusyId(m.user_id)
+    const { error } = await supabase.from('project_members').delete().eq('presupuesto_id', pid).eq('user_id', m.user_id)
+    if (error) alert('Error: ' + error.message)
+    await loadAll(); setBusyId(null)
+  }
+
+  const copiarInvite = async (inv) => {
+    const url = `${window.location.origin}/login?invite=${inv.token}`
+    try { await navigator.clipboard.writeText(url); alert('Link copiado al portapapeles') } catch { prompt('Copia el link:', url) }
+  }
+
+  const revocarInvite = async (inv) => {
+    if (!confirm(`¿Revocar la invitación a ${inv.email}?`)) return
+    const { error } = await supabase.from('invitations').delete().eq('id', inv.id)
+    if (error) alert('Error: ' + error.message)
+    loadAll()
   }
 
   return (
     <div className="page-body" style={{ maxWidth: 760 }}>
       <div className="page-head" style={{ borderBottom: 0, paddingLeft: 0, paddingRight: 0 }}>
         <div className="page-head-title">
-          <h1><Users size={22} /> Equipo</h1>
+          <h1><Users size={22} /> Usuarios y roles</h1>
           <p className="page-head-meta" style={{ fontSize: 13, color: 'var(--c-text-3)', marginTop: 4 }}>
-            Miembros de tu organización y sus roles de acceso
+            Miembros y accesos de tu organización
           </p>
         </div>
       </div>
 
-      {/* Invitar nuevo miembro */}
-      {isOwner && (
-        <div className="card card-pad" style={{ marginBottom: 16 }}>
-          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <UserPlus size={15} /> Invitar persona
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px auto', gap: 10, alignItems: 'end' }}>
-            <div className="field">
-              <label className="field-label">Email</label>
-              <input className="input" placeholder="correo@ejemplo.com" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && inviteMember()} />
-            </div>
-            <div className="field">
-              <label className="field-label">Rol</label>
-              <select className="input" value={inviteRole} onChange={e => setInviteRole(e.target.value)}>
-                {ORG_ROLES.filter(r => r.value !== 'dueno').map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-              </select>
-            </div>
-            <button className="btn primary" onClick={inviteMember} disabled={inviting || !inviteEmail.trim()}>
-              {inviting ? '…' : 'Invitar'}
-            </button>
-          </div>
-          {msg && (
-            <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 8, fontSize: 13,
-              background: msg.ok ? 'var(--c-success-soft,#d1fae5)' : 'var(--c-danger-soft,#fee2e2)',
-              color: msg.ok ? '#065f46' : '#991b1b' }}>
-              {msg.txt}
-            </div>
-          )}
+      {errMsg && (
+        <div style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 10, fontSize: 13, background: '#fee2e2', color: '#991b1b', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <AlertTriangle size={15} /> {errMsg}
         </div>
       )}
 
+      {/* Crear nuevo usuario */}
+      {isGerente && (
+        <button className="btn primary" onClick={() => setShowCrear(true)}
+          style={{ width: '100%', justifyContent: 'center', padding: '12px 0', fontSize: 14, marginBottom: 16 }}>
+          <UserPlus size={16} /> Crear nuevo usuario
+        </button>
+      )}
+
       {/* Lista de miembros */}
-      <div className="card" style={{ padding: 0 }}>
-        <div className="card-header">
-          <div className="card-title"><Users size={15} /> Miembros ({members.length})</div>
-        </div>
-        {loading
-          ? <div style={{ padding: 32, textAlign: 'center', color: 'var(--c-text-3)' }}>Cargando…</div>
-          : members.length === 0
-            ? <div style={{ padding: 32, textAlign: 'center', color: 'var(--c-text-3)', fontSize: 13 }}>Sin miembros aún.</div>
-            : (
-              <table className="bt">
-                <thead><tr>
-                  <th>Nombre</th>
-                  <th>Email</th>
-                  <th style={{ width: 160 }}>Rol</th>
-                  <th style={{ width: 110 }}>Desde</th>
-                </tr></thead>
-                <tbody>
-                  {members.map(m => {
-                    const isMe = m.user_id === user?.id
-                    const isMeOwner = m.role === 'gerente'
-                    return (
-                      <tr key={m.user_id}>
-                        <td style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <div style={{ width: 28, height: 28, borderRadius: '50%', background: ROLES_ARROW[m.role]?.color || '#6b7280', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
-                            {(m.profile.nombre || m.profile.email || '?').slice(0,2).toUpperCase()}
+      {loading
+        ? <div style={{ padding: 32, textAlign: 'center', color: 'var(--c-text-3)' }}>Cargando…</div>
+        : members.length === 0
+          ? <div className="card" style={{ padding: 32, textAlign: 'center', color: 'var(--c-text-3)', fontSize: 13 }}>Sin miembros aún.</div>
+          : members.map(m => {
+              const isMe = m.user_id === user?.id
+              const activo = (m.status || 'activo') === 'activo'
+              const rInfo = ROLES_ARROW[m.role] || {}
+              const isOpen = expanded === m.user_id
+              const nombre = m.profile.nombre || m.profile.email || 'Usuario'
+              return (
+                <div key={m.user_id} className="card" style={{ marginBottom: 10, padding: 0, overflow: 'hidden', opacity: activo ? 1 : 0.75 }}>
+                  <div onClick={() => setExpanded(isOpen ? null : m.user_id)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer' }}>
+                    <div style={{ position: 'relative', flexShrink: 0 }}>
+                      <div style={{ width: 38, height: 38, borderRadius: '50%', background: (rInfo.color || '#6b7280') + '22', color: rInfo.color || '#6b7280', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13 }}>
+                        {nombre.split(' ').map(w => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()}
+                      </div>
+                      <span style={{ position: 'absolute', bottom: -1, right: -1, width: 12, height: 12, borderRadius: '50%', background: activo ? 'var(--c-success)' : '#9ca3af', border: '2px solid #fff' }}></span>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--c-text)' }}>
+                        {nombre} {isMe && <span style={{ fontSize: 11, color: 'var(--c-text-3)', fontWeight: 500 }}>(tú)</span>}
+                      </div>
+                      <div style={{ fontSize: 12, color: rInfo.color || 'var(--c-text-3)', fontWeight: 600, marginTop: 2 }}>
+                        {rInfo.label || m.role} · {m.proyectos.length} proyecto{m.proyectos.length !== 1 ? 's' : ''}
+                      </div>
+                    </div>
+                    <span className="badge" style={activo
+                      ? { background: 'var(--c-success)' + '22', color: 'var(--c-success)' }
+                      : { background: '#9ca3af22', color: '#6b7280' }}>
+                      {activo ? 'Activo' : 'Suspendido'}
+                    </span>
+                    <ChevronDown size={16} style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s', color: 'var(--c-text-3)', flexShrink: 0 }} />
+                  </div>
+
+                  {isOpen && (
+                    <div style={{ borderTop: '1px solid var(--c-line)', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 14, background: 'var(--c-bg)' }}>
+                      <div style={{ fontSize: 12, color: 'var(--c-text-2)' }}>
+                        {m.profile.email || '—'} · miembro desde {m.joined_at ? new Date(m.joined_at).toLocaleDateString('es', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                      </div>
+
+                      {isGerente && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                          <div className="field">
+                            <label className="field-label">Rol en la organización</label>
+                            <select className="input" value={m.role} disabled={busyId === m.user_id || isMe}
+                              onChange={e => changeRole(m, e.target.value)}>
+                              {ORG_ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                            </select>
                           </div>
-                          <span>{m.profile.nombre || '—'} {isMe && <span style={{ fontSize: 10, color: 'var(--c-text-3)' }}>(tú)</span>}</span>
-                        </td>
-                        <td style={{ fontSize: 12, color: 'var(--c-text-2)' }}>{m.profile.email || '—'}</td>
-                        <td>
-                          {isOwner && !isMeOwner
-                            ? (
-                              <select className="input sm" value={m.role} disabled={savingId === m.user_id}
-                                onChange={e => changeRole(m.user_id, e.target.value)}
-                                style={{ fontSize: 12 }}>
-                                {ORG_ROLES.filter(r => r.value !== 'dueno').map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-                              </select>
-                            )
-                            : (
-                              <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: (roleColor[m.role]||'#6b7280') + '22', color: roleColor[m.role]||'#6b7280' }}>
-                                {ORG_ROLES.find(r => r.value === m.role)?.label || m.role}
-                              </span>
-                            )
-                          }
-                        </td>
-                        <td style={{ fontSize: 12, color: 'var(--c-text-3)' }}>
-                          {m.assigned_at ? new Date(m.assigned_at).toLocaleDateString('es', { day:'2-digit', month:'short', year:'numeric' }) : '—'}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            )
-        }
-      </div>
+                          <div className="field">
+                            <label className="field-label">Estado</label>
+                            <button className="btn" disabled={busyId === m.user_id || isMe} onClick={() => toggleStatus(m)}
+                              style={{ width: '100%', justifyContent: 'center', ...(activo ? { color: 'var(--c-danger)', borderColor: 'var(--c-danger)' } : { color: 'var(--c-success)', borderColor: 'var(--c-success)' }) }}>
+                              {activo ? 'Suspender usuario' : 'Activar usuario'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {isGerente && (
+                        <div className="field">
+                          <label className="field-label">Asignar a proyecto</label>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8 }}>
+                            <select className="input" value={asigProyecto[m.user_id] || ''}
+                              onChange={e => setAsigProyecto(prev => ({ ...prev, [m.user_id]: e.target.value }))}>
+                              <option value="">Proyecto…</option>
+                              {proyectos.filter(p => !m.proyectos.some(pm => pm.presupuesto_id === p.id)).map(p =>
+                                <option key={p.id} value={p.id}>{p.nombreProyecto}</option>)}
+                            </select>
+                            <select className="input" value={asigRol[m.user_id] || m.role}
+                              onChange={e => setAsigRol(prev => ({ ...prev, [m.user_id]: e.target.value }))}>
+                              {ORG_ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                            </select>
+                            <button className="btn primary" disabled={!asigProyecto[m.user_id] || busyId === m.user_id}
+                              onClick={() => asignarProyecto(m)}>Asignar</button>
+                          </div>
+                        </div>
+                      )}
+
+                      {m.proyectos.length > 0 && (
+                        <div className="field">
+                          <label className="field-label">Proyectos asignados</label>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                            {m.proyectos.map(pm => {
+                              const p = proyectos.find(x => x.id === pm.presupuesto_id)
+                              return (
+                                <span key={pm.presupuesto_id} className="badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                  {p?.nombreProyecto || 'Proyecto'} · {ROLES_ARROW[pm.rol_especifico]?.label || pm.rol_especifico || '—'}
+                                  {isGerente && <X size={11} style={{ cursor: 'pointer' }} onClick={() => quitarProyecto(m, pm.presupuesto_id)} />}
+                                </span>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })
+      }
+
+      {/* Invitaciones pendientes */}
+      {isGerente && invites.length > 0 && (
+        <div className="card" style={{ padding: 0, marginTop: 16 }}>
+          <div className="card-header">
+            <div className="card-title"><Clock size={15} /> Invitaciones pendientes ({invites.length})</div>
+          </div>
+          {invites.map(inv => (
+            <div key={inv.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderTop: '1px solid var(--c-line-2)' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>{inv.email}</div>
+                <div style={{ fontSize: 11, color: 'var(--c-text-3)' }}>
+                  {ROLES_ARROW[inv.role]?.label || inv.role} · vence {inv.expires_at ? new Date(inv.expires_at).toLocaleDateString('es', { day: '2-digit', month: 'short' }) : '—'}
+                </div>
+              </div>
+              <button className="btn sm" onClick={() => copiarInvite(inv)}><Copy size={12} /> Copiar link</button>
+              <button className="btn sm ghost" style={{ color: 'var(--c-danger)' }} onClick={() => revocarInvite(inv)}><Trash2 size={12} /></button>
+            </div>
+          ))}
+        </div>
+      )}
 
       <p style={{ fontSize: 12, color: 'var(--c-text-3)', marginTop: 12 }}>
-        Los roles de acceso por proyecto se asignan desde el botón <strong>Equipo</strong> dentro de cada proyecto.
+        El rol por proyecto manda sobre el rol de organización. También puedes asignarlo desde el botón <strong>Equipo</strong> dentro de cada proyecto.
       </p>
+
+      <CrearUsuarioModal open={showCrear} onClose={() => setShowCrear(false)} orgId={orgId} user={user} onCreated={loadAll} />
     </div>
   )
 }
@@ -3156,6 +3347,23 @@ export default function MainApp() {
     supabase.rpc('get_user_org_id').then(({ data }) => { if (data) setOrgId(data) })
   }, [user])
 
+  // Aceptar invitación pendiente (link de creación de usuario)
+  useEffect(() => {
+    if (!user) return
+    const tok = localStorage.getItem('arrow_invite')
+    if (!tok) return
+    supabase.rpc('accept_invitation', { p_token: tok, p_user_id: user.id }).then(({ data, error }) => {
+      localStorage.removeItem('arrow_invite')
+      if (error) { console.error('[invite] Error al aceptar:', error.message); return }
+      if (data?.ok) {
+        setOrgId(data.org_id)
+        alert(`✅ Te uniste a la organización como ${ROLES_ARROW[data.role]?.label || data.role}.`)
+      } else if (data?.error) {
+        alert('⚠️ ' + data.error)
+      }
+    })
+  }, [user])
+
   // Determinar el rol del usuario en el proyecto activo
   useEffect(() => {
     if (!activeId || !user) { setProjectRole(null); return }
@@ -3434,7 +3642,7 @@ export default function MainApp() {
         {page === 'proyectos'  && <ProyectosPage proyectos={proyectos} openProject={openProject} addProject={addProject} deleteProject={deleteProject} />}
         {page === 'reportes'   && <ReportesPage  proyectos={proyectos} budget={budget} params={params} userEmpresa={userEmpresa} />}
         {page === 'plantillas' && <PlantillasPage budget={budget} setBudget={setBudget} />}
-        {page === 'equipo'     && <EquipoPage user={user} orgId={orgId} />}
+        {page === 'equipo'     && <EquipoPage user={user} orgId={orgId} proyectos={proyectos} />}
         {page === 'explosion'  && budget && <ExplosionView budget={budget} params={params} />}
         {page === 'planes'     && <PlanesPage />}
 
