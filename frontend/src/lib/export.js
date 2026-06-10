@@ -54,37 +54,30 @@ const writeHeader = (ws, budget) => {
   return 6
 }
 
-const drawPDFHeader = (doc, budget, subtitle='PRESUPUESTO DE OBRA') => {
-  const w = doc.internal.pageSize.getWidth()
-  doc.setFillColor(15,17,21); doc.rect(0,0,w,32,'F')
-  try { if(budget.logoOfertante) doc.addImage(budget.logoOfertante,'PNG',8,4,22,22) } catch{}
-  try { if(budget.logoCliente)   doc.addImage(budget.logoCliente,'PNG',w-30,4,22,22) } catch{}
-  doc.setTextColor(245,158,11); doc.setFontSize(15); doc.setFont(undefined,'bold')
-  doc.text(subtitle, w/2, 12, {align:'center'})
-  doc.setTextColor(255); doc.setFontSize(11)
-  doc.text(budget.nombreProyecto||'', w/2, 19, {align:'center'})
-  doc.setFontSize(8); doc.setFont(undefined,'normal'); doc.setTextColor(220,220,220)
-  doc.text(`Rev ${budget.revision||1} · ${budget.estado||'Activo'} · ${budget.moneda||'USD'} · ${budget.fecha||''}`, w/2, 25, {align:'center'})
-  doc.setTextColor(0)
-  let y=38; doc.setFontSize(9)
-  doc.setFont(undefined,'bold'); doc.text('Cotizante:',10,y); doc.setFont(undefined,'normal'); doc.text(budget.cotizante||'—',32,y)
-  doc.setFont(undefined,'bold'); doc.text('Cliente:',w/2,y); doc.setFont(undefined,'normal'); doc.text(budget.cliente||'—',w/2+18,y)
-  y+=5
-  doc.setFont(undefined,'bold'); doc.text('Ofertante:',10,y); doc.setFont(undefined,'normal'); doc.text(budget.ofertante||'—',32,y)
-  doc.setFont(undefined,'bold'); doc.text('Ubicación:',w/2,y); doc.setFont(undefined,'normal'); doc.text(budget.lugar||'—',w/2+22,y)
-  y+=5
-  doc.setFont(undefined,'bold'); doc.text('Realizado por:',10,y); doc.setFont(undefined,'normal'); doc.text(budget.realizadoPor||'—',35,y)
-  doc.setFont(undefined,'bold'); doc.text('Tipo:',w/2,y); doc.setFont(undefined,'normal'); doc.text(budget.tipo||'—',w/2+13,y)
-  y+=4
-  doc.setDrawColor(245,158,11); doc.setLineWidth(0.5); doc.line(10,y,w-10,y)
-  return y+4
-}
-
 // ============ APU HEADER / FOOTER HELPERS ============
 const hexToRgb = hex => {
   const h = (hex||'').replace('#','').replace(/[^0-9a-fA-F]/g,'')
   if (h.length < 6) return null
   return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)]
+}
+
+// Tema único para TODOS los PDFs: usa los colores configurados del proyecto
+// (Configuración → color de encabezado APU), con override opcional vía empresa
+const pdfTheme = (budget = {}, empresa = {}) => {
+  const bg  = hexToRgb(empresa.headerBg   || budget.apuHeaderBg)   || [15,17,21]
+  const acc = hexToRgb(empresa.headerText || budget.apuHeaderText) || [245,158,11]
+  const mid = bg.map(v => Math.min(255, v + 56))   // variante clara para sub-encabezados
+  return { bg, acc, mid }
+}
+
+// Banda compacta que se redibuja en las páginas de continuación de una tabla
+// (usar dentro de didDrawPage con data.pageNumber > 1)
+const drawContinuationBand = (doc, budget, theme, title) => {
+  const w = doc.internal.pageSize.getWidth()
+  doc.setFillColor(...theme.bg); doc.rect(0, 0, w, 14, 'F')
+  doc.setTextColor(...theme.acc); doc.setFontSize(9); doc.setFont(undefined, 'bold')
+  doc.text(`${title} — ${budget.nombreProyecto || ''}`, w / 2, 9, { align: 'center' })
+  doc.setTextColor(0); doc.setFont(undefined, 'normal')
 }
 
 // Obtiene las dimensiones reales de una imagen base64 (async)
@@ -120,8 +113,7 @@ const addImageContain = async (doc, src, x, y, maxW, maxH) => {
 // draws the compact APU page header; returns the Y coordinate where content should start
 const drawApuHeader = async (doc, budget, empresa = {}, opts = {}) => {
   const w = doc.internal.pageSize.getWidth()
-  const bg  = hexToRgb(empresa.headerBg)  || [15,17,21]
-  const txt = hexToRgb(empresa.headerText)|| [245,158,11]
+  const { bg, acc: txt } = pdfTheme(budget, empresa)
   const headerH = 32
 
   doc.setFillColor(bg[0],bg[1],bg[2]); doc.rect(0,0,w,headerH,'F')
@@ -143,8 +135,7 @@ const drawApuHeader = async (doc, budget, empresa = {}, opts = {}) => {
 const drawApuFooter = (doc, budget, pageNum, totalPages, empresa = {}) => {
   const w = doc.internal.pageSize.getWidth()
   const h = doc.internal.pageSize.getHeight()
-  const bg  = hexToRgb(empresa.headerBg)  || [15,17,21]
-  const txt = hexToRgb(empresa.headerText) || [180,180,180]
+  const { bg, acc: txt } = pdfTheme(budget, empresa)
   doc.setFillColor(bg[0],bg[1],bg[2]); doc.rect(0,h-10,w,10,'F')
   doc.setTextColor(txt[0],txt[1],txt[2]); doc.setFontSize(7); doc.setFont(undefined,'normal')
   doc.text(`Rev ${budget.revision||1} · ${budget.estado||'Borrador'} · ${budget.moneda||'USD'} · ${budget.fecha||''}`, 10, h-4)
@@ -167,9 +158,10 @@ export const exportPDFCatalogo = (budget, catKey) => {
   const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'letter' })
   const w = doc.internal.pageSize.getWidth()
   const h = doc.internal.pageSize.getHeight()
+  const T = pdfTheme(budget)
   // Header
-  doc.setFillColor(15,17,21); doc.rect(0,0,w,20,'F')
-  doc.setTextColor(245,158,11); doc.setFontSize(11); doc.setFont(undefined,'bold')
+  doc.setFillColor(...T.bg); doc.rect(0,0,w,20,'F')
+  doc.setTextColor(...T.acc); doc.setFontSize(11); doc.setFont(undefined,'bold')
   doc.text(`LISTA DE ${cat.label.toUpperCase()}`, w/2, 11, { align:'center' })
   doc.setTextColor(220,220,220); doc.setFontSize(7.5); doc.setFont(undefined,'normal')
   doc.text(budget.nombreProyecto||'', w/2, 17, { align:'center' })
@@ -186,7 +178,7 @@ export const exportPDFCatalogo = (budget, catKey) => {
   })
   doc.autoTable({
     startY: 24,
-    margin: { left: ML, right: ML },
+    margin: { top: 18, left: ML, right: ML },
     head: [[
       { content:'Código',      styles:{halign:'center'} },
       { content:'Descripción', styles:{halign:'left'  } },
@@ -197,8 +189,10 @@ export const exportPDFCatalogo = (budget, catKey) => {
     ]],
     body: rows,
     styles: { fontSize: 8, cellPadding: 2, textColor:[15,17,21] },
-    headStyles: { fillColor:[30,41,59], textColor:255, fontStyle:'bold', fontSize:8 },
+    headStyles: { fillColor:T.mid, textColor:255, fontStyle:'bold', fontSize:8 },
     alternateRowStyles: { fillColor:[248,250,252] },
+    rowPageBreak: 'avoid',
+    didDrawPage: d => { if (d.pageNumber > 1) drawContinuationBand(doc, budget, T, `LISTA DE ${cat.label.toUpperCase()}`) },
     columnStyles: {
       0:{ cellWidth:18, halign:'center' },
       2:{ cellWidth:14, halign:'center' },
@@ -226,8 +220,7 @@ export const exportPDFPresupuesto = async (budget, params, empresa = {}) => {
   let y = await drawApuHeader(doc, budget, empresa, { title: 'PRESUPUESTO DE OBRA' })
 
   // ── Info del proyecto ──
-  const bg  = hexToRgb(empresa.headerBg)  || [15,17,21]
-  const acc = hexToRgb(empresa.headerText) || [245,158,11]
+  const { bg, acc } = pdfTheme(budget, empresa)
   doc.setFontSize(8.5)
   const mid = pw / 2
   const lbl = (text, x, xv, val) => {
@@ -289,6 +282,7 @@ export const exportPDFPresupuesto = async (budget, params, empresa = {}) => {
     { content:money(tot),                  styles:{ fillColor:capFill, textColor:capText, fontStyle:'bold', halign:'right' } },
   ])
 
+  const theme = { bg, acc, mid: subcapFill }
   doc.autoTable({
     startY: y,
     head:   [['ID','Descripción','Unidad','Cantidad','P. Unitario','Subtotal']],
@@ -302,7 +296,13 @@ export const exportPDFPresupuesto = async (budget, params, empresa = {}) => {
       4: { halign:'right',  cellWidth:28 },
       5: { halign:'right',  cellWidth:30 },
     },
-    margin: { top:10, left:10, right:10, bottom:16 },
+    // top:18 deja espacio para la banda en páginas de continuación;
+    // rowPageBreak evita que una fila quede partida entre dos páginas
+    margin: { top:18, left:10, right:10, bottom:16 },
+    rowPageBreak: 'avoid',
+    didDrawPage: data => {
+      if (data.pageNumber > 1) drawContinuationBand(doc, budget, theme, 'PRESUPUESTO DE OBRA')
+    },
   })
 
   // ── Footer en todas las páginas ──
@@ -318,6 +318,7 @@ export const exportPDFFicha = async (budget, act, params, empresa = {}) => {
   const doc = new jsPDF({orientation:'portrait',unit:'mm',format:'letter'})
   const h   = doc.internal.pageSize.getHeight()
   const calc = calcFicha(act.ficha, budget.catalogos, params)
+  const T = pdfTheme(budget, empresa)
   let y = await drawApuHeader(doc, budget, empresa, { showPartyInfo: true })
 
   // Activity title bar
@@ -336,7 +337,7 @@ export const exportPDFFicha = async (budget, act, params, empresa = {}) => {
     }).filter(Boolean)
     if (!rs.length) rs.push([{content:'(sin conceptos)',colSpan:7,styles:{halign:'center',fontStyle:'italic',textColor:150}}])
     rs.push([{content:'SUBTOTAL '+title,colSpan:6,styles:{halign:'right',fontStyle:'bold',fillColor:[226,232,240]}},{content:money(total),styles:{halign:'right',fontStyle:'bold',fillColor:[226,232,240]}}])
-    doc.autoTable({startY:y,head:[[{content:title,colSpan:7,styles:{fillColor:[30,41,59],textColor:255,halign:'left',fontStyle:'bold'}}],['Cód.','Insumo','Und','Rend.','Desp.','C.Base','Subtotal']],body:rs,styles:{fontSize:7.5,cellPadding:1.1},headStyles:{fillColor:[71,85,105],textColor:255},columnStyles:{0:{cellWidth:18,halign:'center'},2:{cellWidth:14,halign:'center'},3:{cellWidth:16,halign:'right'},4:{cellWidth:14,halign:'right'},5:{cellWidth:22,halign:'right'},6:{cellWidth:24,halign:'right'}},margin:{bottom:14}})
+    doc.autoTable({startY:y,head:[[{content:title,colSpan:7,styles:{fillColor:T.bg,textColor:T.acc,halign:'left',fontStyle:'bold'}}],['Cód.','Insumo','Und','Rend.','Desp.','C.Base','Subtotal']],body:rs,styles:{fontSize:7.5,cellPadding:1.1},headStyles:{fillColor:T.mid,textColor:255},columnStyles:{0:{cellWidth:18,halign:'center'},2:{cellWidth:14,halign:'center'},3:{cellWidth:16,halign:'right'},4:{cellWidth:14,halign:'right'},5:{cellWidth:22,halign:'right'},6:{cellWidth:24,halign:'right'}},margin:{top:18,bottom:14},rowPageBreak:'avoid',didDrawPage:d=>{if(d.pageNumber>1)drawContinuationBand(doc,budget,T,'FICHA DE COSTO UNITARIO')}})
     y = doc.lastAutoTable.finalY + 3
   }
   sectApu('MATERIALES','materiales',calc.totMat)
@@ -346,7 +347,7 @@ export const exportPDFFicha = async (budget, act, params, empresa = {}) => {
 
   // Resumen compacto a la derecha
   y += 6
-  const C2 = { ink:[15,17,21], dark:[30,41,59], bg:[248,250,252] }
+  const C2 = { ink:T.bg, dark:T.mid, bg:[248,250,252] }
   const pw2 = doc.internal.pageSize.getWidth()
   const tW2 = 105
   doc.autoTable({startY:y, tableWidth:tW2, margin:{left:pw2-tW2-10, right:10, bottom:14},
@@ -373,7 +374,7 @@ export const exportPDFFicha = async (budget, act, params, empresa = {}) => {
 }
 
 export const exportPDFGeneral = (budget, params, empresa = {}) => {
-  exportPDFPresupuesto(budget, params)
+  exportPDFPresupuesto(budget, params, empresa)
   const acts=[]; const collect=its=>{for(const it of its){if(it.tipo==='actividad')acts.push(it);else if(it.children)collect(it.children)}}
   collect(budget.items)
   acts.forEach((act,i)=>setTimeout(()=>exportPDFFicha(budget,act,params,empresa),(i+1)*700))
@@ -387,6 +388,7 @@ export const exportPDFRangoFichas = async (budget, params, ids, empresa = {}) =>
   if(!acts.length) return alert('No hay actividades seleccionadas.')
 
   const doc = new jsPDF({orientation:'portrait',unit:'mm',format:'letter'})
+  const T = pdfTheme(budget, empresa)
 
   for (const [actIdx, act] of acts.entries()) {
     if (actIdx > 0) doc.addPage()
@@ -408,7 +410,7 @@ export const exportPDFRangoFichas = async (budget, params, ids, empresa = {}) =>
       }).filter(Boolean)
       if (!rs.length) rs.push([{content:'(sin conceptos)',colSpan:7,styles:{halign:'center',fontStyle:'italic',textColor:150}}])
       rs.push([{content:'SUBTOTAL '+title,colSpan:6,styles:{halign:'right',fontStyle:'bold',fillColor:[226,232,240]}},{content:money(total),styles:{halign:'right',fontStyle:'bold',fillColor:[226,232,240]}}])
-      doc.autoTable({startY:y,head:[[{content:title,colSpan:7,styles:{fillColor:[30,41,59],textColor:255,halign:'left',fontStyle:'bold'}}],['Cód.','Insumo','Und','Rend.','Desp.','C.Base','Subtotal']],body:rs,styles:{fontSize:7.5,cellPadding:1.1},headStyles:{fillColor:[71,85,105],textColor:255},columnStyles:{0:{cellWidth:18,halign:'center'},2:{cellWidth:14,halign:'center'},3:{cellWidth:16,halign:'right'},4:{cellWidth:14,halign:'right'},5:{cellWidth:22,halign:'right'},6:{cellWidth:24,halign:'right'}},margin:{bottom:14}})
+      doc.autoTable({startY:y,head:[[{content:title,colSpan:7,styles:{fillColor:T.bg,textColor:T.acc,halign:'left',fontStyle:'bold'}}],['Cód.','Insumo','Und','Rend.','Desp.','C.Base','Subtotal']],body:rs,styles:{fontSize:7.5,cellPadding:1.1},headStyles:{fillColor:T.mid,textColor:255},columnStyles:{0:{cellWidth:18,halign:'center'},2:{cellWidth:14,halign:'center'},3:{cellWidth:16,halign:'right'},4:{cellWidth:14,halign:'right'},5:{cellWidth:22,halign:'right'},6:{cellWidth:24,halign:'right'}},margin:{top:18,bottom:14},rowPageBreak:'avoid',didDrawPage:d=>{if(d.pageNumber>1)drawContinuationBand(doc,budget,T,'FICHA DE COSTO UNITARIO')}})
       y = doc.lastAutoTable.finalY + 3
     }
     sectApu('MATERIALES','materiales',calc.totMat)
@@ -417,7 +419,7 @@ export const exportPDFRangoFichas = async (budget, params, ids, empresa = {}) =>
     sectApu('SUBCONTRATO','subcontratos',calc.totSub)
 
     y += 6
-    const CR = { ink:[15,17,21], dark:[30,41,59], bg:[248,250,252] }
+    const CR = { ink:T.bg, dark:T.mid, bg:[248,250,252] }
     const pwR = doc.internal.pageSize.getWidth()
     const tWR = 105
     doc.autoTable({startY:y, tableWidth:tWR, margin:{left:pwR-tWR-10, right:10, bottom:14},
@@ -845,10 +847,12 @@ export const exportPDFResumenEjecutivo = async (budget, params) => {
   const ML = 14   // margen lateral uniforme
   const CW = w - ML * 2   // ancho de contenido
 
-  // ── Paleta monocromática ──────────────────────────────────────
+  // ── Paleta desde la configuración del proyecto ────────────────
+  const T = pdfTheme(budget)
   const C = {
-    ink:   [15,  17,  21],
-    dark:  [30,  41,  59],
+    ink:   T.bg,
+    dark:  T.mid,
+    acc:   T.acc,
     mid:   [71,  85, 105],
     muted: [148,163,184],
     rule:  [203,213,225],
@@ -881,8 +885,8 @@ export const exportPDFResumenEjecutivo = async (budget, params) => {
   await addImageContain(doc, budget.logoOfertante, ML, 6, 28, 28)
   await addImageContain(doc, budget.logoCliente,   w - ML - 28, 6, 28, 28)
 
-  // 1. Título aumentado a 10pt
-  doc.setTextColor(...C.muted); doc.setFontSize(10); doc.setFont(undefined, 'bold')
+  // 1. Título aumentado a 10pt — usa el color de acento configurado
+  doc.setTextColor(...C.acc); doc.setFontSize(10); doc.setFont(undefined, 'bold')
   doc.text('RESUMEN EJECUTIVO DE PRESUPUESTO', w / 2, 12, { align: 'center' })
   doc.setTextColor(...C.white); doc.setFontSize(17); doc.setFont(undefined, 'bold')
   doc.text(budget.nombreProyecto || 'Sin nombre', w / 2, 24, { align: 'center' })

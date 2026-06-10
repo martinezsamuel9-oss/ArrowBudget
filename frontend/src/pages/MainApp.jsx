@@ -3337,7 +3337,8 @@ export default function MainApp() {
   // Cargar presupuestos
   useEffect(() => {
     if (!user) return
-    supabase.from('presupuestos').select('*').eq('user_id', user.id).order('updated_at', { ascending: false })
+    // Sin filtro user_id: RLS devuelve los propios + los asignados vía project_members/org
+    supabase.from('presupuestos').select('*').order('updated_at', { ascending: false })
       .then(({ data }) => { setProyectos((data || []).map(mapDb)); setLoadingData(false) })
   }, [user])
 
@@ -3387,7 +3388,8 @@ export default function MainApp() {
           supabase.from('org_members').select('role').eq('user_id', user.id)
             .maybeSingle()
             .then(({ data: om }) => {
-              setProjectRole(om ? (ORG_TO_PROJECT_ROLE[om.role] || 'cliente') : 'gerente')
+              // Sin membresía conocida → rol mínimo, nunca gerente por defecto
+              setProjectRole(om ? (ORG_TO_PROJECT_ROLE[om.role] || 'cliente') : 'cliente')
             })
         }
       })
