@@ -1059,14 +1059,25 @@ export const exportPDFPortafolio = (proyectos, empresa = '') => {
   const activos   = proyectos.filter(p => p.estado === 'Activo').length
   const revision  = proyectos.filter(p => p.estado === 'En revisión').length
   const aprobados = proyectos.filter(p => p.estado === 'Aprobado').length
-  const cartera   = proyectos.reduce((s, p) => s + (p._total || 0), 0)
+  // Agrupar cartera por moneda para evitar mezclar HNL y USD
+  const carteraPorMoneda = proyectos.reduce((acc, p) => {
+    const moneda = p.moneda || 'USD'
+    acc[moneda] = (acc[moneda] || 0) + (p._total || 0)
+    return acc
+  }, {})
+  const carteraEntries = Object.entries(carteraPorMoneda)
+  const carteraCompact = carteraEntries.map(([cur, val]) => {
+    const sym = currencySymbol(cur)
+    const n = val >= 1e6 ? `${sym}${(val/1e6).toFixed(2)}M` : val >= 1e3 ? `${sym}${(val/1e3).toFixed(1)}K` : `${sym}${val.toFixed(2)}`
+    return cur !== 'USD' ? `${n} ${cur}` : n
+  }).join(' + ') || money(0)
 
   const kpis = [
     { label: 'TOTAL PROYECTOS', value: String(proyectos.length), color: [30, 64, 175] },
     { label: 'ACTIVOS',         value: String(activos),          color: [5, 150, 105] },
     { label: 'EN REVISIÓN',     value: String(revision),         color: [146, 64, 14] },
     { label: 'APROBADOS',       value: String(aprobados),        color: [79, 70, 229] },
-    { label: 'CARTERA TOTAL',   value: money(cartera),           color: [180, 83, 9] },
+    { label: 'CARTERA TOTAL',   value: carteraEntries.length > 1 ? carteraCompact : money(carteraEntries[0]?.[1] || 0, carteraEntries[0]?.[0]), color: [180, 83, 9] },
   ]
   const bw = (w - 28 - 16) / 5
   kpis.forEach((b, i) => {
@@ -1074,7 +1085,7 @@ export const exportPDFPortafolio = (proyectos, empresa = '') => {
     doc.setFillColor(...b.color); doc.roundedRect(bx, 32, bw, 18, 2, 2, 'F')
     doc.setTextColor(255); doc.setFontSize(6.5); doc.setFont(undefined, 'bold')
     doc.text(b.label, bx + bw / 2, 38, { align: 'center' })
-    doc.setFontSize(11)
+    doc.setFontSize(b.value.length > 16 ? 8 : 11)
     doc.text(b.value, bx + bw / 2, 46, { align: 'center' })
   })
 
@@ -1090,15 +1101,17 @@ export const exportPDFPortafolio = (proyectos, empresa = '') => {
     `Rev ${p.revision || 1}`,
     p.fecha || '—',
     p.moneda || 'USD',
-    { content: money(p._total || 0), styles: { halign: 'right', fontStyle: 'bold' } },
+    { content: money(p._total || 0, p.moneda), styles: { halign: 'right', fontStyle: 'bold' } },
   ])
 
-  // Fila de total
-  rows.push([
-    { content: '', colSpan: 7, styles: { fillColor: [10, 20, 40] } },
-    { content: 'CARTERA TOTAL', styles: { fillColor: [10, 20, 40], textColor: 245, fontStyle: 'bold', halign: 'right' } },
-    { content: money(cartera), styles: { fillColor: [10, 20, 40], textColor: 245, fontStyle: 'bold', halign: 'right' } },
-  ])
+  // Fila de total — una por moneda
+  carteraEntries.forEach(([cur, val]) => {
+    rows.push([
+      { content: '', colSpan: 7, styles: { fillColor: [10, 20, 40] } },
+      { content: carteraEntries.length > 1 ? `CARTERA TOTAL ${cur}` : 'CARTERA TOTAL', styles: { fillColor: [10, 20, 40], textColor: 245, fontStyle: 'bold', halign: 'right' } },
+      { content: money(val, cur), styles: { fillColor: [10, 20, 40], textColor: 245, fontStyle: 'bold', halign: 'right' } },
+    ])
+  })
 
   doc.autoTable({
     startY: 54,
@@ -1159,16 +1172,25 @@ export async function exportExcelPortafolio(proyectos, empresa = '') {
     setC(ws, 'F' + r, p.revision || 1, { alignment: X.ac })
     setC(ws, 'G' + r, p.fecha || '—', { alignment: X.ac })
     setC(ws, 'H' + r, p.moneda || 'USD', { alignment: X.ac })
-    setC(ws, 'I' + r, p._total || 0, { alignment: X.ar, numFmt: MFMT, font: { bold: true } })
+    setC(ws, 'I' + r, p._total || 0, { alignment: X.ar, numFmt: mfmt(p.moneda), font: { bold: true } })
   })
 
-  const totRow = 5 + proyectos.length + 1
-  ws.mergeCells(`A${totRow}:H${totRow}`)
-  setC(ws, 'A' + totRow, 'CARTERA TOTAL', { fill: X.totalFill, font: X.totalFont, alignment: X.ar })
-  setC(ws, 'I' + totRow, proyectos.reduce((s, p) => s + (p._total || 0), 0), {
-    fill: X.totalFill, font: X.totalFont, alignment: X.ar, numFmt: MFMT,
+  // Totales por moneda — no mezclar HNL y USD en una sola suma
+  const carteraPorMoneda = proyectos.reduce((acc, p) => {
+    const moneda = p.moneda || 'USD'
+    acc[moneda] = (acc[moneda] || 0) + (p._total || 0)
+    return acc
+  }, {})
+  const carteraEntries = Object.entries(carteraPorMoneda)
+  carteraEntries.forEach(([cur, val], i) => {
+    const totRow = 5 + proyectos.length + 1 + i
+    ws.mergeCells(`A${totRow}:H${totRow}`)
+    setC(ws, 'A' + totRow, carteraEntries.length > 1 ? `CARTERA TOTAL ${cur}` : 'CARTERA TOTAL', { fill: X.totalFill, font: X.totalFont, alignment: X.ar })
+    setC(ws, 'I' + totRow, val, {
+      fill: X.totalFill, font: X.totalFont, alignment: X.ar, numFmt: mfmt(cur),
+    })
+    ws.getRow(totRow).height = 26
   })
-  ws.getRow(totRow).height = 26
 
   const buf = await wb.xlsx.writeBuffer()
   saveAs(new Blob([buf]), `Portafolio_${(empresa || 'Proyectos').replace(/[^\w]+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`)
