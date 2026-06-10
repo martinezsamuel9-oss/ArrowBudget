@@ -2616,7 +2616,7 @@ function EquipoPage({ user, orgId }) {
 
   useEffect(() => { loadMembers() }, [orgId]) // eslint-disable-line
 
-  const isOwner = members.some(m => m.user_id === user?.id && m.role === 'dueno')
+  const isOwner = members.some(m => m.user_id === user?.id && m.role === 'gerente')
 
   const changeRole = async (userId, newRole) => {
     setSavingId(userId)
@@ -2699,7 +2699,7 @@ function EquipoPage({ user, orgId }) {
                 <tbody>
                   {members.map(m => {
                     const isMe = m.user_id === user?.id
-                    const isMeOwner = m.role === 'dueno'
+                    const isMeOwner = m.role === 'gerente'
                     return (
                       <tr key={m.user_id}>
                         <td style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -3161,7 +3161,8 @@ export default function MainApp() {
     if (!activeId || !user) { setProjectRole(null); return }
     const proj = proyectos.find(p => p.id === activeId)
     // Si el usuario es el dueño del proyecto, siempre tiene acceso total
-    if (proj?.userId === user.id) { setProjectRole('dueno'); return }
+    // (rol 'dueno' ya no existe — el dueño actúa como gerente)
+    if (proj?.userId === user.id) { setProjectRole('gerente'); return }
     // Si no, consultar project_members
     supabase.from('project_members')
       .select('role, rol_especifico')
@@ -3213,7 +3214,8 @@ export default function MainApp() {
       else if (!data || data.length === 0) console.error('[auto-save] 0 filas actualizadas — el cambio NO se guardó (revisar políticas RLS de presupuestos)')
       if ((error || !data?.length) && !saveWarnedRef.current) {
         saveWarnedRef.current = true
-        alert('⚠️ Tus cambios no se están guardando en el servidor. Recarga la página y, si persiste, contacta a soporte.')
+        const causa = error ? `Error: ${error.message} (código ${error.code || '—'})` : 'La base de datos rechazó el cambio (0 filas actualizadas — políticas RLS)'
+        alert(`⚠️ Tus cambios no se están guardando en el servidor.\n\n${causa}\n\nRecarga la página y, si persiste, contacta a soporte.`)
       }
     }
     setSaving(false); savingRef.current = false
