@@ -1511,8 +1511,76 @@ function FichaSection({ title, k, total, ficha, catalogos, onAdd, onDel, onUpd, 
   )
 }
 
+// ============ COPIAR INSUMOS A OTRAS ACTIVIDADES ============
+function CopiarInsumosModal({ open, onClose, budget, actividad, onCopiar }) {
+  const [sel, setSel] = useState({})
+  const [q, setQ] = useState('')
+  useEffect(() => { if (open) { setSel({}); setQ('') } }, [open])
+  if (!open || !actividad) return null
+
+  const src = actividad.ficha || {}
+  const nIns = CATEGORIAS.reduce((s, c) => s + (src[c.key] || []).filter(x => x.insumoId).length, 0)
+
+  // Solo actividades del MISMO proyecto (se recorre el árbol del budget activo)
+  const acts = []
+  const walk = (its, ruta = []) => (its || []).forEach(it => {
+    if (it.tipo === 'actividad') {
+      if (it.id !== actividad.id) acts.push({ id: it.id, descripcion: it.descripcion, ruta: ruta.join(' › ') })
+    } else if (it.children) walk(it.children, [...ruta, it.descripcion])
+  })
+  walk(budget?.items)
+  const list = acts.filter(a => !q || normalize(a.descripcion).includes(normalize(q)) || (a.id || '').includes(q.trim()))
+  const ids = Object.keys(sel).filter(k => sel[k])
+  const toggle = id => setSel(p => ({ ...p, [id]: !p[id] }))
+
+  return (
+    <Fragment>
+      <div className="scrim" style={{ zIndex: 60 }} onClick={onClose}></div>
+      <div className="modal" style={{ zIndex: 61, width: 'min(560px, 92vw)' }}>
+        <div className="drawer-head">
+          <div>
+            <div className="drawer-title">Copiar insumos a otras actividades</div>
+            <div className="drawer-sub">Desde {actividad.id} — {actividad.descripcion}</div>
+          </div>
+          <button className="icon-btn" onClick={onClose}><X size={18} /></button>
+        </div>
+        <div style={{ padding: '14px 20px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ fontSize: 12.5, color: 'var(--c-text-2)', background: 'var(--c-accent-soft)', padding: '8px 12px', borderRadius: 8, lineHeight: 1.5 }}>
+            Se copiarán <b>{nIns} insumo(s)</b> con su precio y unidad del catálogo del proyecto.
+            El <b>rendimiento no se copia</b> — queda en 0 para que lo definas en cada actividad destino.
+            Los insumos que ya existan en la ficha destino se omiten.
+          </div>
+          <input className="input" placeholder="Buscar actividad por nombre o ID…" value={q} onChange={e => setQ(e.target.value)} autoFocus />
+          <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 320, overflowY: 'auto', border: '1px solid var(--c-line)', borderRadius: 8 }}>
+            {list.length === 0 && <div style={{ padding: 16, textAlign: 'center', fontSize: 13, color: 'var(--c-text-3)' }}>Sin actividades que coincidan</div>}
+            {list.map(a => (
+              <label key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--c-line-2)', background: sel[a.id] ? 'var(--c-accent-soft)' : 'transparent' }}>
+                <input type="checkbox" checked={!!sel[a.id]} onChange={() => toggle(a.id)} style={{ width: 15, height: 15, accentColor: 'var(--c-accent)', flexShrink: 0 }} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--c-text)' }}>
+                    <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--c-text-3)', marginRight: 6 }}>{a.id}</span>
+                    {a.descripcion || '(sin descripción)'}
+                  </div>
+                  {a.ruta && <div style={{ fontSize: 11, color: 'var(--c-text-3)' }}>{a.ruta}</div>}
+                </div>
+              </label>
+            ))}
+          </div>
+        </div>
+        <div className="drawer-foot">
+          <button className="btn ghost" onClick={onClose}>Cancelar</button>
+          <button className="btn primary" disabled={!ids.length || !nIns} onClick={() => onCopiar(ids)}>
+            <Copy size={13} /> Copiar a {ids.length} actividad{ids.length !== 1 ? 'es' : ''}
+          </button>
+        </div>
+      </div>
+    </Fragment>
+  )
+}
+
 // ============ FICHA COSTO MODAL ============
-function FichaCostoModal({ open, onClose, actividad, budget, catalogos, params, onUpdate, onUpdateCatalogos, empresa = {}, onExplosion }) {
+function FichaCostoModal({ open, onClose, actividad, budget, catalogos, params, onUpdate, onUpdateCatalogos, empresa = {}, onExplosion, onCopiarInsumos }) {
+  const [showCopiar, setShowCopiar] = useState(false)
   if (!open || !actividad) return null
   const money = makeMoneyFmt(budget?.moneda)
   const f = actividad.ficha || { materiales: [], manoObra: [], herramientaEquipo: [], subcontratos: [] }
@@ -1581,10 +1649,13 @@ function FichaCostoModal({ open, onClose, actividad, budget, catalogos, params, 
             <button onClick={() => budget && exportPDFFicha(budget, actividad, params, empresa)} className="btn" style={{ background: 'var(--c-danger)', borderColor: 'var(--c-danger)', color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}><FileText size={13} /> PDF</button>
             <button onClick={() => budget && exportExcelFicha(budget, actividad, params)} className="btn" style={{ background: 'var(--c-success)', borderColor: 'var(--c-success)', color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}><FileSpreadsheet size={13} /> Excel</button>
             {onExplosion && <button onClick={onExplosion} className="btn" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Layers size={13} /> Explosión</button>}
+            {onCopiarInsumos && <button onClick={() => setShowCopiar(true)} className="btn" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Copy size={13} /> Copiar a…</button>}
           </div>
           <button onClick={onClose} className="btn primary">Cerrar</button>
         </div>
       </div>
+      <CopiarInsumosModal open={showCopiar} onClose={() => setShowCopiar(false)} budget={budget} actividad={actividad}
+        onCopiar={ids => { onCopiarInsumos(ids); setShowCopiar(false) }} />
     </Fragment>
   )
 }
@@ -3564,6 +3635,38 @@ export default function MainApp() {
     return it
   }, [fichaPath, budget])
 
+  // Copia los insumos de la ficha activa a otras actividades del MISMO proyecto.
+  // Lleva la referencia al insumo del catálogo (precio y unidad van implícitos);
+  // el rendimiento NO se copia: queda en 0 para definirlo en cada destino.
+  const copiarInsumosA = targetIds => {
+    if (!fichaActividad || !budget || !targetIds?.length) return
+    const src = fichaActividad.ficha || {}
+    let agregados = 0, omitidos = 0
+    const walk = its => its.map(it => {
+      if (it.tipo === 'actividad' && targetIds.includes(it.id)) {
+        const nf = {
+          materiales:        [...(it.ficha?.materiales || [])],
+          manoObra:          [...(it.ficha?.manoObra || [])],
+          herramientaEquipo: [...(it.ficha?.herramientaEquipo || [])],
+          subcontratos:      [...(it.ficha?.subcontratos || [])],
+        }
+        for (const cat of CATEGORIAS) {
+          for (const c of (src[cat.key] || [])) {
+            if (!c.insumoId) continue
+            if (nf[cat.key].some(x => x.insumoId === c.insumoId)) { omitidos++; continue }
+            nf[cat.key].push({ id: uid(), insumoId: c.insumoId, rendimiento: 0, desperdicio: +c.desperdicio || 0 })
+            agregados++
+          }
+        }
+        return { ...it, ficha: nf }
+      }
+      if (it.children) return { ...it, children: walk(it.children) }
+      return it
+    })
+    setBudget({ ...budget, items: walk(budget.items) })
+    alert(`✅ ${agregados} insumo(s) copiados a ${targetIds.length} actividad(es).${omitidos ? `\n${omitidos} ya existían en el destino y se omitieron.` : ''}\n\nRecuerda definir el rendimiento en cada actividad destino (quedó en 0).`)
+  }
+
   const updFicha = na => {
     if (!fichaPath) return
     const its = JSON.parse(JSON.stringify(budget.items))
@@ -3913,6 +4016,7 @@ export default function MainApp() {
         onUpdateCatalogos={nc => setBudget({ ...budget, catalogos: nc })}
         empresa={{ nombre: userEmpresa, logo: budget?.logoOfertante, logoCliente: budget?.logoCliente, headerBg: budget?.apuHeaderBg, headerText: budget?.apuHeaderText }}
         onExplosion={() => { setExplosionActividad(fichaActividad); setFichaPath(null) }}
+        onCopiarInsumos={copiarInsumosA}
       />
       {budget && explosionActividad && (
         <ExplosionActividadModal
