@@ -13,7 +13,7 @@ import {
   ShieldCheck, UserPlus,
 } from 'lucide-react'
 import {
-  round2, fmt, money, moneyK, makeMoneyFmt, uid, normalize,
+  round2, fmt, money, moneyK, makeMoneyFmt, currencySymbol, uid, normalize,
   findInsumo, conceptoCost, calcFicha, calcItem, calcKPIs,
   findOrCreateInsumo, findPathById, calcExplosionInsumos, CATEGORIAS, EMPTY_CATALOGOS,
 } from '../lib/calc'
@@ -1747,7 +1747,7 @@ function InicioPage({ proyectos, openProject, addProject, setPage, userName }) {
     return acc
   }, {})
   const carteraLabel = Object.entries(carteraPorMoneda).map(([cur, val]) => {
-    const sym = cur === 'HNL' ? 'L' : '$'
+    const sym = currencySymbol(cur)
     const n = val >= 1e6 ? `${sym}${(val/1e6).toFixed(2)}M` : val >= 1e3 ? `${sym}${(val/1e3).toFixed(1)}K` : `${sym}${val.toFixed(2)}`
     return cur !== 'USD' ? `${n} ${cur}` : n
   }).join(' + ')
@@ -1928,7 +1928,15 @@ function ProyectosPage({ proyectos, openProject, addProject, deleteProject }) {
   const [layout, setLayout] = useState('grid')
   const filters = ['Todos', 'Activo', 'En revisión', 'Borrador', 'Aprobado']
   const list = proyectos.filter(p => (f === 'Todos' || p.estado === f) && (!q || normalize(p.nombreProyecto).includes(normalize(q)) || normalize(p.cliente).includes(normalize(q))))
-  const totalCartera = proyectos.reduce((s, p) => s + calcKPIs(p).total, 0)
+  // Agrupar cartera por moneda para evitar mezclar HNL y USD
+  const carteraPorMoneda = proyectos.reduce((acc, p) => {
+    const moneda = p.moneda || 'USD'
+    acc[moneda] = (acc[moneda] || 0) + calcKPIs(p).total
+    return acc
+  }, {})
+  const carteraLabel = Object.entries(carteraPorMoneda).map(([cur, val]) =>
+    cur !== 'USD' ? `${money(val, cur)} ${cur}` : money(val, cur)
+  ).join(' + ')
   const COVERS = ['linear-gradient(135deg,#0A1428,#14213D)','linear-gradient(135deg,#1D4ED8,#2563EB)','linear-gradient(135deg,#059669,#10B981)','linear-gradient(135deg,#7C3AED,#8B5CF6)','linear-gradient(135deg,#DC2626,#EF4444)','linear-gradient(135deg,#D97706,#F59E0B)']
   const getCover = i => COVERS[i % COVERS.length]
 
@@ -1938,7 +1946,7 @@ function ProyectosPage({ proyectos, openProject, addProject, deleteProject }) {
         <div className="page-head-title">
           <h1>Proyectos <span className="badge" style={{ fontSize: 12, padding: '3px 9px' }}>{proyectos.length}</span></h1>
           <div className="page-head-meta">
-            <span style={{ fontSize: 13, color: 'var(--c-text-2)' }}>Cartera total: <b style={{ fontFamily: 'var(--font-mono)', color: 'var(--c-ink)' }}>{money(totalCartera)}</b></span>
+            <span style={{ fontSize: 13, color: 'var(--c-text-2)' }}>Cartera total: <b style={{ fontFamily: 'var(--font-mono)', color: 'var(--c-ink)' }}>{carteraLabel || money(0)}</b></span>
           </div>
         </div>
         <div className="page-head-actions">
@@ -2746,7 +2754,16 @@ function ReportesPage({ proyectos, budget, params, userEmpresa }) {
   const activos    = proyectos.filter(p => p.estado === 'Activo').length
   const revision   = proyectos.filter(p => p.estado === 'En revisión').length
   const aprobados  = proyectos.filter(p => p.estado === 'Aprobado').length
-  const cartera    = proyectos.reduce((s, p) => s + (p._total || 0), 0)
+  // Agrupar cartera por moneda para evitar mezclar HNL y USD
+  const carteraPorMoneda = proyectos.reduce((acc, p) => {
+    const moneda = p.moneda || 'USD'
+    acc[moneda] = (acc[moneda] || 0) + (p._total || 0)
+    return acc
+  }, {})
+  const carteraLabel = Object.entries(carteraPorMoneda).map(([cur, val]) => {
+    const n = `${currencySymbol(cur)} ${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    return cur !== 'USD' ? `${n} ${cur}` : n
+  }).join(' + ')
 
   const ReporteCard = ({ icon: Icon, title, desc, onPdf, onExcel, disabled }) => (
     <div className="card" style={{ opacity: disabled ? 0.5 : 1, display: 'flex', flexDirection: 'column' }}>
@@ -2861,7 +2878,7 @@ function ReportesPage({ proyectos, budget, params, userEmpresa }) {
             <div className="kpi-row" style={{ marginBottom: 20 }}>
               <div className="kpi highlight">
                 <div className="kpi-label"><DollarSign size={12} className="ico" />Cartera Total</div>
-                <div className="kpi-val">{currency === 'USD' ? '$' : 'L'} {cartera.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div className="kpi-val" style={{ fontSize: Object.keys(carteraPorMoneda).length > 1 ? 16 : undefined }}>{carteraLabel || '$ 0.00'}</div>
                 <div className="kpi-foot"><span>Suma de {total} proyectos</span></div>
               </div>
               <div className="kpi">
@@ -2922,7 +2939,7 @@ function ReportesPage({ proyectos, budget, params, userEmpresa }) {
                   <tr>
                     <td colSpan={5} style={{ textAlign: 'right', fontWeight: 700 }}>CARTERA TOTAL</td>
                     <td style={{ textAlign: 'right', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
-                      $ {cartera.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      {carteraLabel || '$ 0.00'}
                     </td>
                   </tr>
                 </tfoot>
@@ -3059,6 +3076,8 @@ export default function MainApp() {
   const fileRef = useRef(null)
   const importCtx = useRef(null)
   const savingRef = useRef(false)
+  const pendingRef = useRef(null) // último budget editado que aún no se persiste
+  const saveWarnedRef = useRef(false) // avisar solo una vez por sesión si el auto-save falla
 
   const effectiveProfile = profileOverride ? { ...profile, ...profileOverride } : profile
   const userName    = effectiveProfile?.nombre || effectiveProfile?.full_name || user?.user_metadata?.full_name || 'Usuario'
@@ -3178,18 +3197,48 @@ export default function MainApp() {
     }))
   }, [activeId])
 
+  // Auto-guardado: el último budget editado vive en pendingRef y se persiste (flush)
+  // al vencer el debounce, al cambiar de proyecto activo o al desmontar. Si llega un
+  // cambio mientras hay un guardado en vuelo, el bucle lo persiste al terminar.
+  const flushSave = async () => {
+    if (savingRef.current) return // el guardado en vuelo procesará lo pendiente al terminar
+    if (!pendingRef.current) return
+    savingRef.current = true; setSaving(true)
+    while (pendingRef.current) {
+      const b = pendingRef.current
+      pendingRef.current = null
+      // .select('id') permite detectar updates bloqueados por RLS: no dan error, solo afectan 0 filas
+      const { data, error } = await supabase.from('presupuestos').update(toDb(b)).eq('id', b.id).select('id')
+      if (error) console.error('[auto-save] Error al guardar:', error.message, error)
+      else if (!data || data.length === 0) console.error('[auto-save] 0 filas actualizadas — el cambio NO se guardó (revisar políticas RLS de presupuestos)')
+      if ((error || !data?.length) && !saveWarnedRef.current) {
+        saveWarnedRef.current = true
+        alert('⚠️ Tus cambios no se están guardando en el servidor. Recarga la página y, si persiste, contacta a soporte.')
+      }
+    }
+    setSaving(false); savingRef.current = false
+  }
+
   // Auto-guardado con debounce
   useEffect(() => {
     if (!budget || loadingData) return
-    const t = setTimeout(async () => {
-      if (savingRef.current) return
-      savingRef.current = true; setSaving(true)
-      const { error } = await supabase.from('presupuestos').update(toDb(budget)).eq('id', budget.id)
-      if (error) console.error('[auto-save] Error al guardar:', error.message, error)
-      setSaving(false); savingRef.current = false
-    }, 1400)
+    pendingRef.current = budget
+    const t = setTimeout(flushSave, 1400)
     return () => clearTimeout(t)
   }, [budget])
+
+  // Flush inmediato al cambiar de proyecto activo o al desmontar: el cleanup corre
+  // antes de que el efecto de debounce pise pendingRef con el budget del proyecto nuevo
+  useEffect(() => () => { flushSave() }, [activeId])
+
+  // Advertir al cerrar/recargar la pestaña si hay cambios sin guardar o un guardado en vuelo
+  useEffect(() => {
+    const onBeforeUnload = e => {
+      if (pendingRef.current || savingRef.current) { e.preventDefault(); e.returnValue = '' }
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [])
 
   const params = useMemo(() => budget
     ? { pctIndirectos: budget.pctIndirectos, pctImprevistos: budget.pctImprevistos, pctUtilidad: budget.pctUtilidad, pctImpuesto: budget.pctImpuesto }
@@ -3257,6 +3306,9 @@ export default function MainApp() {
     if (!confirm(`¿Eliminar el proyecto "${nombre}"?\n\nEsta acción no se puede deshacer.`)) return
     const { error } = await supabase.from('presupuestos').delete().eq('id', id)
     if (error) { alert('Error al eliminar: ' + error.message); return }
+    // descartar cambios pendientes del proyecto borrado: el flush al cambiar de activeId
+    // intentaría un update sobre una fila inexistente (0 filas → falsa alerta de RLS)
+    if (pendingRef.current?.id === id) pendingRef.current = null
     setProyectos(ps => ps.filter(p => p.id !== id))
     if (activeId === id) { setActiveId(null); setPage('proyectos') }
   }
