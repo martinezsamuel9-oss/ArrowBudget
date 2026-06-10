@@ -2740,6 +2740,7 @@ function EquipoPage({ user, orgId: orgIdProp, proyectos = [] }) {
   const [busyId, setBusyId] = useState(null)
   const [asigProyecto, setAsigProyecto] = useState({})
   const [asigRol, setAsigRol] = useState({})
+  const [maxUsuarios, setMaxUsuarios] = useState(null)
 
   const ORG_ROLES = Object.entries(ROLES_ARROW).map(([value, { label }]) => ({ value, label }))
 
@@ -2765,11 +2766,13 @@ function EquipoPage({ user, orgId: orgIdProp, proyectos = [] }) {
         mems = refreshed || mems || []
       }
       const ids = (mems || []).map(m => m.user_id)
-      const [profsRes, pmsRes, invsRes] = await Promise.all([
+      const [profsRes, pmsRes, invsRes, orgRes] = await Promise.all([
         ids.length ? supabase.from('profiles').select('id, nombre, email').in('id', ids) : Promise.resolve({ data: [] }),
         ids.length ? supabase.from('project_members').select('user_id, presupuesto_id, rol_especifico').in('user_id', ids) : Promise.resolve({ data: [] }),
         supabase.from('invitations').select('id, email, role, token, expires_at').eq('org_id', oid).is('accepted_at', null),
+        supabase.from('organizations').select('max_usuarios').eq('id', oid).maybeSingle(),
       ])
+      setMaxUsuarios(orgRes.data?.max_usuarios ?? null)
       const profMap = Object.fromEntries((profsRes.data || []).map(p => [p.id, p]))
       setMembers((mems || []).map(m => ({
         ...m,
@@ -2800,10 +2803,31 @@ function EquipoPage({ user, orgId: orgIdProp, proyectos = [] }) {
   const toggleStatus = async (m) => {
     const nuevo = (m.status || 'activo') === 'activo' ? 'suspendido' : 'activo'
     const nombre = m.profile.nombre || m.profile.email || 'este usuario'
-    if (nuevo === 'suspendido' && !confirm(`¿Suspender a ${nombre}?\n\nPerderá acceso a los proyectos de la organización hasta que lo reactives.`)) return
+    if (nuevo === 'suspendido' && !confirm(`¿Suspender a ${nombre}?\n\nPerderá acceso a los proyectos de la organización hasta que lo reactives. Su cupo queda libre para crear otro usuario.`)) return
+    // Reactivar no debe exceder el límite de usuarios activos del plan
+    if (nuevo === 'activo' && maxUsuarios != null) {
+      const activos = members.filter(x => (x.status || 'activo') === 'activo').length
+      if (activos >= maxUsuarios) {
+        alert(`No puedes reactivar a ${nombre}: ya tienes ${activos} usuarios activos de ${maxUsuarios} que permite tu plan.\n\nSuspende o elimina otro usuario, o mejora tu plan.`)
+        return
+      }
+    }
     setBusyId(m.user_id)
     const { error } = await supabase.from('org_members').update({ status: nuevo }).eq('org_id', orgId).eq('user_id', m.user_id)
     if (error) alert('Error al cambiar estado: ' + error.message)
+    await loadAll(); setBusyId(null)
+  }
+
+  const eliminarUsuario = async (m) => {
+    const nombre = m.profile.nombre || m.profile.email || 'este usuario'
+    if (!confirm(`¿Eliminar a ${nombre} de la organización?\n\nPerderá todo acceso y se quitarán sus asignaciones de proyectos. Su cupo queda libre. Los proyectos que haya creado NO se borran.\n\nEsta acción no se puede deshacer.`)) return
+    setBusyId(m.user_id)
+    // Quitar asignaciones de proyectos y luego la membresía
+    for (const pm of m.proyectos) {
+      await supabase.from('project_members').delete().eq('presupuesto_id', pm.presupuesto_id).eq('user_id', m.user_id)
+    }
+    const { error } = await supabase.from('org_members').delete().eq('org_id', orgId).eq('user_id', m.user_id)
+    if (error) alert('Error al eliminar: ' + error.message)
     await loadAll(); setBusyId(null)
   }
 
@@ -2846,6 +2870,11 @@ function EquipoPage({ user, orgId: orgIdProp, proyectos = [] }) {
           <h1><Users size={22} /> Usuarios y roles</h1>
           <p className="page-head-meta" style={{ fontSize: 13, color: 'var(--c-text-3)', marginTop: 4 }}>
             Miembros y accesos de tu organización
+            {maxUsuarios != null && (
+              <span> · <b style={{ color: 'var(--c-text-2)' }}>
+                {members.filter(x => (x.status || 'activo') === 'activo').length} de {maxUsuarios} usuarios activos
+              </b> de tu plan</span>
+            )}
           </p>
         </div>
       </div>
@@ -2918,10 +2947,17 @@ function EquipoPage({ user, orgId: orgIdProp, proyectos = [] }) {
                           </div>
                           <div className="field">
                             <label className="field-label">Estado</label>
-                            <button className="btn" disabled={busyId === m.user_id || isMe} onClick={() => toggleStatus(m)}
-                              style={{ width: '100%', justifyContent: 'center', ...(activo ? { color: 'var(--c-danger)', borderColor: 'var(--c-danger)' } : { color: 'var(--c-success)', borderColor: 'var(--c-success)' }) }}>
-                              {activo ? 'Suspender usuario' : 'Activar usuario'}
-                            </button>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                              <button className="btn" disabled={busyId === m.user_id || isMe} onClick={() => toggleStatus(m)}
+                                style={{ flex: 1, justifyContent: 'center', ...(activo ? { color: 'var(--c-warn)', borderColor: 'var(--c-warn)' } : { color: 'var(--c-success)', borderColor: 'var(--c-success)' }) }}>
+                                {activo ? 'Suspender' : 'Activar'}
+                              </button>
+                              <button className="btn" disabled={busyId === m.user_id || isMe} onClick={() => eliminarUsuario(m)}
+                                title="Eliminar de la organización"
+                                style={{ justifyContent: 'center', color: 'var(--c-danger)', borderColor: 'var(--c-danger)' }}>
+                                <Trash2 size={13} /> Eliminar
+                              </button>
+                            </div>
                           </div>
                         </div>
                       )}
