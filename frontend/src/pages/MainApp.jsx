@@ -2581,56 +2581,68 @@ function ExplosionActividadModal({ open, onClose, actividad, budget, params }) {
 
 // ============ EQUIPO PAGE ============
 function CrearUsuarioModal({ open, onClose, orgId, user, onCreated }) {
+  const [nombre, setNombre] = useState('')
   const [email, setEmail] = useState('')
   const [rol, setRol] = useState('ing_costos_1')
-  const [link, setLink] = useState(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
+  const [result, setResult] = useState(null)   // { emailSent, tempPassword }
   const [copied, setCopied] = useState(false)
-  useEffect(() => { if (open) { setEmail(''); setRol('ing_costos_1'); setLink(null); setErr(null); setCopied(false) } }, [open])
+  useEffect(() => { if (open) { setNombre(''); setEmail(''); setRol('ing_costos_1'); setResult(null); setErr(null); setCopied(false) } }, [open])
   if (!open) return null
 
-  const generar = async () => {
+  const crear = async () => {
     const mail = email.trim().toLowerCase()
+    if (!nombre.trim()) { setErr('Ingresa el nombre completo.'); return }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) { setErr('Ingresa un correo válido.'); return }
     setBusy(true); setErr(null)
-    // Si ya había invitación para ese correo, se regenera
-    await supabase.from('invitations').delete().eq('org_id', orgId).eq('email', mail)
-    const { data, error } = await supabase.from('invitations')
-      .insert({ org_id: orgId, invited_by: user.id, email: mail, role: rol })
-      .select('token').single()
-    setBusy(false)
-    if (error) { setErr(error.message); return }
-    setLink(`${window.location.origin}/login?invite=${data.token}`)
-    onCreated?.()
+    try {
+      const { data, error } = await supabase.functions.invoke('crear-usuario', {
+        body: { email: mail, nombre: nombre.trim(), rol },
+      })
+      setBusy(false)
+      if (error) { setErr('No se pudo crear el usuario. Verifica que la función "crear-usuario" esté desplegada en Supabase. (' + error.message + ')'); return }
+      if (!data?.ok) { setErr(data?.error || 'Error desconocido'); return }
+      setResult(data)
+      onCreated?.()
+    } catch (e) {
+      setBusy(false)
+      setErr('Error de conexión: ' + (e.message || e))
+    }
   }
 
   const copiar = async () => {
-    try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2000) }
-    catch { prompt('Copia el link:', link) }
+    const texto = `Tu cuenta en Arrow Budget\nUsuario: ${email.trim().toLowerCase()}\nClave temporal: ${result.tempPassword}\nIngresa en ${window.location.origin}/login — al entrar deberás cambiar la clave.`
+    try { await navigator.clipboard.writeText(texto); setCopied(true); setTimeout(() => setCopied(false), 2000) }
+    catch { prompt('Copia las credenciales:', texto) }
   }
 
   return (
     <Modal open={open} onClose={onClose} title="Crear nuevo usuario"
       footer={<>
-        <button className="btn ghost" onClick={onClose}>{link ? 'Cerrar' : 'Cancelar'}</button>
-        {!link && (
-          <button className="btn primary" onClick={generar} disabled={busy || !email.trim()}>
-            <UserPlus size={13} /> {busy ? 'Generando…' : 'Generar link'}
+        <button className="btn ghost" onClick={onClose}>{result ? 'Cerrar' : 'Cancelar'}</button>
+        {!result && (
+          <button className="btn primary" onClick={crear} disabled={busy || !email.trim() || !nombre.trim()}>
+            <UserPlus size={13} /> {busy ? 'Creando…' : 'Crear usuario'}
           </button>
         )}
       </>}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {!link ? (
+        {!result ? (
           <Fragment>
             <p style={{ fontSize: 13, color: 'var(--c-text-2)', margin: 0 }}>
-              Genera un link de creación de cuenta. La persona se registra con ese link y entra
-              directo a tu organización con el rol que elijas. El link vence en 7 días.
+              La cuenta se crea de inmediato dentro de tu organización, con una <b>clave temporal</b> que
+              se envía por correo. Al primer ingreso el sistema le pedirá cambiarla.
             </p>
             <div className="field">
+              <label className="field-label">Nombre completo *</label>
+              <input className="input" placeholder="Nombre y apellido" value={nombre} autoFocus
+                onChange={e => setNombre(e.target.value)} />
+            </div>
+            <div className="field">
               <label className="field-label">Correo electrónico *</label>
-              <input className="input" placeholder="correo@ejemplo.com" value={email} autoFocus
-                onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && generar()} />
+              <input className="input" placeholder="correo@ejemplo.com" value={email}
+                onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && crear()} />
             </div>
             <div className="field">
               <label className="field-label">Rol en la organización</label>
@@ -2644,24 +2656,76 @@ function CrearUsuarioModal({ open, onClose, orgId, user, onCreated }) {
         ) : (
           <Fragment>
             <div style={{ padding: '10px 12px', borderRadius: 8, fontSize: 13, background: '#d1fae5', color: '#065f46', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Check size={15} /> Link generado para <b>{email}</b>
+              <Check size={15} />
+              <span>Usuario <b>{nombre}</b> creado.{' '}
+                {result.emailSent
+                  ? <>Se envió el correo con su clave temporal a <b>{email}</b>.</>
+                  : <>El correo automático no está configurado — comparte la clave manualmente.</>}
+              </span>
             </div>
             <div className="field">
-              <label className="field-label">Link de creación de cuenta</label>
+              <label className="field-label">Clave temporal {result.emailSent ? '(respaldo)' : ''}</label>
               <div style={{ display: 'flex', gap: 8 }}>
-                <input className="input" readOnly value={link} onFocus={e => e.target.select()} style={{ fontSize: 12, fontFamily: 'var(--font-mono)' }} />
+                <input className="input" readOnly value={result.tempPassword} onFocus={e => e.target.select()}
+                  style={{ fontSize: 15, fontFamily: 'var(--font-mono)', fontWeight: 700, letterSpacing: 1 }} />
                 <button className="btn primary" onClick={copiar} style={{ flexShrink: 0 }}>
-                  {copied ? <><Check size={13} /> Copiado</> : <><Copy size={13} /> Copiar</>}
+                  {copied ? <><Check size={13} /> Copiado</> : <><Copy size={13} /> Copiar credenciales</>}
                 </button>
               </div>
             </div>
             <p style={{ fontSize: 12, color: 'var(--c-text-3)', margin: 0 }}>
-              Comparte este link por WhatsApp o correo. Vence en 7 días; puedes regenerarlo desde la lista de invitaciones.
+              El usuario solo inicia sesión con su correo y esta clave — su empresa, organización y rol ya
+              quedaron asignados. El sistema le exigirá cambiar la clave al entrar.
             </p>
           </Fragment>
         )}
       </div>
     </Modal>
+  )
+}
+
+// Cambio de clave obligatorio en el primer ingreso (usuarios creados por un gerente)
+function CambioClaveObligatorio({ user }) {
+  const [p1, setP1] = useState('')
+  const [p2, setP2] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+  if (!user?.user_metadata?.must_change_password) return null
+
+  const guardar = async () => {
+    if (p1.length < 8) { setErr('La nueva clave debe tener mínimo 8 caracteres.'); return }
+    if (p1 !== p2) { setErr('Las claves no coinciden.'); return }
+    setBusy(true); setErr(null)
+    const { error } = await supabase.auth.updateUser({ password: p1, data: { must_change_password: false } })
+    setBusy(false)
+    if (error) setErr(/different|same/i.test(error.message) ? 'La nueva clave debe ser diferente a la temporal.' : error.message)
+    // Si no hay error, el evento USER_UPDATED refresca user_metadata y este overlay desaparece solo
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(10,14,20,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div className="card" style={{ width: '100%', maxWidth: 420, padding: 28 }}>
+        <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--c-text)', marginBottom: 6 }}>🔐 Cambia tu clave temporal</div>
+        <p style={{ fontSize: 13, color: 'var(--c-text-2)', marginTop: 0 }}>
+          Por seguridad debes definir tu propia clave antes de continuar.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div className="field">
+            <label className="field-label">Nueva clave</label>
+            <input className="input" type="password" value={p1} autoFocus onChange={e => setP1(e.target.value)} />
+          </div>
+          <div className="field">
+            <label className="field-label">Confirmar nueva clave</label>
+            <input className="input" type="password" value={p2} onChange={e => setP2(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && guardar()} />
+          </div>
+          {err && <div style={{ padding: '8px 12px', borderRadius: 8, fontSize: 13, background: '#fee2e2', color: '#991b1b' }}>{err}</div>}
+          <button className="btn primary" onClick={guardar} disabled={busy || !p1 || !p2} style={{ justifyContent: 'center', padding: '11px 0' }}>
+            {busy ? 'Guardando…' : 'Guardar y continuar'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -3823,6 +3887,7 @@ export default function MainApp() {
           params={params}
         />
       )}
+      <CambioClaveObligatorio user={user} />
       {budget && <ConfigProyectoModal  open={showConfig}  onClose={() => setShowConfig(false)}  budget={budget} setBudget={setBudget} />}
       {budget && <GuardarVersionDialog open={showVersion} onClose={() => setShowVersion(false)} budget={budget} setBudget={setBudget} />}
       {budget && <RangoFichasDialog    open={showRango}   onClose={() => setShowRango(false)}   budget={budget} params={params} empresa={{ nombre: userEmpresa, logo: budget.logoOfertante, logoCliente: budget.logoCliente, headerBg: budget.apuHeaderBg, headerText: budget.apuHeaderText }} />}
