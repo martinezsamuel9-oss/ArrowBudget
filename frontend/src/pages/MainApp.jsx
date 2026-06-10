@@ -2482,24 +2482,43 @@ const EXP_CATS = [
 ]
 
 function ExplosionTable({ items, catTotal, money }) {
+  const [sort, setSort] = useState({ key: 'codigo', dir: 1 })   // por defecto: código de menor a mayor
   if (!items.length) return <div style={{ padding: '32px 20px', textAlign: 'center', color: 'var(--c-text-3)', fontSize: 13 }}>Sin insumos en esta categoría.</div>
+
+  const sorted = [...items].sort((a, b) => {
+    const va = a[sort.key], vb = b[sort.key]
+    const cmp = (typeof va === 'number' && typeof vb === 'number')
+      ? va - vb
+      : String(va || '').localeCompare(String(vb || ''), 'es', { numeric: true, sensitivity: 'base' })
+    return cmp * sort.dir
+  })
+
+  const Th = ({ k, children, num, style }) => (
+    <th className={num ? 'num' : ''}
+      onClick={() => setSort(s => ({ key: k, dir: s.key === k ? -s.dir : 1 }))}
+      title="Clic para ordenar"
+      style={{ ...style, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
+      {children}<span style={{ fontSize: 9, marginLeft: 3, opacity: sort.key === k ? 1 : 0.25 }}>{sort.key === k ? (sort.dir === 1 ? '▲' : '▼') : '▲'}</span>
+    </th>
+  )
+
   return (
     <div style={{ overflowX: 'auto' }}>
       {/* width auto: la tabla se ciñe al contenido y los números quedan junto a la descripción */}
       <table className="bt" style={{ width: 'auto', minWidth: 720 }}>
         <thead>
           <tr>
-            <th style={{ width: 90 }}>Código</th>
-            <th style={{ width: 440 }}>Descripción</th>
-            <th style={{ width: 80, textAlign: 'center' }}>Unidad</th>
-            <th className="num" style={{ width: 110 }}>Cant. Total</th>
-            <th className="num" style={{ width: 110 }}>Costo Unit.</th>
-            <th className="num" style={{ width: 125 }}>Costo Total</th>
-            <th className="num" style={{ width: 56 }}>%</th>
+            <Th k="codigo" style={{ width: 90 }}>Código</Th>
+            <Th k="descripcion" style={{ width: 440 }}>Descripción</Th>
+            <Th k="unidad" style={{ width: 80, textAlign: 'center' }}>Unidad</Th>
+            <Th k="cantTotal"  num style={{ width: 110 }}>Cant. Total</Th>
+            <Th k="costoBase"  num style={{ width: 110 }}>Costo Unit.</Th>
+            <Th k="costoTotal" num style={{ width: 125 }}>Costo Total</Th>
+            <Th k="costoTotal" num style={{ width: 56 }}>%</Th>
           </tr>
         </thead>
         <tbody>
-          {items.map((item, ri) => {
+          {sorted.map((item, ri) => {
             const pct = catTotal > 0 ? (item.costoTotal / catTotal * 100).toFixed(1) : '0.0'
             return (
               <tr key={item.id} style={{ background: ri % 2 ? 'var(--c-bg)' : undefined }}>
