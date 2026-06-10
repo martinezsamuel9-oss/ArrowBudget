@@ -249,18 +249,22 @@ export const exportPDFPresupuesto = async (budget, params, empresa = {}) => {
       const c   = calcItem(it, budget.catalogos, params)
       const ind = '  '.repeat(d)
       if (it.tipo === 'capitulo') {
+        // Las celdas vacías TAMBIÉN llevan fillColor — si no, el rayado de la
+        // tabla las pinta de blanco y "corta" la banda del capítulo
+        const fillCap = { content: '', styles: { fillColor: capFill } }
         tblRows.push([
           { content: it.id,               styles: { fontStyle:'bold', fillColor:capFill,    textColor:capText    } },
           { content: ind+it.descripcion,  styles: { fontStyle:'bold', fillColor:capFill,    textColor:capText    } },
-          '','','',
+          { ...fillCap }, { ...fillCap }, { ...fillCap },
           { content: money(c.subtotal),   styles: { fontStyle:'bold', halign:'right', fillColor:capFill, textColor:capText } },
         ])
         if (it.children) walk(it.children, d+1)
       } else if (it.tipo === 'subcapitulo') {
+        const fillSub = { content: '', styles: { fillColor: subcapFill } }
         tblRows.push([
           { content: it.id,               styles: { fontStyle:'bold', fillColor:subcapFill, textColor:subcapText } },
           { content: ind+it.descripcion,  styles: { fontStyle:'bold', fillColor:subcapFill, textColor:subcapText } },
-          '','','',
+          { ...fillSub }, { ...fillSub }, { ...fillSub },
           { content: money(c.subtotal),   styles: { fontStyle:'bold', halign:'right', fillColor:subcapFill, textColor:subcapText } },
         ])
         if (it.children) walk(it.children, d+1)
