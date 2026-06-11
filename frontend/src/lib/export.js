@@ -384,21 +384,66 @@ export const exportPDFGeneral = (budget, params, empresa = {}) => {
   acts.forEach((act,i)=>setTimeout(()=>exportPDFFicha(budget,act,params,empresa),(i+1)*700))
 }
 
-// Exports all selected activities as ONE combined PDF (party info only on first page)
+// PDF combinado organizado por CAPÍTULOS (misma lógica que el Excel):
+// portada de capítulo con índice de fichas + las fichas de ese capítulo
 export const exportPDFRangoFichas = async (budget, params, ids, empresa = {}) => {
   const money = makeMoneyFmt(budget.moneda); const MFMT = mfmt(budget.moneda)
-  const acts=[]; const collect=its=>{for(const it of its){if(it.tipo==='actividad'&&ids.includes(it.id))acts.push(it);else if(it.children)collect(it.children)}}
-  collect(budget.items)
-  if(!acts.length) return alert('No hay actividades seleccionadas.')
+
+  const collectActs = (its, into) => { for (const it of (its || [])) { if (it.tipo === 'actividad') { if (ids.includes(it.id)) into.push(it) } else if (it.children) collectActs(it.children, into) } }
+  const grupos = []
+  const sueltas = []
+  for (const top of (budget.items || [])) {
+    if (top.tipo === 'actividad') { if (ids.includes(top.id)) sueltas.push(top); continue }
+    const a = []; collectActs(top.children, a)
+    if (a.length) grupos.push({ cap: top, acts: a })
+  }
+  if (sueltas.length) grupos.push({ cap: { id: '', descripcion: 'Sin capítulo' }, acts: sueltas })
+  if (!grupos.length) return alert('No hay actividades seleccionadas.')
 
   const doc = new jsPDF({orientation:'portrait',unit:'mm',format:'letter'})
   const T = pdfTheme(budget, empresa)
+  const pw = doc.internal.pageSize.getWidth()
+  let primera = true
 
-  for (const [actIdx, act] of acts.entries()) {
-    if (actIdx > 0) doc.addPage()
+  for (const { cap, acts } of grupos) {
+    // ── Portada del capítulo con índice de sus fichas ──
+    if (!primera) doc.addPage()
+    primera = false
+    let cy = await drawApuHeader(doc, budget, empresa, { title: 'FICHAS DE COSTO UNITARIO' })
+    cy += 14
+    doc.setTextColor(...T.bg); doc.setFontSize(20); doc.setFont(undefined, 'bold')
+    doc.text(`CAPÍTULO ${cap.id || ''}`.trim(), pw / 2, cy, { align: 'center' })
+    cy += 9
+    doc.setFontSize(13); doc.setTextColor(60, 60, 60)
+    doc.text((cap.descripcion || '').toUpperCase(), pw / 2, cy, { align: 'center', maxWidth: pw - 40 })
+    cy += 8
+    doc.setFontSize(9); doc.setFont(undefined, 'normal'); doc.setTextColor(130, 130, 130)
+    doc.text(`${acts.length} ficha(s) de costo unitario`, pw / 2, cy, { align: 'center' })
+    doc.setTextColor(0)
+    doc.autoTable({
+      startY: cy + 6,
+      margin: { top: 18, left: 22, right: 22, bottom: 16 },
+      head: [['ID', 'Actividad', 'Unidad', `P. Unitario (${budget.moneda || 'USD'})`]],
+      body: acts.map(a => {
+        const c = calcFicha(a.ficha, budget.catalogos, params)
+        return [a.id, a.descripcion, { content: a.unidad || '—', styles: { halign: 'center' } }, { content: money(c.precioUnitario), styles: { halign: 'right' } }]
+      }),
+      styles: { fontSize: 8.5, cellPadding: 2.2 },
+      headStyles: { fillColor: T.bg, textColor: T.acc, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      columnStyles: { 0: { cellWidth: 22 }, 2: { cellWidth: 20, halign: 'center' }, 3: { cellWidth: 42, halign: 'right' } },
+      rowPageBreak: 'avoid',
+      didDrawPage: d => { if (d.pageNumber > 1) drawContinuationBand(doc, budget, T, `CAPÍTULO ${cap.id || ''}`) },
+    })
+
+    // ── Fichas del capítulo, una por página ──
+    for (const act of acts) {
+    doc.addPage()
     const calc = calcFicha(act.ficha, budget.catalogos, params)
-    let y = await drawApuHeader(doc, budget, empresa, { showPartyInfo: actIdx === 0 })
+    let y = await drawApuHeader(doc, budget, empresa, {})
 
+    doc.setFontSize(8); doc.setFont(undefined,'normal'); doc.setTextColor(130,130,130)
+    doc.text(`Capítulo ${cap.id || ''} · ${cap.descripcion || ''}`, 10, y); y+=5
     doc.setFontSize(10); doc.setFont(undefined,'bold'); doc.setTextColor(0)
     doc.text(`${act.id} — ${act.descripcion}`, 10, y); y+=5
     doc.setFontSize(8.5); doc.setFont(undefined,'normal'); doc.setTextColor(80,80,80)
@@ -442,6 +487,7 @@ export const exportPDFRangoFichas = async (budget, params, ids, empresa = {}) =>
       columnStyles:{0:{cellWidth:59},1:{cellWidth:46}},
       theme:'grid'
     })
+    }
   }
 
   // Footers on every page
