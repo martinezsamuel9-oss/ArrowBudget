@@ -559,45 +559,153 @@ function RangoFichasDialog({ open, onClose, budget, params, empresa = {} }) {
   )
 }
 
-// ============ GUARDAR VERSION ============
-function GuardarVersionDialog({ open, onClose, budget, setBudget }) {
+// ============ GUARDAR VERSION (con snapshot real en presupuesto_versiones) ============
+function GuardarVersionDialog({ open, onClose, budget, setBudget, user }) {
   const [n, setN] = useState('')
   const [notas, setNotas] = useState('')
-  useEffect(() => { if (open) { setN(`Rev ${(budget.revision || 1) + 1}`); setNotas('') } }, [open])
-  if (!open) return null
-  const guardar = () => {
-    const v = { id: uid(), nombre: n, notas, fecha: new Date().toISOString(), revision: (budget.revision || 1) + 1 }
-    setBudget({ ...budget, revision: v.revision, versiones: [...(budget.versiones || []), v], ultimaEdicion: 'ahora' })
-    onClose(); alert(`Versión "${n}" guardada como Rev ${v.revision}.`)
+  const [hist, setHist] = useState([])
+  const [busy, setBusy] = useState(false)
+  const money = makeMoneyFmt(budget?.moneda)
+
+  const cargarHistorial = async () => {
+    const { data } = await supabase.from('presupuesto_versiones')
+      .select('id, revision, nombre, notas, total, created_at')
+      .eq('presupuesto_id', budget.id)
+      .order('revision', { ascending: false })
+    setHist(data || [])
   }
+  useEffect(() => { if (open) { setN(`Rev ${budget.revision || 1}`); setNotas(''); cargarHistorial() } }, [open]) // eslint-disable-line
+  if (!open) return null
+
+  const guardar = async () => {
+    setBusy(true)
+    const total = calcKPIs(budget).total
+    const { error } = await supabase.from('presupuesto_versiones').insert({
+      presupuesto_id: budget.id,
+      revision: budget.revision || 1,
+      nombre: n.trim(), notas,
+      total: round2(total),
+      nombre_proyecto: budget.nombreProyecto,
+      estado: UI2DB[budget.estado] || 'borrador',
+      moneda: budget.moneda,
+      pct_indirectos: budget.pctIndirectos, pct_imprevistos: budget.pctImprevistos,
+      pct_utilidad: budget.pctUtilidad, pct_impuesto: budget.pctImpuesto,
+      m2_construccion: budget.m2Construccion ?? 0, m2_estructura: budget.m2Estructura ?? 0,
+      items_json: budget.items,
+      catalogos_json: {
+        ...budget.catalogos,
+        _apu: { headerBg: budget.apuHeaderBg || '#0f1115', headerText: budget.apuHeaderText || '#f59e0b' },
+        _indirectos: budget.indirectos || [], _m2c: budget.m2Construccion ?? 0, _m2e: budget.m2Estructura ?? 0,
+      },
+      created_by: user?.id || null,
+    })
+    setBusy(false)
+    if (error) {
+      alert(error.code === '23505'
+        ? `Ya existe un snapshot de la Rev ${budget.revision}. Elimina el anterior o sube de revisión.`
+        : `Error al guardar la versión: ${error.message}${/presupuesto_versiones/.test(error.message) ? '\n\n(¿Se ejecutó revisiones_snapshot.sql en Supabase?)' : ''}`)
+      return
+    }
+    const v = { id: uid(), nombre: n.trim(), notas, fecha: new Date().toISOString(), revision: budget.revision || 1 }
+    setBudget({ ...budget, revision: (budget.revision || 1) + 1, versiones: [...(budget.versiones || []), v], ultimaEdicion: 'ahora' })
+    onClose()
+    alert(`📸 Rev ${v.revision} guardada con copia completa (presupuesto + catálogos + parámetros).\n\nAhora estás trabajando en la Rev ${v.revision + 1}.`)
+  }
+
+  // Reconstruye un budget a partir del snapshot (para PDF / restaurar)
+  const budgetDeVersion = v => {
+    const c = v.catalogos_json || {}
+    return {
+      ...budget,
+      revision: v.revision,
+      nombreProyecto: v.nombre_proyecto || budget.nombreProyecto,
+      moneda: v.moneda || budget.moneda,
+      pctIndirectos: +(v.pct_indirectos ?? budget.pctIndirectos), pctImprevistos: +(v.pct_imprevistos ?? budget.pctImprevistos),
+      pctUtilidad: +(v.pct_utilidad ?? budget.pctUtilidad), pctImpuesto: +(v.pct_impuesto ?? budget.pctImpuesto),
+      m2Construccion: +(v.m2_construccion ?? 0), m2Estructura: +(v.m2_estructura ?? 0),
+      items: v.items_json || [],
+      catalogos: { materiales: c.materiales || [], manoObra: c.manoObra || [], herramientaEquipo: c.herramientaEquipo || [], subcontratos: c.subcontratos || [] },
+      indirectos: c._indirectos || budget.indirectos,
+    }
+  }
+
+  const verPDF = async vid => {
+    const { data: v, error } = await supabase.from('presupuesto_versiones').select('*').eq('id', vid).single()
+    if (error || !v) return alert('No se pudo cargar la versión.')
+    const b = budgetDeVersion(v)
+    exportPDFPresupuesto(b,
+      { pctIndirectos: b.pctIndirectos, pctImprevistos: b.pctImprevistos, pctUtilidad: b.pctUtilidad, pctImpuesto: b.pctImpuesto },
+      { logo: budget.logoOfertante, logoCliente: budget.logoCliente, headerBg: budget.apuHeaderBg, headerText: budget.apuHeaderText })
+  }
+
+  const restaurar = async (vid, rev) => {
+    if (!confirm(`¿Restaurar la Rev ${rev}?\n\nEl presupuesto, catálogos y parámetros ACTUALES se reemplazarán por los de esa revisión (seguirás en la Rev ${budget.revision}).\n\nSi quieres conservar lo actual, guarda una versión antes.`)) return
+    const { data: v, error } = await supabase.from('presupuesto_versiones').select('*').eq('id', vid).single()
+    if (error || !v) return alert('No se pudo cargar la versión.')
+    const b = budgetDeVersion(v)
+    setBudget({ ...budget, items: b.items, catalogos: b.catalogos, indirectos: b.indirectos, pctIndirectos: b.pctIndirectos, pctImprevistos: b.pctImprevistos, pctUtilidad: b.pctUtilidad, pctImpuesto: b.pctImpuesto })
+    onClose()
+    alert(`✅ Contenido de la Rev ${rev} restaurado en el proyecto actual.`)
+  }
+
+  const eliminarVersion = async (vid, rev) => {
+    if (!confirm(`¿Eliminar el snapshot de la Rev ${rev}?\n\nEsta acción no se puede deshacer.`)) return
+    const { error } = await supabase.from('presupuesto_versiones').delete().eq('id', vid)
+    if (error) alert('Error: ' + error.message)
+    cargarHistorial()
+  }
+
+  // Versiones viejas guardadas antes del snapshot real (solo metadata)
+  const legacy = (budget.versiones || []).filter(lv => !hist.some(h => h.revision === lv.revision))
+
   return (
-    <Modal open={open} onClose={onClose} title="Guardar versión"
+    <Modal open={open} onClose={onClose} title={`Guardar versión — Rev ${budget.revision || 1}`}
       footer={<>
         <button onClick={onClose} className="btn ghost">Cancelar</button>
-        <button onClick={guardar} disabled={!n.trim()} className="btn brand" style={{ opacity: n.trim() ? 1 : 0.4 }}>
-          <Check size={13} /> Guardar
+        <button onClick={guardar} disabled={!n.trim() || busy} className="btn brand" style={{ opacity: n.trim() && !busy ? 1 : 0.4 }}>
+          <Check size={13} /> {busy ? 'Guardando…' : `Guardar Rev ${budget.revision || 1} y pasar a Rev ${(budget.revision || 1) + 1}`}
         </button>
       </>}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ fontSize: 12.5, color: 'var(--c-text-2)', background: 'var(--c-accent-soft)', padding: '8px 12px', borderRadius: 8, lineHeight: 1.5 }}>
+          Se guarda una <b>copia completa</b> de la Rev {budget.revision || 1} (presupuesto, catálogos y parámetros)
+          y el proyecto pasa a la Rev {(budget.revision || 1) + 1}. Las revisiones guardadas se pueden
+          exportar a PDF o restaurar en cualquier momento.
+        </div>
         <div className="field">
           <label className="field-label">Nombre *</label>
           <input className="input" value={n} onChange={e => setN(e.target.value)} />
         </div>
         <div className="field">
           <label className="field-label">Notas (opcional)</label>
-          <textarea className="input textarea" value={notas} onChange={e => setNotas(e.target.value)} rows={3} style={{ resize: 'vertical' }} />
+          <textarea className="input textarea" value={notas} onChange={e => setNotas(e.target.value)} rows={2} style={{ resize: 'vertical' }} />
         </div>
-        {(budget.versiones || []).length > 0 && (
+        {(hist.length > 0 || legacy.length > 0) && (
           <div>
-            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--c-text-3)', marginBottom: 6 }}>Historial</div>
-            <div style={{ maxHeight: 140, overflowY: 'auto', border: '1px solid var(--c-line)', borderRadius: 'var(--r-md)' }}>
-              {[...(budget.versiones || [])].reverse().map(v => (
-                <div key={v.id} style={{ padding: '8px 12px', borderBottom: '1px solid var(--c-line-2)', display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                  <div>
-                    <div style={{ fontWeight: 600 }}>{v.nombre}</div>
-                    <div style={{ fontSize: 11, color: 'var(--c-text-3)' }}>{new Date(v.fecha).toLocaleString()}</div>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--c-text-3)', marginBottom: 6 }}>Historial de revisiones</div>
+            <div style={{ maxHeight: 220, overflowY: 'auto', border: '1px solid var(--c-line)', borderRadius: 'var(--r-md)' }}>
+              {hist.map(v => (
+                <div key={v.id} style={{ padding: '8px 12px', borderBottom: '1px solid var(--c-line-2)', display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+                  <span className="badge" style={{ flexShrink: 0 }}>Rev {v.revision}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600 }}>{v.nombre || `Rev ${v.revision}`}</div>
+                    <div style={{ fontSize: 11, color: 'var(--c-text-3)' }}>
+                      {v.created_at ? new Date(v.created_at).toLocaleString('es') : ''} · {money(+v.total || 0)}
+                      {v.notas ? ` · ${v.notas}` : ''}
+                    </div>
                   </div>
-                  <span className="badge">Rev {v.revision}</span>
+                  <button className="btn xs" title="Exportar PDF de esta revisión" onClick={() => verPDF(v.id)}><FileText size={11} /> PDF</button>
+                  <button className="btn xs ghost" title="Restaurar esta revisión" onClick={() => restaurar(v.id, v.revision)}><RefreshCw size={11} /></button>
+                  <button className="btn xs ghost" style={{ color: 'var(--c-danger)' }} title="Eliminar snapshot" onClick={() => eliminarVersion(v.id, v.revision)}><Trash2 size={11} /></button>
+                </div>
+              ))}
+              {legacy.length > 0 && [...legacy].reverse().map(v => (
+                <div key={v.id} style={{ padding: '8px 12px', borderBottom: '1px solid var(--c-line-2)', display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, opacity: 0.6 }}>
+                  <span className="badge" style={{ flexShrink: 0 }}>Rev {v.revision}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600 }}>{v.nombre}</div>
+                    <div style={{ fontSize: 11, color: 'var(--c-text-3)' }}>{new Date(v.fecha).toLocaleString('es')} · sin snapshot (versión antigua)</div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -4071,7 +4179,7 @@ export default function MainApp() {
       )}
       <CambioClaveObligatorio user={user} />
       {budget && <ConfigProyectoModal  open={showConfig}  onClose={() => setShowConfig(false)}  budget={budget} setBudget={setBudget} />}
-      {budget && <GuardarVersionDialog open={showVersion} onClose={() => setShowVersion(false)} budget={budget} setBudget={setBudget} />}
+      {budget && <GuardarVersionDialog open={showVersion} onClose={() => setShowVersion(false)} budget={budget} setBudget={setBudget} user={user} />}
       {budget && <RangoFichasDialog    open={showRango}   onClose={() => setShowRango(false)}   budget={budget} params={params} empresa={{ nombre: userEmpresa, logo: budget.logoOfertante, logoCliente: budget.logoCliente, headerBg: budget.apuHeaderBg, headerText: budget.apuHeaderText }} />}
       {budget && <ProjectTeamModal open={showTeam} onClose={() => setShowTeam(false)} budget={budget} user={user} orgId={orgId} projectRole={projectRole} />}
       {budget && <ClonarProyectoModal  open={showClonar} onClose={() => setShowClonar(false)}  budget={budget} user={user}

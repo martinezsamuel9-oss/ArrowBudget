@@ -3,9 +3,11 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
 // ── Validación y sanitización de entradas ──────────────────────────────────
-// Nota: Supabase ya usa queries parametrizadas en el backend, pero validamos
-// en el cliente para rechazar patrones sospechosos desde la entrada.
-const SQL_PATTERNS = /('|"|;|--|\/\*|\*\/|xp_|union\s+select|select\s+.*\s+from|insert\s+into|drop\s+table|delete\s+from|update\s+.*\s+set|exec\s*\(|cast\s*\(|convert\s*\(|char\s*\(|nchar\s*\(|varchar\s*\(|0x[0-9a-f]+)/i
+// Nota: Supabase ya usa queries parametrizadas (la inyección SQL no es riesgo
+// real aquí); esto solo rechaza patrones evidentes en nombres/correos.
+// NO incluye comillas/apóstrofes/; — bloqueaban nombres legítimos (O'Hara) — y
+// NUNCA se aplica a contraseñas.
+const SQL_PATTERNS = /(\/\*|\*\/|xp_|union\s+select|select\s+.*\s+from|insert\s+into|drop\s+table|delete\s+from|update\s+.*\s+set|exec\s*\(|cast\s*\(|convert\s*\(|char\s*\(|nchar\s*\(|varchar\s*\(|0x[0-9a-f]+)/i
 
 const hasSQLInjection = str => SQL_PATTERNS.test(str)
 
@@ -103,7 +105,8 @@ export default function LoginPage() {
   const handleLogin = async e => {
     e.preventDefault()
     setErr(null)
-    const valErr = validateInputs({ 'Correo': email, 'Contraseña': pwd })
+    // La contraseña NO se valida con patrones: cualquier carácter es válido
+    const valErr = validateInputs({ 'Correo': email })
     if (valErr) { setErr(valErr); return }
     setBusy(true)
     const { error } = await signIn(email.trim(), pwd)
