@@ -571,56 +571,88 @@ export async function exportExcelFicha(budget, act, params) {
   saveAs(new Blob([buf]),`Ficha_${act.id}.xlsx`)
 }
 
-// Todas las fichas seleccionadas en UN solo workbook, una hoja por actividad
+// Fichas seleccionadas en UN workbook: UNA HOJA POR CAPÍTULO, con las fichas
+// de ese capítulo apiladas dentro de su hoja (separadas por filas en blanco)
 export async function exportExcelRangoFichas(budget, params, ids) {
   const money = makeMoneyFmt(budget.moneda); const MFMT = mfmt(budget.moneda)
-  const acts=[]; const collect=its=>{for(const it of its){if(it.tipo==='actividad'&&ids.includes(it.id))acts.push(it);else if(it.children)collect(it.children)}}
-  collect(budget.items)
-  if(!acts.length) return alert('No hay actividades seleccionadas.')
 
-  const wb=new ExcelJS.Workbook()
+  // Agrupar las actividades seleccionadas por capítulo (nivel raíz del árbol)
+  const collectActs = (its, into) => { for (const it of (its || [])) { if (it.tipo === 'actividad') { if (ids.includes(it.id)) into.push(it) } else if (it.children) collectActs(it.children, into) } }
+  const grupos = []
+  const sueltas = []
+  for (const top of (budget.items || [])) {
+    if (top.tipo === 'actividad') { if (ids.includes(top.id)) sueltas.push(top); continue }
+    const acts = []; collectActs(top.children, acts)
+    if (acts.length) grupos.push({ cap: top, acts })
+  }
+  if (sueltas.length) grupos.push({ cap: { id: '', descripcion: 'Sin capítulo' }, acts: sueltas })
+  if (!grupos.length) return alert('No hay actividades seleccionadas.')
 
-  for(const act of acts){
-    const sheetName=`${act.id} ${act.descripcion}`.slice(0,31).replace(/[\\\/\*\?\:\[\]]/g,'_')
-    const ws=wb.addWorksheet(sheetName)
-    ws.columns=[{width:6},{width:38},{width:14},{width:12},{width:12},{width:12},{width:18}]
-    ws.mergeCells('A1:G1')
-    setC(ws,'A1','FICHA DE COSTO UNITARIO',{fill:X.titleFill,font:X.titleFont,alignment:X.ac}); ws.getRow(1).height=26
-    ws.mergeCells('A2:G2')
-    setC(ws,'A2',`${act.id} — ${act.descripcion}`,{font:{bold:true,size:12},alignment:X.ac})
-    setC(ws,'A3','Cantidad:',{font:{bold:true}}); setC(ws,'B3',`${fmt(act.cantidad)} ${act.unidad}`)
-    setC(ws,'D3','Proyecto:',{font:{bold:true}}); setC(ws,'E3',budget.nombreProyecto||'')
-    const calc=calcFicha(act.ficha,budget.catalogos,params)
-    let row=5
-    const sect=(title,k,total,moTotal=0)=>{
-      ws.mergeCells(`A${row}:G${row}`)
-      setC(ws,'A'+row,title,{fill:X.headerFill,font:X.headerFont,alignment:{vertical:'middle',horizontal:'left'}}); row++
-      ;['#','Insumo','Código','Unidad','Rend.','Desp.%','Subtotal'].forEach((h,i)=>setC(ws,String.fromCharCode(65+i)+row,h,{fill:X.headerFill,font:X.headerFont,alignment:X.ac})); row++
-      ;(act.ficha[k]||[]).forEach((c,i)=>{
-        const ins=findInsumo(budget.catalogos,k,c.insumoId); if(!ins)return
-        setC(ws,'A'+row,i+1,{alignment:X.ac}); setC(ws,'B'+row,ins.descripcion,{alignment:X.al})
-        setC(ws,'C'+row,ins.codigo||'',{alignment:X.ac,font:{name:'Consolas',size:10}}); setC(ws,'D'+row,ins.unidad,{alignment:X.ac})
-        setC(ws,'E'+row,round2(c.rendimiento),{alignment:X.ar,numFmt:NFMT}); setC(ws,'F'+row,round2(c.desperdicio),{alignment:X.ar,numFmt:'0.00"%"'})
-        setC(ws,'G'+row,conceptoCost(c,budget.catalogos,k,{moTotal}),{alignment:X.ar,numFmt:MFMT,font:{bold:true}}); row++
-      })
-      ws.mergeCells(`A${row}:F${row}`)
-      setC(ws,'A'+row,'SUBTOTAL '+title,{fill:X.subtotalFill,font:{bold:true},alignment:X.ar})
-      setC(ws,'G'+row,total,{fill:X.subtotalFill,font:{bold:true},alignment:X.ar,numFmt:MFMT}); row+=2
-    }
-    sect('MATERIALES','materiales',calc.totMat)
-    sect('MANO DE OBRA','manoObra',calc.totMo)
-    sect('HERRAMIENTA + EQUIPO','herramientaEquipo',calc.totHe,calc.totMo)
-    sect('SUBCONTRATO','subcontratos',calc.totSub)
-    ;[['Costo Directo',calc.costoDirecto],[`Indirectos (${params.pctIndirectos}%)`,calc.indirectos],[`Imprevistos (${params.pctImprevistos}%)`,calc.imprevistos],[`Utilidad (${params.pctUtilidad}%)`,calc.utilidad],['Subtotal antes de impuestos',calc.subtotalSinImpuesto],[`Impuesto (${params.pctImpuesto}%)`,calc.impuesto]].forEach(([l,v])=>{
-      ws.mergeCells(`A${row}:F${row}`); setC(ws,'A'+row,l,{alignment:X.ar,font:{bold:true}}); setC(ws,'G'+row,v,{alignment:X.ar,numFmt:MFMT}); row++
-    })
-    ws.mergeCells(`A${row}:F${row}`)
-    setC(ws,'A'+row,'PRECIO UNITARIO TOTAL',{fill:X.totalFill,font:X.totalFont,alignment:X.ar})
-    setC(ws,'G'+row,calc.precioUnitario,{fill:X.totalFill,font:X.totalFont,alignment:X.ar,numFmt:MFMT}); ws.getRow(row).height=26
+  const wb = new ExcelJS.Workbook()
+
+  // Nombres de hoja: máx 31 caracteres, sin \ / * ? : [ ], únicos
+  const usados = new Set()
+  const nombreHoja = cap => {
+    const base = (`${cap.id ? cap.id + ' ' : ''}${cap.descripcion || 'Capítulo'}`).replace(/[\\\/\*\?\:\[\]]/g, '_').trim().slice(0, 31) || 'Capítulo'
+    let name = base, n = 2
+    while (usados.has(name.toLowerCase())) name = `${base.slice(0, 27)} (${n++})`
+    usados.add(name.toLowerCase())
+    return name
   }
 
-  const buf=await wb.xlsx.writeBuffer()
-  saveAs(new Blob([buf]),(budget.nombreProyecto||'Fichas').replace(/[^\w]+/g,'_')+'_APU.xlsx')
+  // Escribe una ficha completa a partir de startRow; devuelve la fila siguiente
+  const writeFicha = (ws, act, startRow) => {
+    const calc = calcFicha(act.ficha, budget.catalogos, params)
+    let row = startRow
+    // Barra de título de la ficha
+    ws.mergeCells(`A${row}:G${row}`)
+    setC(ws, 'A' + row, `${act.id} — ${act.descripcion}`, { fill: X.capFill, font: X.capFont, alignment: { vertical: 'middle', horizontal: 'left' } })
+    ws.getRow(row).height = 20; row++
+    setC(ws, 'A' + row, 'Cantidad:', { font: { bold: true } }); setC(ws, 'B' + row, `${fmt(act.cantidad)} ${act.unidad}`)
+    row += 2
+    const sect = (title, k, total, moTotal = 0) => {
+      ws.mergeCells(`A${row}:G${row}`)
+      setC(ws, 'A' + row, title, { fill: X.headerFill, font: X.headerFont, alignment: { vertical: 'middle', horizontal: 'left' } }); row++
+      ;['#','Insumo','Código','Unidad','Rend.','Desp.%','Subtotal'].forEach((h, i) => setC(ws, String.fromCharCode(65 + i) + row, h, { fill: X.headerFill, font: X.headerFont, alignment: X.ac })); row++
+      ;(act.ficha[k] || []).forEach((c, i) => {
+        const ins = findInsumo(budget.catalogos, k, c.insumoId); if (!ins) return
+        setC(ws, 'A' + row, i + 1, { alignment: X.ac }); setC(ws, 'B' + row, ins.descripcion, { alignment: X.al })
+        setC(ws, 'C' + row, ins.codigo || '', { alignment: X.ac, font: { name: 'Consolas', size: 10 } }); setC(ws, 'D' + row, ins.unidad, { alignment: X.ac })
+        setC(ws, 'E' + row, round2(c.rendimiento), { alignment: X.ar, numFmt: NFMT }); setC(ws, 'F' + row, round2(c.desperdicio), { alignment: X.ar, numFmt: '0.00"%"' })
+        setC(ws, 'G' + row, conceptoCost(c, budget.catalogos, k, { moTotal }), { alignment: X.ar, numFmt: MFMT, font: { bold: true } }); row++
+      })
+      ws.mergeCells(`A${row}:F${row}`)
+      setC(ws, 'A' + row, 'SUBTOTAL ' + title, { fill: X.subtotalFill, font: { bold: true }, alignment: X.ar })
+      setC(ws, 'G' + row, total, { fill: X.subtotalFill, font: { bold: true }, alignment: X.ar, numFmt: MFMT }); row += 2
+    }
+    sect('MATERIALES', 'materiales', calc.totMat)
+    sect('MANO DE OBRA', 'manoObra', calc.totMo)
+    sect('HERRAMIENTA + EQUIPO', 'herramientaEquipo', calc.totHe, calc.totMo)
+    sect('SUBCONTRATO', 'subcontratos', calc.totSub)
+    ;[['Costo Directo', calc.costoDirecto], [`Indirectos (${params.pctIndirectos}%)`, calc.indirectos], [`Imprevistos (${params.pctImprevistos}%)`, calc.imprevistos], [`Utilidad (${params.pctUtilidad}%)`, calc.utilidad], ['Subtotal antes de impuestos', calc.subtotalSinImpuesto], [`Impuesto (${params.pctImpuesto}%)`, calc.impuesto]].forEach(([l, v]) => {
+      ws.mergeCells(`A${row}:F${row}`); setC(ws, 'A' + row, l, { alignment: X.ar, font: { bold: true } }); setC(ws, 'G' + row, v, { alignment: X.ar, numFmt: MFMT }); row++
+    })
+    ws.mergeCells(`A${row}:F${row}`)
+    setC(ws, 'A' + row, 'PRECIO UNITARIO TOTAL', { fill: X.totalFill, font: X.totalFont, alignment: X.ar })
+    setC(ws, 'G' + row, calc.precioUnitario, { fill: X.totalFill, font: X.totalFont, alignment: X.ar, numFmt: MFMT }); ws.getRow(row).height = 24; row++
+    return row
+  }
+
+  for (const { cap, acts } of grupos) {
+    const ws = wb.addWorksheet(nombreHoja(cap))
+    ws.columns = [{ width: 6 }, { width: 38 }, { width: 14 }, { width: 12 }, { width: 12 }, { width: 12 }, { width: 18 }]
+    // Encabezado del capítulo
+    ws.mergeCells('A1:G1')
+    setC(ws, 'A1', `CAPÍTULO ${cap.id ? cap.id + ' — ' : ''}${(cap.descripcion || '').toUpperCase()}`, { fill: X.titleFill, font: X.titleFont, alignment: X.ac })
+    ws.getRow(1).height = 28
+    ws.mergeCells('A2:G2')
+    setC(ws, 'A2', `${budget.nombreProyecto || ''} · ${acts.length} ficha(s) de costo unitario`, { font: { italic: true, color: { argb: 'FF64748B' } }, alignment: X.ac })
+    let row = 4
+    for (const act of acts) row = writeFicha(ws, act, row) + 2   // 2 filas en blanco entre fichas
+  }
+
+  const buf = await wb.xlsx.writeBuffer()
+  saveAs(new Blob([buf]), (budget.nombreProyecto || 'Fichas').replace(/[^\w]+/g, '_') + '_APU.xlsx')
 }
 
 export async function exportExcelGeneral(budget, params) {
