@@ -737,6 +737,18 @@ function ProjectTeamModal({ open, onClose, budget, user, orgId, projectRole }) {
   )
 }
 
+// ============ LÍMITE DE PROYECTOS DEL PLAN ============
+// Chequeo amable antes de insertar; la política RLS pres_insert es el
+// enforcement real en la base (imposible de saltar desde el cliente)
+const MSG_LIMITE_RLS = 'No se pudo crear el proyecto: alcanzaste el límite de proyectos de tu plan o la suscripción no está activa.'
+async function validarCupoProyectos(orgId) {
+  const { data: ok, error } = await supabase.rpc('org_can_add_project', { p_org_id: orgId })
+  if (error || ok !== false) return true   // si el check no responde, RLS respalda
+  const { data: org } = await supabase.from('organizations').select('max_proyectos, plan_id').eq('id', orgId).maybeSingle()
+  alert(`🚫 Alcanzaste el límite de ${org?.max_proyectos ?? 'proyectos'} proyectos de tu plan${org?.plan_id ? ` (${org.plan_id})` : ''}.\n\nElimina un proyecto o mejora tu plan en la sección Planes para crear más.`)
+  return false
+}
+
 // ============ CLONAR PROYECTO MODAL ============
 function ClonarProyectoModal({ open, onClose, budget, user, onCloned }) {
   const [nombre, setNombre] = useState('')
@@ -746,6 +758,7 @@ function ClonarProyectoModal({ open, onClose, budget, user, onCloned }) {
     const n = nombre.trim(); if (!n) return alert('Ingresa un nombre.')
     const { data: orgId } = await supabase.rpc('get_user_org_id')
     if (!orgId) { alert('No se encontró tu organización.'); return }
+    if (!(await validarCupoProyectos(orgId))) return
     const { data, error } = await supabase.from('presupuestos').insert({
       user_id: user.id, org_id: orgId,
       nombre_proyecto: n,
@@ -766,7 +779,7 @@ function ClonarProyectoModal({ open, onClose, budget, user, onCloned }) {
       items_json: JSON.parse(JSON.stringify(budget.items)),
       versiones_json: [],
     }).select().single()
-    if (error) { alert('Error al clonar: ' + error.message); return }
+    if (error) { alert(error.code === '42501' ? MSG_LIMITE_RLS : 'Error al clonar: ' + error.message); return }
     onCloned(mapDb(data)); onClose()
   }
   return (
@@ -3759,6 +3772,7 @@ export default function MainApp() {
   const addProject = async () => {
     const { data: orgId } = await supabase.rpc('get_user_org_id')
     if (!orgId) { alert('No se encontró tu organización. Contacta a soporte.'); return }
+    if (!(await validarCupoProyectos(orgId))) return
 
     const { data, error } = await supabase.from('presupuestos').insert({
       user_id: user.id, org_id: orgId,
@@ -3766,7 +3780,7 @@ export default function MainApp() {
       cliente: '', lugar: '', pct_indirectos: 10, pct_imprevistos: 1, pct_utilidad: 8, pct_impuesto: 15,
       catalogos_json: { ...EMPTY_CATALOGOS }, items_json: [], estado: 'borrador',
     }).select().single()
-    if (error) { alert('Error al crear proyecto: ' + error.message); return }
+    if (error) { alert(error.code === '42501' ? MSG_LIMITE_RLS : 'Error al crear proyecto: ' + error.message); return }
     if (data) { const nb = mapDb(data); setProyectos(ps => [nb, ...ps]); setActiveId(nb.id); setPage('proyecto'); setTabProject('presupuesto') }
   }
 
