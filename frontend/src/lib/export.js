@@ -341,7 +341,7 @@ export const exportPDFFicha = async (budget, act, params, empresa = {}) => {
     }).filter(Boolean)
     if (!rs.length) rs.push([{content:'(sin conceptos)',colSpan:7,styles:{halign:'center',fontStyle:'italic',textColor:150}}])
     rs.push([{content:'SUBTOTAL '+title,colSpan:6,styles:{halign:'right',fontStyle:'bold',fillColor:[226,232,240]}},{content:money(total),styles:{halign:'right',fontStyle:'bold',fillColor:[226,232,240]}}])
-    doc.autoTable({startY:y,head:[[{content:title,colSpan:7,styles:{fillColor:T.bg,textColor:T.acc,halign:'left',fontStyle:'bold'}}],['Cód.','Insumo','Und','Rend.','Desp.','C.Base','Subtotal']],body:rs,styles:{fontSize:7.5,cellPadding:1.1},headStyles:{fillColor:T.mid,textColor:255},columnStyles:{0:{cellWidth:18,halign:'center'},2:{cellWidth:14,halign:'center'},3:{cellWidth:16,halign:'right'},4:{cellWidth:14,halign:'right'},5:{cellWidth:22,halign:'right'},6:{cellWidth:24,halign:'right'}},margin:{top:18,bottom:14},rowPageBreak:'avoid',didDrawPage:d=>{if(d.pageNumber>1)drawContinuationBand(doc,budget,T,'FICHA DE COSTO UNITARIO')}})
+    doc.autoTable({startY:y,head:[[{content:title,colSpan:7,styles:{fillColor:T.bg,textColor:T.acc,halign:'left',fontStyle:'bold'}}],['Cód.','Insumo','Und','Rend.','Desp.','C.Base','Subtotal']],body:rs,styles:{fontSize:7.5,cellPadding:1.1},headStyles:{fillColor:T.mid,textColor:255},columnStyles:{0:{cellWidth:18,halign:'center'},2:{cellWidth:14,halign:'center'},3:{cellWidth:16,halign:'right'},4:{cellWidth:14,halign:'right'},5:{cellWidth:22,halign:'right'},6:{cellWidth:24,halign:'right'}},margin:{top:18,bottom:14},pageBreak:rs.length<=12?'avoid':'auto',rowPageBreak:'avoid',didDrawPage:d=>{if(d.pageNumber>1)drawContinuationBand(doc,budget,T,'FICHA DE COSTO UNITARIO')}})
     y = doc.lastAutoTable.finalY + 3
   }
   sectApu('MATERIALES','materiales',calc.totMat)
@@ -354,7 +354,8 @@ export const exportPDFFicha = async (budget, act, params, empresa = {}) => {
   const C2 = { ink:T.bg, dark:T.mid, bg:[248,250,252] }
   const pw2 = doc.internal.pageSize.getWidth()
   const tW2 = 105
-  doc.autoTable({startY:y, tableWidth:tW2, margin:{left:pw2-tW2-10, right:10, bottom:14},
+  // pageBreak avoid: el RESUMEN nunca se parte — si no cabe, pasa completo a la siguiente página
+  doc.autoTable({startY:y, tableWidth:tW2, margin:{left:pw2-tW2-10, right:10, top:18, bottom:14}, pageBreak:'avoid', rowPageBreak:'avoid',
     head:[[{content:'RESUMEN',colSpan:2,styles:{fillColor:C2.dark,textColor:255,fontStyle:'bold',fontSize:8,halign:'left'}}]],
     body:[
       [{content:'Costo Directo',                           styles:{halign:'left'}},{content:money(calc.costoDirecto),          styles:{halign:'right'}}],
@@ -460,7 +461,7 @@ export const exportPDFRangoFichas = async (budget, params, ids, empresa = {}) =>
       }).filter(Boolean)
       if (!rs.length) rs.push([{content:'(sin conceptos)',colSpan:7,styles:{halign:'center',fontStyle:'italic',textColor:150}}])
       rs.push([{content:'SUBTOTAL '+title,colSpan:6,styles:{halign:'right',fontStyle:'bold',fillColor:[226,232,240]}},{content:money(total),styles:{halign:'right',fontStyle:'bold',fillColor:[226,232,240]}}])
-      doc.autoTable({startY:y,head:[[{content:title,colSpan:7,styles:{fillColor:T.bg,textColor:T.acc,halign:'left',fontStyle:'bold'}}],['Cód.','Insumo','Und','Rend.','Desp.','C.Base','Subtotal']],body:rs,styles:{fontSize:7.5,cellPadding:1.1},headStyles:{fillColor:T.mid,textColor:255},columnStyles:{0:{cellWidth:18,halign:'center'},2:{cellWidth:14,halign:'center'},3:{cellWidth:16,halign:'right'},4:{cellWidth:14,halign:'right'},5:{cellWidth:22,halign:'right'},6:{cellWidth:24,halign:'right'}},margin:{top:18,bottom:14},rowPageBreak:'avoid',didDrawPage:d=>{if(d.pageNumber>1)drawContinuationBand(doc,budget,T,'FICHA DE COSTO UNITARIO')}})
+      doc.autoTable({startY:y,head:[[{content:title,colSpan:7,styles:{fillColor:T.bg,textColor:T.acc,halign:'left',fontStyle:'bold'}}],['Cód.','Insumo','Und','Rend.','Desp.','C.Base','Subtotal']],body:rs,styles:{fontSize:7.5,cellPadding:1.1},headStyles:{fillColor:T.mid,textColor:255},columnStyles:{0:{cellWidth:18,halign:'center'},2:{cellWidth:14,halign:'center'},3:{cellWidth:16,halign:'right'},4:{cellWidth:14,halign:'right'},5:{cellWidth:22,halign:'right'},6:{cellWidth:24,halign:'right'}},margin:{top:18,bottom:14},pageBreak:rs.length<=12?'avoid':'auto',rowPageBreak:'avoid',didDrawPage:d=>{if(d.pageNumber>1)drawContinuationBand(doc,budget,T,'FICHA DE COSTO UNITARIO')}})
       y = doc.lastAutoTable.finalY + 3
     }
     sectApu('MATERIALES','materiales',calc.totMat)
@@ -472,7 +473,8 @@ export const exportPDFRangoFichas = async (budget, params, ids, empresa = {}) =>
     const CR = { ink:T.bg, dark:T.mid, bg:[248,250,252] }
     const pwR = doc.internal.pageSize.getWidth()
     const tWR = 105
-    doc.autoTable({startY:y, tableWidth:tWR, margin:{left:pwR-tWR-10, right:10, bottom:14},
+    // pageBreak avoid: el RESUMEN nunca se parte — si no cabe, pasa completo a la siguiente página
+    doc.autoTable({startY:y, tableWidth:tWR, margin:{left:pwR-tWR-10, right:10, top:18, bottom:14}, pageBreak:'avoid', rowPageBreak:'avoid',
       head:[[{content:'RESUMEN',colSpan:2,styles:{fillColor:CR.dark,textColor:255,fontStyle:'bold',fontSize:8,halign:'left'}}]],
       body:[
         [{content:'Costo Directo',                           styles:{halign:'left'}},{content:money(calc.costoDirecto),        styles:{halign:'right'}}],
