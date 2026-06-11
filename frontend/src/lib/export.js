@@ -1,8 +1,26 @@
-import jsPDF from 'jspdf'
-import 'jspdf-autotable'
-import ExcelJS from 'exceljs'
 import { saveAs } from 'file-saver'
-import * as XLSX from 'xlsx'
+
+// ── Carga diferida de librerías pesadas ─────────────────────────────────────
+// jspdf (~350KB), exceljs (~940KB) y xlsx (~430KB) solo se descargan cuando el
+// usuario exporta o importa — no inflan la carga inicial de la app.
+let _jsPDF = null
+const getJsPDF = async () => {
+  if (!_jsPDF) {
+    const [m] = await Promise.all([import('jspdf'), import('jspdf-autotable')])
+    _jsPDF = m.default
+  }
+  return _jsPDF
+}
+let _ExcelJS = null
+const getExcelJS = async () => {
+  if (!_ExcelJS) _ExcelJS = (await import('exceljs')).default
+  return _ExcelJS
+}
+let _XLSX = null
+const getXLSX = async () => {
+  if (!_XLSX) _XLSX = await import('xlsx')
+  return _XLSX
+}
 import {
   round2, fmt, money, makeMoneyFmt, currencySymbol,
   findInsumo, conceptoCost,
@@ -144,7 +162,7 @@ const drawApuFooter = (doc, budget, pageNum, totalPages, empresa = {}) => {
 }
 
 // ============ PDF CATÁLOGO ============
-export const exportPDFCatalogo = (budget, catKey) => {
+export const exportPDFCatalogo = async (budget, catKey) => {
   const money = makeMoneyFmt(budget.moneda); const MFMT = mfmt(budget.moneda)
   const cat = CATEGORIAS.find(c => c.key === catKey)
   if (!cat) return
@@ -155,7 +173,7 @@ export const exportPDFCatalogo = (budget, catKey) => {
     walk(budget.items || [])
     return round2(t)
   }
-  const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'letter' })
+  const doc = new (await getJsPDF())({ orientation:'portrait', unit:'mm', format:'letter' })
   const w = doc.internal.pageSize.getWidth()
   const h = doc.internal.pageSize.getHeight()
   const T = pdfTheme(budget)
@@ -213,7 +231,7 @@ export const exportPDFCatalogo = (budget, catKey) => {
 
 export const exportPDFPresupuesto = async (budget, params, empresa = {}) => {
   const money = makeMoneyFmt(budget.moneda)
-  const doc   = new jsPDF({ orientation:'landscape', unit:'mm', format:'letter' })
+  const doc   = new (await getJsPDF())({ orientation:'landscape', unit:'mm', format:'letter' })
   const pw    = doc.internal.pageSize.getWidth()
 
   // ── Header (mismo sistema que fichas) ──
@@ -319,7 +337,7 @@ export const exportPDFPresupuesto = async (budget, params, empresa = {}) => {
 // empresa = { nombre, logo, headerBg, headerText }
 export const exportPDFFicha = async (budget, act, params, empresa = {}) => {
   const money = makeMoneyFmt(budget.moneda); const MFMT = mfmt(budget.moneda)
-  const doc = new jsPDF({orientation:'portrait',unit:'mm',format:'letter'})
+  const doc = new (await getJsPDF())({orientation:'portrait',unit:'mm',format:'letter'})
   const h   = doc.internal.pageSize.getHeight()
   const calc = calcFicha(act.ficha, budget.catalogos, params)
   const T = pdfTheme(budget, empresa)
@@ -402,7 +420,7 @@ export const exportPDFRangoFichas = async (budget, params, ids, empresa = {}) =>
   if (sueltas.length) grupos.push({ cap: { id: '', descripcion: 'Sin capítulo' }, acts: sueltas })
   if (!grupos.length) return alert('No hay actividades seleccionadas.')
 
-  const doc = new jsPDF({orientation:'portrait',unit:'mm',format:'letter'})
+  const doc = new (await getJsPDF())({orientation:'portrait',unit:'mm',format:'letter'})
   const T = pdfTheme(budget, empresa)
   const pw = doc.internal.pageSize.getWidth()
   let primera = true
@@ -501,7 +519,7 @@ export const exportPDFRangoFichas = async (budget, params, ids, empresa = {}) =>
 
 export async function exportExcelPresupuesto(budget, params) {
   const money = makeMoneyFmt(budget.moneda); const MFMT = mfmt(budget.moneda)
-  const wb=new ExcelJS.Workbook(); const ws=wb.addWorksheet('Presupuesto')
+  const wb=new (await getExcelJS()).Workbook(); const ws=wb.addWorksheet('Presupuesto')
   ws.columns=[{width:10},{width:50},{width:10},{width:12},{width:16},{width:18}]
   let row=writeHeader(ws,budget)
   ;['ID','Descripción','Unidad','Cantidad','P. Unitario','Subtotal'].forEach((h,i)=>setC(ws,String.fromCharCode(65+i)+row,h,{fill:X.headerFill,font:X.headerFont,alignment:X.ac}))
@@ -551,7 +569,7 @@ export async function exportExcelCatalogo(budget, catKey) {
     walk(budget.items || [])
     return round2(t)
   }
-  const wb=new ExcelJS.Workbook(); const ws=wb.addWorksheet(cat.label)
+  const wb=new (await getExcelJS()).Workbook(); const ws=wb.addWorksheet(cat.label)
   ws.columns=[{width:14},{width:45},{width:12},{width:18},{width:18},{width:22}]
   ws.mergeCells('A1:F1')
   setC(ws,'A1',`LISTA DE ${cat.label.toUpperCase()} — ${budget.nombreProyecto}`,{fill:X.titleFill,font:X.titleFont,alignment:X.ac})
@@ -581,7 +599,7 @@ export async function exportExcelCatalogo(budget, catKey) {
 
 export async function exportExcelFicha(budget, act, params) {
   const money = makeMoneyFmt(budget.moneda); const MFMT = mfmt(budget.moneda)
-  const wb=new ExcelJS.Workbook(); const ws=wb.addWorksheet('Ficha')
+  const wb=new (await getExcelJS()).Workbook(); const ws=wb.addWorksheet('Ficha')
   ws.columns=[{width:6},{width:38},{width:14},{width:12},{width:12},{width:12},{width:18}]
   ws.mergeCells('A1:G1')
   setC(ws,'A1','FICHA DE COSTO UNITARIO',{fill:X.titleFill,font:X.titleFont,alignment:X.ac}); ws.getRow(1).height=26
@@ -637,7 +655,7 @@ export async function exportExcelRangoFichas(budget, params, ids) {
   if (sueltas.length) grupos.push({ cap: { id: '', descripcion: 'Sin capítulo' }, acts: sueltas })
   if (!grupos.length) return alert('No hay actividades seleccionadas.')
 
-  const wb = new ExcelJS.Workbook()
+  const wb = new (await getExcelJS()).Workbook()
 
   // Nombres de hoja: máx 31 caracteres, sin \ / * ? : [ ], únicos
   const usados = new Set()
@@ -721,7 +739,7 @@ export async function exportPlantilla(tipo) {
   }
   const c=cfgs[tipo]; if(!c) return
   const MFMT = '#,##0.00'
-  const wb=new ExcelJS.Workbook(); const ws=wb.addWorksheet('Plantilla')
+  const wb=new (await getExcelJS()).Workbook(); const ws=wb.addWorksheet('Plantilla')
   ws.columns=c.headers.map((_,i)=>({width:tipo==='presupuesto'&&i===1?50:18}))
   const last=String.fromCharCode(64+c.headers.length)
   ws.mergeCells(`A1:${last}1`); setC(ws,'A1',c.title,{fill:X.titleFill,font:X.titleFont,alignment:X.ac}); ws.getRow(1).height=28
@@ -737,7 +755,7 @@ export async function exportPlantilla(tipo) {
 
 // ============ PLANTILLA FICHAS APU ============
 export async function exportPlantillaFicha() {
-  const wb = new ExcelJS.Workbook()
+  const wb = new (await getExcelJS()).Workbook()
 
   // ── Hoja de datos ──────────────────────────────────────────────
   const ws = wb.addWorksheet('Fichas APU')
@@ -810,9 +828,9 @@ export async function exportPlantillaFicha() {
 export async function importExcelFichas(file, budget, setBudget) {
   if (!budget) return alert('No hay proyecto activo. Abre un proyecto antes de importar.')
   const buf = await file.arrayBuffer()
-  const wb = XLSX.read(buf)
+  const wb = (await getXLSX()).read(buf)
   const ws = wb.Sheets[wb.SheetNames[0]]
-  const rows = XLSX.utils.sheet_to_json(ws,{header:1,defval:''})
+  const rows = (await getXLSX()).utils.sheet_to_json(ws,{header:1,defval:''})
 
   // Buscar fila de encabezado
   let h = rows.findIndex(r=>r.some(c=>/activ|categor/i.test(String(c))))
@@ -884,9 +902,9 @@ export async function importExcelFichas(file, budget, setBudget) {
 }
 
 export async function importExcelPresupuesto(file, budget, setBudget) {
-  const buf=await file.arrayBuffer(); const wb=XLSX.read(buf)
+  const buf=await file.arrayBuffer(); const wb=(await getXLSX()).read(buf)
   const ws=wb.Sheets[wb.SheetNames[0]]
-  const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''})
+  const rows=(await getXLSX()).utils.sheet_to_json(ws,{header:1,defval:''})
   let h=rows.findIndex(r=>r.some(c=>/^\s*id\s*$/i.test(String(c)))); if(h<0)h=0
   const newItems=[]
   for(let i=h+1;i<rows.length;i++){
@@ -904,9 +922,9 @@ export async function importExcelPresupuesto(file, budget, setBudget) {
 
 export async function importExcelCatalogo(file, budget, setBudget, catKey) {
   const cat=CATEGORIAS.find(c=>c.key===catKey)
-  const buf=await file.arrayBuffer(); const wb=XLSX.read(buf)
+  const buf=await file.arrayBuffer(); const wb=(await getXLSX()).read(buf)
   const ws=wb.Sheets[wb.SheetNames[0]]
-  const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''})
+  const rows=(await getXLSX()).utils.sheet_to_json(ws,{header:1,defval:''})
   let h=rows.findIndex(r=>r.some(c=>/c[oó]digo/i.test(String(c)))&&r.some(c=>/descripci[oó]n/i.test(String(c)))); if(h<0)h=0
   const list=[...(budget.catalogos[catKey]||[])]; let ag=0,du=0
   for(let i=h+1;i<rows.length;i++){
@@ -926,7 +944,7 @@ export async function importExcelCatalogo(file, budget, setBudget, catKey) {
 // ============ RESUMEN EJECUTIVO PDF ============
 export const exportPDFResumenEjecutivo = async (budget, params) => {
   const money = makeMoneyFmt(budget.moneda); const MFMT = mfmt(budget.moneda)
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' })
+  const doc = new (await getJsPDF())({ orientation: 'portrait', unit: 'mm', format: 'letter' })
   const w = doc.internal.pageSize.getWidth()
   const h = doc.internal.pageSize.getHeight()
   const ML = 14   // margen lateral uniforme
@@ -1132,8 +1150,8 @@ export const exportPDFResumenEjecutivo = async (budget, params) => {
 }
 
 // ============ PORTAFOLIO PDF ============
-export const exportPDFPortafolio = (proyectos, empresa = '') => {
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' })
+export const exportPDFPortafolio = async (proyectos, empresa = '') => {
+  const doc = new (await getJsPDF())({ orientation: 'landscape', unit: 'mm', format: 'letter' })
   const w = doc.internal.pageSize.getWidth()
   const h = doc.internal.pageSize.getHeight()
 
@@ -1230,7 +1248,7 @@ export const exportPDFPortafolio = (proyectos, empresa = '') => {
 
 // ============ EXCEL PORTAFOLIO ============
 export async function exportExcelPortafolio(proyectos, empresa = '') {
-  const wb = new ExcelJS.Workbook()
+  const wb = new (await getExcelJS()).Workbook()
   const ws = wb.addWorksheet('Portafolio')
   ws.columns = [
     { width: 6 }, { width: 40 }, { width: 28 }, { width: 22 },
@@ -1297,7 +1315,7 @@ export async function exportExcelExplosion(budget, params, actividadId = null) {
     { key: 'subcontratos',      label: 'Subcontratos' },
   ]
 
-  const wb = new ExcelJS.Workbook()
+  const wb = new (await getExcelJS()).Workbook()
   const proyecto = budget.nombreProyecto || 'Proyecto'
   const fecha    = new Date().toLocaleDateString('es-HN')
 
@@ -1363,7 +1381,7 @@ export async function exportPDFExplosion(budget, params, actividadId = null) {
     { key: 'subcontratos',      label: 'Subcontratos' },
   ]
 
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' })
+  const doc = new (await getJsPDF())({ orientation: 'landscape', unit: 'mm', format: 'letter' })
   const PW = 279, ML = 10, MT = 14, CW = PW - ML * 2
 
   CATS.forEach(({ key, label }, ci) => {
