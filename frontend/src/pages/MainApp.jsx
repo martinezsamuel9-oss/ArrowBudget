@@ -2353,6 +2353,28 @@ function ParametrosGlobales({ budget, setBudget }) {
 }
 
 // ============ CATALOGO VIEW ============
+// Definido FUERA de CatalogoView: si se define adentro, cada keystroke re-crea el
+// componente y React desmonta/remonta los inputs → se pierde el foco al escribir
+function CatFormRow({ isNew, rowRef, form, setForm, submit, onCancel }) {
+  return (
+    <tr ref={rowRef} style={{ background: 'var(--c-accent-soft)' }}>
+      <td colSpan={7} style={{ padding: '14px 18px', borderTop: isNew ? '2px solid var(--c-primary)' : undefined }}>
+        <form onSubmit={submit} style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 10 }}>
+          <div className="field"><label className="field-label">Código</label><input className="input sm" value={form.codigo} onChange={e => setForm({ ...form, codigo: e.target.value })} /></div>
+          <div className="field" style={{ gridColumn: 'span 2' }}><label className="field-label">Descripción *</label><input required autoFocus className="input sm" value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} /></div>
+          <div className="field"><label className="field-label">Unidad</label><input className="input sm" value={form.unidad} onChange={e => setForm({ ...form, unidad: e.target.value })} /></div>
+          <div className="field"><label className="field-label">Precio Base</label><MathInput className="input sm" style={{ textAlign: 'right' }} value={form.costoBase} onChange={v => setForm({ ...form, costoBase: v })} /></div>
+          <div className="field"><label className="field-label">Proveedor</label><input className="input sm" value={form.proveedor} onChange={e => setForm({ ...form, proveedor: e.target.value })} /></div>
+          <div style={{ gridColumn: 'span 6', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <button type="button" className="btn sm ghost" onClick={onCancel}>Cancelar</button>
+            <button type="submit" className="btn sm primary">{isNew ? 'Agregar' : 'Actualizar'}</button>
+          </div>
+        </form>
+      </td>
+    </tr>
+  )
+}
+
 function CatalogoView({ budget, setBudget, categoria }) {
   const money = makeMoneyFmt(budget.moneda)
   const list = budget.catalogos[categoria.key] || []
@@ -2393,23 +2415,7 @@ function CatalogoView({ budget, setBudget, categoria }) {
     setForm({ codigo: nextCode(), descripcion: '', unidad: 'und', costoBase: 0, proveedor: '', notas: '' })
     setTimeout(() => newRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }), 80)
   }
-  const FormRow = ({ isNew }) => (
-    <tr ref={isNew ? newRowRef : editRowRef} style={{ background: 'var(--c-accent-soft)' }}>
-      <td colSpan={7} style={{ padding: '14px 18px', borderTop: isNew ? '2px solid var(--c-primary)' : undefined }}>
-        <form onSubmit={submit} style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 10 }}>
-          <div className="field"><label className="field-label">Código</label><input className="input sm" value={form.codigo} onChange={e => setForm({ ...form, codigo: e.target.value })} /></div>
-          <div className="field" style={{ gridColumn: 'span 2' }}><label className="field-label">Descripción *</label><input required autoFocus className="input sm" value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} /></div>
-          <div className="field"><label className="field-label">Unidad</label><input className="input sm" value={form.unidad} onChange={e => setForm({ ...form, unidad: e.target.value })} /></div>
-          <div className="field"><label className="field-label">Precio Base</label><MathInput className="input sm" style={{ textAlign: 'right' }} value={form.costoBase} onChange={v => setForm({ ...form, costoBase: v })} /></div>
-          <div className="field"><label className="field-label">Proveedor</label><input className="input sm" value={form.proveedor} onChange={e => setForm({ ...form, proveedor: e.target.value })} /></div>
-          <div style={{ gridColumn: 'span 6', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-            <button type="button" className="btn sm ghost" onClick={() => { setShowForm(false); setEditId(null) }}>Cancelar</button>
-            <button type="submit" className="btn sm primary">{isNew ? 'Agregar' : 'Actualizar'}</button>
-          </div>
-        </form>
-      </td>
-    </tr>
-  )
+  const cancelForm = () => { setShowForm(false); setEditId(null) }
   return (
     <div className="card" style={{ padding: 0 }}>
       {/* Header sticky — top:0 relativo al scroll container (page-body) */}
@@ -2438,7 +2444,7 @@ function CatalogoView({ budget, setBudget, categoria }) {
               const u = usagesOf(i.id)
               const cantTotal = cantTotalOf(i.id)
               // Inline edit — reemplaza el row
-              if (editId === i.id && showForm) return <FormRow key={i.id} isNew={false} />
+              if (editId === i.id && showForm) return <CatFormRow key={i.id} isNew={false} rowRef={editRowRef} form={form} setForm={setForm} submit={submit} onCancel={cancelForm} />
               return (
                 <tr key={i.id}>
                   <td className="id">{i.codigo}</td>
@@ -2467,7 +2473,7 @@ function CatalogoView({ budget, setBudget, categoria }) {
               )
             })}
             {/* Form de NUEVO insumo — siempre al pie de la tabla */}
-            {showForm && !editId && <FormRow isNew={true} />}
+            {showForm && !editId && <CatFormRow isNew rowRef={newRowRef} form={form} setForm={setForm} submit={submit} onCancel={cancelForm} />}
           </tbody>
         </table>
       </div>
