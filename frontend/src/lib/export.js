@@ -381,7 +381,8 @@ export const exportPDFGeneral = (budget, params, empresa = {}) => {
   exportPDFPresupuesto(budget, params, empresa)
   const acts=[]; const collect=its=>{for(const it of its){if(it.tipo==='actividad')acts.push(it);else if(it.children)collect(it.children)}}
   collect(budget.items)
-  acts.forEach((act,i)=>setTimeout(()=>exportPDFFicha(budget,act,params,empresa),(i+1)*700))
+  // Un solo PDF combinado, organizado por capítulos (antes: un archivo por ficha)
+  if (acts.length) setTimeout(() => exportPDFRangoFichas(budget, params, acts.map(a => a.id), empresa), 600)
 }
 
 // PDF combinado organizado por CAPÍTULOS (misma lógica que el Excel):
