@@ -1592,7 +1592,9 @@ function FichaCostoModal({ open, onClose, actividad, budget, catalogos, params, 
   return (
     <Fragment>
       <div className="scrim" onClick={onClose}></div>
-      <div style={{ position: 'fixed', top: '3%', left: '50%', transform: 'translateX(-50%)', width: 'min(90vw, 900px)', maxHeight: '94vh', background: 'var(--c-surface)', borderRadius: 16, boxShadow: 'var(--shadow-xl)', zIndex: 51, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {/* Centrado con margin auto (sin transform): un ancestro con transform rompe
+          el position:fixed de los dropdowns internos (InsumoSelect) */}
+      <div style={{ position: 'fixed', top: '3%', left: 0, right: 0, margin: '0 auto', width: 'min(90vw, 900px)', maxHeight: '94vh', background: 'var(--c-surface)', borderRadius: 16, boxShadow: 'var(--shadow-xl)', zIndex: 51, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div style={{ background: 'linear-gradient(135deg, var(--c-ink-2), var(--c-ink))', color: '#fff', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
             <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--c-accent)', fontWeight: 700, marginBottom: 4 }}>Ficha de Costo Unitario</div>
