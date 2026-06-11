@@ -9,14 +9,22 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setUser(data.session?.user ?? null)
-      setLoading(false)
-    })
+    let resolved = false
+    // Failsafe: si getSession no responde (red caída, storage corrupto), la app
+    // no se queda en "Cargando…" infinito — tras 8s asume sin sesión → login
+    const failsafe = setTimeout(() => {
+      if (!resolved) { setUser(null); setLoading(false) }
+    }, 8000)
+    supabase.auth.getSession()
+      .then(({ data }) => setUser(data.session?.user ?? null))
+      .catch(() => setUser(null))
+      .finally(() => { resolved = true; clearTimeout(failsafe); setLoading(false) })
+    // Sesión vencida (refresh token inválido tras días sin abrir): supabase emite
+    // SIGNED_OUT → user pasa a null → ProtectedRoute redirige al login solo
     const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
       setUser(session?.user ?? null)
     })
-    return () => sub.subscription.unsubscribe()
+    return () => { clearTimeout(failsafe); sub.subscription.unsubscribe() }
   }, [])
 
   useEffect(() => {
