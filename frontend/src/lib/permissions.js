@@ -120,7 +120,7 @@ export const PROJECT_TO_ORG_ROLE = { ...ORG_TO_PROJECT_ROLE }
 
 // ─── Transiciones de estado permitidas por rol ───────────────────────────────
 export const TRANSICIONES_PERMITIDAS = {
-  gerente:              ['Borrador', 'Activo', 'En revisión', 'Aprobado', 'Rechazado', 'En ejecución'],
+  gerente:              ['Borrador', 'Activo', 'En revisión', 'Aprobado', 'Rechazado', 'En ejecución', 'Archivado'],
   ing_costos_1:         ['Borrador', 'Activo', 'En revisión'],
   ing_costos_2:         ['Borrador', 'Activo', 'En revisión'],
   ing_residente:        ['Borrador', 'Activo', 'En revisión'],

@@ -64,8 +64,10 @@ const DEFAULT_INDIRECTOS = [
   { descripcion: 'Equipos de cómputo y TI',     unidad: 'global', cantidad: 1, costoBase: 0 },
 ].map(x => ({ ...x, id: uid() }))
 
-const DB2UI = { borrador:'Borrador', activo:'Activo', en_revision:'En revisión', enviado:'En revisión', aprobado:'Aprobado', rechazado:'Rechazado', en_ejecucion:'En ejecución' }
-const UI2DB = { 'Borrador':'borrador', 'Activo':'activo', 'En revisión':'en_revision', 'Aprobado':'aprobado', 'Rechazado':'rechazado', 'En ejecución':'en_ejecucion' }
+// 'enviado' es un estado legacy de la BD: se muestra como 'En revisión' y al
+// guardar se normaliza a 'en_revision' (UI2DB no lo emite a propósito)
+const DB2UI = { borrador:'Borrador', activo:'Activo', en_revision:'En revisión', enviado:'En revisión', aprobado:'Aprobado', rechazado:'Rechazado', en_ejecucion:'En ejecución', archivado:'Archivado' }
+const UI2DB = { 'Borrador':'borrador', 'Activo':'activo', 'En revisión':'en_revision', 'Aprobado':'aprobado', 'Rechazado':'rechazado', 'En ejecución':'en_ejecucion', 'Archivado':'archivado' }
 
 const mapDb = row => ({
   id:            row.id,
@@ -192,6 +194,7 @@ function StatusBadge({ status }) {
     'Aprobado':    { cls: 'primary', dot: 'var(--c-primary)' },
     'Rechazado':   { cls: 'danger',  dot: 'var(--c-danger)' },
     'En ejecución':{ cls: '',        dot: '#7c3aed' },
+    'Archivado':   { cls: '',        dot: '#94a3b8' },
   }
   const s = map[status] || { cls: '', dot: 'var(--c-text-3)' }
   return (
@@ -456,6 +459,7 @@ function EstadoMenu({ budget, setBudget, role }) {
     { v: 'Aprobado',     cls: 'primary', dot: 'var(--c-primary)' },
     { v: 'Rechazado',    cls: 'danger',  dot: 'var(--c-danger)' },
     { v: 'En ejecución', cls: '',        dot: '#7c3aed' },
+    { v: 'Archivado',    cls: '',        dot: '#94a3b8' },
   ]
   const allowed = TRANSICIONES_PERMITIDAS[role || 'cliente'] || []
   // If no transitions allowed, show badge only (no dropdown)
@@ -1929,7 +1933,9 @@ function IndirectosView({ budget, setBudget }) {
 }
 
 // ============ INICIO PAGE ============
-function InicioPage({ proyectos, openProject, addProject, setPage, userName }) {
+function InicioPage({ proyectos: todosProyectos, openProject, addProject, setPage, userName }) {
+  // Los archivados no cuentan en cartera, KPIs ni listas del inicio
+  const proyectos = todosProyectos.filter(p => p.estado !== 'Archivado')
   const h = new Date().getHours()
   const saludo = h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches'
   const firstName = (userName || 'Usuario').split(' ')[0]
@@ -1987,7 +1993,7 @@ function InicioPage({ proyectos, openProject, addProject, setPage, userName }) {
       <div className="kpi-row">
         <div className="kpi highlight">
           <div className="kpi-label"><DollarSign size={12} className="ico" /> Valor Total Cartera</div>
-          <div className="kpi-val" style={{ fontSize: Object.keys(carteraPorMoneda).length > 1 ? 16 : undefined }}>{carteraLabel || '$0.00'}</div>
+          <div className="kpi-val" style={{ fontSize: Object.keys(carteraPorMoneda).length > 1 ? 16 : undefined }}>{carteraLabel || money(0)}</div>
           <div className="kpi-foot">Suma de {proyectos.length} proyecto{proyectos.length !== 1 ? 's' : ''}</div>
         </div>
         <div className="kpi">
@@ -2120,10 +2126,13 @@ function ProyectosPage({ proyectos, openProject, addProject, deleteProject }) {
   const [q, setQ] = useState('')
   const [f, setF] = useState('Todos')
   const [layout, setLayout] = useState('grid')
-  const filters = ['Todos', 'Activo', 'En revisión', 'Borrador', 'Aprobado']
-  const list = proyectos.filter(p => (f === 'Todos' || p.estado === f) && (!q || normalize(p.nombreProyecto).includes(normalize(q)) || normalize(p.cliente).includes(normalize(q))))
-  // Agrupar cartera por moneda para evitar mezclar HNL y USD
-  const carteraPorMoneda = proyectos.reduce((acc, p) => {
+  const filters = ['Todos', 'Activo', 'En revisión', 'Borrador', 'Aprobado', 'Archivado']
+  // 'Todos' excluye archivados; estos solo se ven con su propio filtro
+  const list = proyectos.filter(p =>
+    (f === 'Todos' ? p.estado !== 'Archivado' : p.estado === f) &&
+    (!q || normalize(p.nombreProyecto).includes(normalize(q)) || normalize(p.cliente).includes(normalize(q))))
+  // Agrupar cartera por moneda para evitar mezclar HNL y USD (sin archivados)
+  const carteraPorMoneda = proyectos.filter(p => p.estado !== 'Archivado').reduce((acc, p) => {
     const moneda = p.moneda || 'USD'
     acc[moneda] = (acc[moneda] || 0) + calcKPIs(p).total
     return acc
@@ -3389,7 +3398,7 @@ function ReportesPage({ proyectos, budget, params, userEmpresa }) {
             <div className="kpi-row" style={{ marginBottom: 20 }}>
               <div className="kpi highlight">
                 <div className="kpi-label"><DollarSign size={12} className="ico" />Cartera Total</div>
-                <div className="kpi-val" style={{ fontSize: Object.keys(carteraPorMoneda).length > 1 ? 16 : undefined }}>{carteraLabel || '$ 0.00'}</div>
+                <div className="kpi-val" style={{ fontSize: Object.keys(carteraPorMoneda).length > 1 ? 16 : undefined }}>{carteraLabel || money(0)}</div>
                 <div className="kpi-foot"><span>Suma de {total} proyectos</span></div>
               </div>
               <div className="kpi">
@@ -3450,7 +3459,7 @@ function ReportesPage({ proyectos, budget, params, userEmpresa }) {
                   <tr>
                     <td colSpan={5} style={{ textAlign: 'right', fontWeight: 700 }}>CARTERA TOTAL</td>
                     <td style={{ textAlign: 'right', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
-                      {carteraLabel || '$ 0.00'}
+                      {carteraLabel || money(0)}
                     </td>
                   </tr>
                 </tfoot>
