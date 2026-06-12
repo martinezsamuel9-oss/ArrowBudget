@@ -5,7 +5,7 @@
 import { useState, useEffect, useMemo, useRef, Fragment } from 'react'
 import { supabase } from '../lib/supabase'
 import { puedeHacer } from '../lib/permissions'
-import { calcItem, makeMoneyFmt, moneyK } from '../lib/calc'
+import { calcItem, makeMoneyFmt, moneyK, fmt } from '../lib/calc'
 import { flattenActividades, calcularFechas, resumenCronograma, parsePredecesoras, predsATexto, normPred, rutaCritica, fmtFecha, hoyISO, addDays, pctPlanificado, pctReal, avanceGlobal, flujoDeCaja, curvaS, MESES_CORTOS as MESES_LIB } from '../lib/cronograma'
 import { exportPDFCronograma, exportExcelCronograma } from '../lib/exportCronograma'
 import {
@@ -547,6 +547,8 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
                   <th style={{ width: 42 }}>#</th>
                   <th style={{ width: 70 }}>ID</th>
                   <th>Actividad</th>
+                  <th style={{ width: 70, textAlign: 'center' }}>Unidad</th>
+                  <th className="num" style={{ width: 90 }}>Cantidad</th>
                   <th className="num" style={{ width: 100 }}>Duración (días)</th>
                   <th style={{ width: 170 }}>Predecesoras</th>
                   <th style={{ width: 100 }}>Inicio</th>
@@ -561,7 +563,7 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
                         lastCap = a.capId
                         rows.push(
                           <tr key={`cap-${a.capId}`}>
-                            <td colSpan={7} style={{ background: 'var(--c-ink)', color: 'var(--c-accent)', fontWeight: 700, fontSize: 12, padding: '7px 14px' }}>
+                            <td colSpan={9} style={{ background: 'var(--c-ink)', color: 'var(--c-accent)', fontWeight: 700, fontSize: 12, padding: '7px 14px' }}>
                               {a.capId} · {a.capDesc}
                             </td>
                           </tr>
@@ -575,6 +577,8 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
                           <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--c-text-3)', textAlign: 'center' }}>{idToSeq[a.id]}</td>
                           <td className="id">{a.id}</td>
                           <td style={{ fontWeight: 500 }}>{a.descripcion}</td>
+                          <td style={{ textAlign: 'center', color: 'var(--c-text-2)' }}>{a.unidad || '—'}</td>
+                          <td className="num" style={{ color: 'var(--c-text-2)' }}>{fmt(a.cantidad || 0)}</td>
                           <td className="num">
                             <input type="number" min="1" className="input sm" disabled={!canEdit || !datos[a.id]}
                               value={d.duracion ?? 7}
@@ -715,7 +719,7 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
             <Fragment>
               <div className="kpi-row" style={{ marginBottom: 14 }}>
                 <div className="kpi highlight">
-                  <div className="kpi-label"><Coins size={12} className="ico" /> Costo directo programado</div>
+                  <div className="kpi-label"><Coins size={12} className="ico" /> Costo total programado</div>
                   <div className="kpi-val" style={{ fontSize: 18 }}>{money(flujo.total)}</div>
                   <div className="kpi-foot">distribuido en {flujo.rows.length} {modoFlujo === 'mes' ? 'meses' : 'semanas'}</div>
                 </div>
@@ -803,7 +807,7 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
                   </tfoot>
                 </table>
                 <div style={{ padding: '10px 16px', fontSize: 11, color: 'var(--c-text-3)' }}>
-                  Basado en el costo directo de cada actividad distribuido uniformemente en su duración programada.
+                  Basado en el costo total de cada actividad distribuido uniformemente en su duración programada.
                 </div>
               </div>
             </Fragment>
@@ -910,7 +914,7 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
                 <table className="bt">
                   <thead><tr>
                     <th>Capítulo</th>
-                    <th className="num" style={{ width: 140 }}>Costo directo</th>
+                    <th className="num" style={{ width: 140 }}>Costo</th>
                     <th className="num" style={{ width: 140 }}>Valor planificado</th>
                     <th className="num" style={{ width: 140 }}>Valor ganado</th>
                     <th style={{ width: 170 }}>% Financiero</th>

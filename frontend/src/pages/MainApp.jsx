@@ -3746,7 +3746,7 @@ export default function MainApp() {
 
       <Sidebar
         page={page} setPage={setPage}
-        projectActivo={page === 'proyecto' ? budget : null}
+        projectActivo={budget}
         setTabProject={setTabProject} tabProject={tabProject}
         user={{ name: userName, empresa: userEmpresa }}
         onLogout={doLogout}
