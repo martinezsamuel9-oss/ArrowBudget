@@ -4,7 +4,7 @@ import { saveAs } from 'file-saver'
 // jspdf (~350KB), exceljs (~940KB) y xlsx (~430KB) solo se descargan cuando el
 // usuario exporta o importa — no inflan la carga inicial de la app.
 let _jsPDF = null
-const getJsPDF = async () => {
+export const getJsPDF = async () => {
   if (!_jsPDF) {
     const [m] = await Promise.all([import('jspdf'), import('jspdf-autotable')])
     _jsPDF = m.default
@@ -12,7 +12,7 @@ const getJsPDF = async () => {
   return _jsPDF
 }
 let _ExcelJS = null
-const getExcelJS = async () => {
+export const getExcelJS = async () => {
   if (!_ExcelJS) _ExcelJS = (await import('exceljs')).default
   return _ExcelJS
 }
@@ -27,7 +27,7 @@ import {
   calcItem, calcFicha, calcExplosionInsumos, CATEGORIAS, uid, normalize,
 } from './calc'
 
-const X = {
+export const X = {
   titleFill:   { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F1115' } },
   titleFont:   { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFF59E0B' } },
   headerFill:  { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } },
@@ -47,7 +47,7 @@ const X = {
 const mfmt = (cur = 'USD') => `"${currencySymbol(cur)}"#,##0.00`
 const NFMT = '#,##0.0000'
 
-const setC = (ws, addr, val, opts={}) => {
+export const setC = (ws, addr, val, opts={}) => {
   const c = ws.getCell(addr)
   c.value = val
   if (opts.fill) c.fill = opts.fill
@@ -81,7 +81,7 @@ const hexToRgb = hex => {
 
 // Tema único para TODOS los PDFs: usa los colores configurados del proyecto
 // (Configuración → color de encabezado APU), con override opcional vía empresa
-const pdfTheme = (budget = {}, empresa = {}) => {
+export const pdfTheme = (budget = {}, empresa = {}) => {
   const bg  = hexToRgb(empresa.headerBg   || budget.apuHeaderBg)   || [15,17,21]
   const acc = hexToRgb(empresa.headerText || budget.apuHeaderText) || [245,158,11]
   const mid = bg.map(v => Math.min(255, v + 56))   // variante clara para sub-encabezados
@@ -90,7 +90,7 @@ const pdfTheme = (budget = {}, empresa = {}) => {
 
 // Banda compacta que se redibuja en las páginas de continuación de una tabla
 // (usar dentro de didDrawPage con data.pageNumber > 1)
-const drawContinuationBand = (doc, budget, theme, title) => {
+export const drawContinuationBand = (doc, budget, theme, title) => {
   const w = doc.internal.pageSize.getWidth()
   doc.setFillColor(...theme.bg); doc.rect(0, 0, w, 14, 'F')
   doc.setTextColor(...theme.acc); doc.setFontSize(9); doc.setFont(undefined, 'bold')
@@ -129,7 +129,7 @@ const addImageContain = async (doc, src, x, y, maxW, maxH) => {
 }
 
 // draws the compact APU page header; returns the Y coordinate where content should start
-const drawApuHeader = async (doc, budget, empresa = {}, opts = {}) => {
+export const drawApuHeader = async (doc, budget, empresa = {}, opts = {}) => {
   const w = doc.internal.pageSize.getWidth()
   const { bg, acc: txt } = pdfTheme(budget, empresa)
   const headerH = 32
@@ -150,7 +150,7 @@ const drawApuHeader = async (doc, budget, empresa = {}, opts = {}) => {
 }
 
 // footer: rev info on left, page number on right — usa los colores configurados
-const drawApuFooter = (doc, budget, pageNum, totalPages, empresa = {}) => {
+export const drawApuFooter = (doc, budget, pageNum, totalPages, empresa = {}) => {
   const w = doc.internal.pageSize.getWidth()
   const h = doc.internal.pageSize.getHeight()
   const { bg, acc: txt } = pdfTheme(budget, empresa)

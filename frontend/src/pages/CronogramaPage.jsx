@@ -7,9 +7,10 @@ import { supabase } from '../lib/supabase'
 import { puedeHacer } from '../lib/permissions'
 import { calcItem, makeMoneyFmt, moneyK } from '../lib/calc'
 import { flattenActividades, calcularFechas, resumenCronograma, parsePredecesoras, fmtFecha, hoyISO, addDays, pctPlanificado, pctReal, avanceGlobal, flujoDeCaja, curvaS, MESES_CORTOS as MESES_LIB } from '../lib/cronograma'
+import { exportPDFCronograma, exportExcelCronograma } from '../lib/exportCronograma'
 import {
   CalendarRange, BarChart2, Coins, Activity, TrendingUp, LineChart,
-  Plus, FileText, AlertTriangle,
+  Plus, FileText, AlertTriangle, FileSpreadsheet,
 } from 'lucide-react'
 
 const TABS = [
@@ -385,6 +386,16 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
             {acts.length} actividades · {saving ? 'Guardando…' : 'Guardado'}
           </div>
         </div>
+        <div className="page-head-actions" style={{ display: 'flex', gap: 8 }}>
+          <button className="btn" style={{ background: 'var(--c-danger)', borderColor: 'var(--c-danger)', color: '#fff' }}
+            onClick={() => exportPDFCronograma(budget, acts, fechas, datos, pesos, resumen, { logo: budget.logoOfertante, logoCliente: budget.logoCliente, headerBg: budget.apuHeaderBg, headerText: budget.apuHeaderText })}>
+            <FileText size={13} /> PDF
+          </button>
+          <button className="btn" style={{ background: 'var(--c-success)', borderColor: 'var(--c-success)', color: '#fff' }}
+            onClick={() => exportExcelCronograma(budget, acts, fechas, datos, pesos, resumen)}>
+            <FileSpreadsheet size={13} /> Excel
+          </button>
+        </div>
       </div>
 
       {/* KPIs */}
@@ -729,18 +740,135 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
           )
         })()}
 
-        {tab === 'financiero' && (
-          <div className="card" style={{ padding: 48, textAlign: 'center', color: 'var(--c-text-3)' }}>
-            <div style={{ fontSize: 28, marginBottom: 10 }}>🚧</div>
-            <div style={{ fontWeight: 700, color: 'var(--c-text-2)', marginBottom: 4 }}>
-              {TABS.find(t => t.k === tab)?.label} — en construcción
-            </div>
-            <div style={{ fontSize: 13 }}>
-              Este módulo de la Fase II se habilita en las próximas iteraciones. La programación
-              del Gantt que definas aquí alimentará automáticamente esta vista.
-            </div>
-          </div>
-        )}
+        {tab === 'financiero' && (() => {
+          // Valor ganado por capítulo a la fecha de corte
+          const caps = []
+          const atrasadas = []
+          let totCosto = 0, totVP = 0, totVG = 0
+          for (const a of acts) {
+            if (!datos[a.id] || !fechas[a.id]) continue
+            const costo = pesos[a.id] || 0
+            const plan = pctPlanificado(fechas[a.id], corte)
+            const real = pctReal(datos[a.id].avances, corte)
+            const vp = costo * plan / 100
+            const vg = costo * real / 100
+            let g = caps.find(c => c.capId === a.capId)
+            if (!g) { g = { capId: a.capId, capDesc: a.capDesc, costo: 0, vp: 0, vg: 0 }; caps.push(g) }
+            g.costo += costo; g.vp += vp; g.vg += vg
+            totCosto += costo; totVP += vp; totVG += vg
+            if (real < plan - 3 && real < 100) atrasadas.push({ ...a, plan, real, riesgo: costo * (plan - real) / 100 })
+          }
+          atrasadas.sort((x, y) => y.riesgo - x.riesgo)
+          const variacion = totVG - totVP
+          return (
+            <Fragment>
+              <div className="kpi-row" style={{ marginBottom: 14 }}>
+                <div className="kpi">
+                  <div className="kpi-label"><CalendarRange size={12} className="ico" /> Fecha de corte</div>
+                  <input type="date" className="input" value={corte} onChange={e => setCorte(e.target.value || hoyISO())} style={{ marginTop: 4, fontWeight: 700 }} />
+                </div>
+                <div className="kpi highlight">
+                  <div className="kpi-label"><Coins size={12} className="ico" /> Valor ganado</div>
+                  <div className="kpi-val" style={{ fontSize: 17 }}>{money(totVG)}</div>
+                  <div className="kpi-foot">obra ejecutada × costo ({totCosto > 0 ? Math.round(totVG / totCosto * 100) : 0}% del total)</div>
+                </div>
+                <div className="kpi">
+                  <div className="kpi-label"><TrendingUp size={12} className="ico" /> Valor planificado</div>
+                  <div className="kpi-val" style={{ fontSize: 17 }}>{money(totVP)}</div>
+                  <div className="kpi-foot">lo que debería estar ejecutado a la fecha</div>
+                </div>
+                <div className="kpi">
+                  <div className="kpi-label"><AlertTriangle size={12} className="ico" /> Variación</div>
+                  <div className="kpi-val" style={{ fontSize: 17, color: variacion < 0 ? 'var(--c-danger)' : 'var(--c-success)' }}>
+                    {variacion < 0 ? '−' : '+'}{money(Math.abs(variacion))}
+                  </div>
+                  <div className="kpi-foot">{variacion < 0 ? 'obra pendiente vs plan' : 'por delante del plan'}</div>
+                </div>
+              </div>
+
+              <div className="card" style={{ padding: 0, marginBottom: 16 }}>
+                <div className="card-header">
+                  <div className="card-title"><TrendingUp size={15} /> Avance financiero por capítulo</div>
+                </div>
+                <table className="bt">
+                  <thead><tr>
+                    <th>Capítulo</th>
+                    <th className="num" style={{ width: 140 }}>Costo directo</th>
+                    <th className="num" style={{ width: 140 }}>Valor planificado</th>
+                    <th className="num" style={{ width: 140 }}>Valor ganado</th>
+                    <th style={{ width: 170 }}>% Financiero</th>
+                  </tr></thead>
+                  <tbody>
+                    {caps.map(c => {
+                      const pct = c.costo > 0 ? Math.round(c.vg / c.costo * 100) : 0
+                      const pctPlan = c.costo > 0 ? Math.round(c.vp / c.costo * 100) : 0
+                      return (
+                        <tr key={c.capId}>
+                          <td style={{ fontWeight: 600 }}>{c.capId} · {c.capDesc}</td>
+                          <td className="num">{money(c.costo)}</td>
+                          <td className="num" style={{ color: 'var(--c-text-3)' }}>{money(c.vp)}</td>
+                          <td className="num" style={{ fontWeight: 700 }}>{money(c.vg)}</td>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <div style={{ flex: 1, position: 'relative', height: 9, background: 'var(--c-bg)', borderRadius: 5, overflow: 'hidden', border: '1px solid var(--c-line-2)' }}>
+                                <div style={{ position: 'absolute', inset: 0, width: `${pctPlan}%`, background: 'var(--c-line)' }} />
+                                <div style={{ position: 'absolute', inset: 0, width: `${pct}%`, background: pct >= pctPlan - 3 ? 'var(--c-success)' : 'var(--c-warn)', borderRadius: 5 }} />
+                              </div>
+                              <span style={{ fontSize: 11, color: 'var(--c-text-3)', width: 34, textAlign: 'right' }}>{pct}%</span>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td style={{ fontWeight: 800, background: 'var(--c-ink)', color: '#fff' }}>TOTAL</td>
+                      <td className="num" style={{ fontWeight: 800, background: 'var(--c-ink)', color: '#fff' }}>{money(totCosto)}</td>
+                      <td className="num" style={{ fontWeight: 800, background: 'var(--c-ink)', color: 'rgba(255,255,255,0.7)' }}>{money(totVP)}</td>
+                      <td className="num" style={{ fontWeight: 800, background: 'var(--c-ink)', color: 'var(--c-accent)' }}>{money(totVG)}</td>
+                      <td style={{ background: 'var(--c-ink)' }}></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* Dashboard de atrasos */}
+              <div className="card" style={{ padding: 0 }}>
+                <div className="card-header">
+                  <div className="card-title"><AlertTriangle size={15} style={{ color: atrasadas.length ? 'var(--c-danger)' : 'var(--c-success)' }} /> Actividades atrasadas ({atrasadas.length})</div>
+                  <div style={{ fontSize: 11, color: 'var(--c-text-3)' }}>ordenadas por monto en riesgo (atraso × costo)</div>
+                </div>
+                {atrasadas.length === 0
+                  ? <div style={{ padding: 28, textAlign: 'center', color: 'var(--c-success)', fontSize: 13, fontWeight: 600 }}>✓ Ninguna actividad atrasada a la fecha de corte</div>
+                  : (
+                    <table className="bt">
+                      <thead><tr>
+                        <th style={{ width: 70 }}>ID</th>
+                        <th>Actividad</th>
+                        <th className="num" style={{ width: 80 }}>% Plan</th>
+                        <th className="num" style={{ width: 80 }}>% Real</th>
+                        <th className="num" style={{ width: 90 }}>Atraso</th>
+                        <th className="num" style={{ width: 140 }}>Monto en riesgo</th>
+                      </tr></thead>
+                      <tbody>
+                        {atrasadas.slice(0, 15).map(a => (
+                          <tr key={a.id}>
+                            <td className="id">{a.id}</td>
+                            <td style={{ fontWeight: 500 }}>{a.descripcion}</td>
+                            <td className="num" style={{ color: 'var(--c-text-3)' }}>{a.plan}%</td>
+                            <td className="num" style={{ fontWeight: 700 }}>{a.real}%</td>
+                            <td className="num" style={{ color: 'var(--c-danger)', fontWeight: 700 }}>−{a.plan - a.real}%</td>
+                            <td className="num" style={{ fontWeight: 700 }}>{money(a.riesgo)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+              </div>
+            </Fragment>
+          )
+        })()}
       </div>
     </Fragment>
   )
