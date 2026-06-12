@@ -19,10 +19,138 @@ const TABS = [
   { k: 'curvas',     label: 'Curva S',           Icon: LineChart },
 ]
 
+// ── Gantt visual (módulo 2): barras por actividad agrupadas por capítulo ──
+const DAY_MS = 86400000
+const MESES_CORTOS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+
+function GanttChart({ acts, fechas, datos }) {
+  const [pxDia, setPxDia] = useState(8)   // 24 = día, 8 = semana, 2.5 = mes
+
+  const programadas = acts.filter(a => datos[a.id] && fechas[a.id])
+  let min = null, max = null
+  for (const a of programadas) {
+    const f = fechas[a.id]
+    if (!min || f.inicio < min) min = f.inicio
+    if (!max || f.fin > max) max = f.fin
+  }
+  if (!min) return <div style={{ padding: 32, textAlign: 'center', color: 'var(--c-text-3)', fontSize: 13 }}>Sin actividades programadas.</div>
+
+  const start = addDays(min, -2)
+  const end   = addDays(max, 7)
+  const dias  = Math.round((end - start) / DAY_MS)
+  const X     = d => ((d - start) / DAY_MS) * pxDia
+  const W     = dias * pxDia
+  const LBL   = 250   // ancho de la columna fija de etiquetas
+
+  // Encabezado de meses
+  const meses = []
+  { let c = new Date(start)
+    while (c < end) {
+      const finMes = new Date(c.getFullYear(), c.getMonth() + 1, 1)
+      const hasta = finMes < end ? finMes : end
+      meses.push({ label: `${MESES_CORTOS[c.getMonth()]} ${String(c.getFullYear()).slice(2)}`, left: X(c), width: X(hasta) - X(c) })
+      c = finMes
+    } }
+
+  // Ticks semanales (lunes)
+  const semanas = []
+  { let c = new Date(start)
+    c.setDate(c.getDate() + ((8 - c.getDay()) % 7))   // próximo lunes
+    while (c < end) { semanas.push({ left: X(c), dia: c.getDate() }); c = addDays(c, 7) } }
+
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0)
+  const hoyX = (hoy >= start && hoy <= end) ? X(hoy) : null
+
+  // Agrupar por capítulo con su rango global
+  const caps = []
+  for (const a of programadas) {
+    let g = caps.find(c => c.capId === a.capId)
+    if (!g) { g = { capId: a.capId, capDesc: a.capDesc, acts: [], min: null, max: null }; caps.push(g) }
+    const f = fechas[a.id]
+    g.acts.push(a)
+    if (!g.min || f.inicio < g.min) g.min = f.inicio
+    if (!g.max || f.fin > g.max) g.max = f.fin
+  }
+
+  const ROW = 30
+  const filaBase = { display: 'flex', alignItems: 'center', height: ROW, borderBottom: '1px solid var(--c-line-2)' }
+  const lblBase  = { position: 'sticky', left: 0, zIndex: 2, width: LBL, minWidth: LBL, padding: '0 12px', fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', borderRight: '1px solid var(--c-line)', height: '100%', display: 'flex', alignItems: 'center' }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4, padding: '10px 14px 0' }}>
+        {[['Día', 24], ['Semana', 8], ['Mes', 2.5]].map(([lbl, v]) => (
+          <button key={lbl} className={`btn xs ${pxDia === v ? 'primary' : 'ghost'}`} onClick={() => setPxDia(v)}>{lbl}</button>
+        ))}
+      </div>
+      <div style={{ overflowX: 'auto', margin: '10px 0 4px' }}>
+        <div style={{ width: LBL + W, minWidth: '100%' }}>
+          {/* Encabezado: meses + semanas */}
+          <div style={{ ...filaBase, height: 26, borderBottom: '1px solid var(--c-line)' }}>
+            <div style={{ ...lblBase, background: 'var(--c-surface)', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--c-text-3)' }}>Actividad</div>
+            <div style={{ position: 'relative', width: W, height: '100%' }}>
+              {meses.map((m, i) => (
+                <div key={i} style={{ position: 'absolute', left: m.left, width: m.width, top: 0, bottom: 0, borderLeft: '1px solid var(--c-line)', fontSize: 10, fontWeight: 700, color: 'var(--c-text-3)', display: 'flex', alignItems: 'center', paddingLeft: 6, textTransform: 'uppercase', letterSpacing: '0.05em', overflow: 'hidden' }}>
+                  {m.width > 34 ? m.label : ''}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Filas */}
+          {caps.map(g => (
+            <Fragment key={g.capId || 'sin-cap'}>
+              {/* Banda del capítulo con barra resumen */}
+              <div style={{ ...filaBase, background: 'var(--c-bg)' }}>
+                <div style={{ ...lblBase, background: 'var(--c-bg)', fontWeight: 700, color: 'var(--c-text)' }}>
+                  {g.capId} · {g.capDesc}
+                </div>
+                <div style={{ position: 'relative', width: W, height: '100%' }}>
+                  {semanas.map((s, i) => pxDia >= 4 && <div key={i} style={{ position: 'absolute', left: s.left, top: 0, bottom: 0, borderLeft: '1px dashed var(--c-line-2)' }} />)}
+                  <div title={`${fmtFecha(g.min)} → ${fmtFecha(addDays(g.max, -1))}`}
+                    style={{ position: 'absolute', left: X(g.min), width: Math.max(3, X(g.max) - X(g.min)), top: 11, height: 7, borderRadius: 4, background: 'var(--c-ink)' }} />
+                  {hoyX != null && <div style={{ position: 'absolute', left: hoyX, top: 0, bottom: 0, borderLeft: '2px solid var(--c-danger)', opacity: 0.55 }} />}
+                </div>
+              </div>
+              {/* Actividades */}
+              {g.acts.map(a => {
+                const f = fechas[a.id]
+                const w = Math.max(3, X(f.fin) - X(f.inicio))
+                return (
+                  <div key={a.id} style={filaBase}>
+                    <div style={{ ...lblBase, background: 'var(--c-surface)', color: 'var(--c-text-2)' }}>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--c-text-3)', marginRight: 6, flexShrink: 0 }}>{a.id}</span>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.descripcion}</span>
+                    </div>
+                    <div style={{ position: 'relative', width: W, height: '100%' }}>
+                      {semanas.map((s, i) => pxDia >= 4 && <div key={i} style={{ position: 'absolute', left: s.left, top: 0, bottom: 0, borderLeft: '1px dashed var(--c-line-2)' }} />)}
+                      <div title={`${a.id} — ${a.descripcion}\n${fmtFecha(f.inicio)} → ${fmtFecha(addDays(f.fin, -1))} · ${f.dur} días`}
+                        style={{ position: 'absolute', left: X(f.inicio), width: w, top: 7, height: 16, borderRadius: 5, background: 'var(--c-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                        {w > 44 && <span style={{ fontSize: 9.5, color: '#fff', fontWeight: 700 }}>{f.dur}d</span>}
+                      </div>
+                      {hoyX != null && <div style={{ position: 'absolute', left: hoyX, top: 0, bottom: 0, borderLeft: '2px solid var(--c-danger)', opacity: 0.55 }} />}
+                    </div>
+                  </div>
+                )
+              })}
+            </Fragment>
+          ))}
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 16, padding: '8px 14px 12px', fontSize: 11, color: 'var(--c-text-3)', alignItems: 'center' }}>
+        <span><span style={{ display: 'inline-block', width: 14, height: 8, borderRadius: 3, background: 'var(--c-primary)', marginRight: 5, verticalAlign: 'middle' }}></span>Actividad</span>
+        <span><span style={{ display: 'inline-block', width: 14, height: 5, borderRadius: 3, background: 'var(--c-ink)', marginRight: 5, verticalAlign: 'middle' }}></span>Capítulo</span>
+        <span><span style={{ display: 'inline-block', width: 2, height: 12, background: 'var(--c-danger)', marginRight: 5, verticalAlign: 'middle' }}></span>Hoy</span>
+      </div>
+    </div>
+  )
+}
+
 export default function CronogramaPage({ budget, projectRole, user }) {
   const [crono, setCrono] = useState(null)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('gantt')
+  const [vistaGantt, setVistaGantt] = useState('gantt')   // 'gantt' visual | 'editar' programación
   const [saving, setSaving] = useState(false)
   const loadedIdRef = useRef(null)
   const pendingRef = useRef(null)
@@ -197,9 +325,17 @@ export default function CronogramaPage({ budget, projectRole, user }) {
         {tab === 'gantt' && (
           <div className="card" style={{ padding: 0 }}>
             <div className="card-header">
-              <div className="card-title"><BarChart2 size={15} /> Programación de actividades</div>
-              <div style={{ fontSize: 11, color: 'var(--c-text-3)' }}>Predecesoras: IDs separados por coma (ej: 1.01, 1.02)</div>
+              <div className="card-title"><BarChart2 size={15} /> {vistaGantt === 'gantt' ? 'Diagrama de Gantt' : 'Programación de actividades'}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {vistaGantt === 'editar' && <span style={{ fontSize: 11, color: 'var(--c-text-3)' }}>Predecesoras: IDs separados por coma (ej: 1.01, 1.02)</span>}
+                <div style={{ display: 'flex', gap: 2, background: 'var(--c-bg)', padding: 3, borderRadius: 8 }}>
+                  <button className={`btn xs ${vistaGantt === 'gantt' ? 'primary' : 'ghost'}`} onClick={() => setVistaGantt('gantt')}>Gantt</button>
+                  <button className={`btn xs ${vistaGantt === 'editar' ? 'primary' : 'ghost'}`} onClick={() => setVistaGantt('editar')}>Editar programación</button>
+                </div>
+              </div>
             </div>
+            {vistaGantt === 'gantt' && <GanttChart acts={acts} fechas={fechas} datos={datos} />}
+            {vistaGantt === 'editar' && (
             <div style={{ overflowX: 'auto' }}>
               <table className="bt">
                 <thead><tr>
@@ -256,6 +392,7 @@ export default function CronogramaPage({ budget, projectRole, user }) {
                 </tbody>
               </table>
             </div>
+            )}
           </div>
         )}
 
