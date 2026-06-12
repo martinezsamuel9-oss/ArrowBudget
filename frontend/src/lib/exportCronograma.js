@@ -4,7 +4,7 @@
 import { saveAs } from 'file-saver'
 import { getJsPDF, getExcelJS, X, setC, pdfTheme, drawApuHeader, drawApuFooter, drawContinuationBand } from './export'
 import { makeMoneyFmt } from './calc'
-import { fmtFecha, addDays, hoyISO, pctPlanificado, pctReal, avanceGlobal, flujoDeCaja, curvaS } from './cronograma'
+import { fmtFecha, addDays, hoyISO, pctPlanificado, pctReal, avanceGlobal, flujoDeCaja, curvaS, rutaCritica, MESES_CORTOS } from './cronograma'
 
 const estadoDe = (plan, real) =>
   real >= 100 ? 'Completada'
@@ -67,12 +67,105 @@ export const exportPDFCronograma = async (budget, acts, fechas, datos, pesos, re
     didDrawPage: d => { if (d.pageNumber > 1) drawContinuationBand(doc, budget, T, 'CRONOGRAMA DE EJECUCIÓN') },
   })
 
+  // ── Páginas: diagrama de Gantt dibujado ──
+  const criticas = rutaCritica(acts, fechas, datos)
+  const programadas = acts.filter(a => datos[a.id] && fechas[a.id])
+  const idToSeq = Object.fromEntries(acts.map((a, i) => [a.id, i + 1]))
+  if (programadas.length && resumen.inicio && resumen.fin) {
+    const filas = []
+    let lc = null
+    for (const a of programadas) {
+      if (a.capId !== lc) { lc = a.capId; filas.push({ t: 'cap', capId: a.capId, capDesc: a.capDesc }) }
+      filas.push({ t: 'act', a })
+    }
+    const gStart = addDays(resumen.inicio, -1)
+    const gEnd = addDays(resumen.fin, 3)
+    const totalDias = Math.max(1, Math.round((gEnd - gStart) / 86400000))
+    const MX = 10, LBLW = 78
+    const tlX = MX + LBLW
+    const tlW = pw - MX - tlX
+    const GX = d => tlX + (((d - gStart) / 86400000) / totalDias) * tlW
+    const rowH = 4.6, topY = 26
+    const porPagina = Math.floor((ph - topY - 18) / rowH)
+
+    for (let off = 0; off < filas.length; off += porPagina) {
+      doc.addPage()
+      drawContinuationBand(doc, budget, T, `DIAGRAMA DE GANTT${filas.length > porPagina ? ` (${Math.floor(off / porPagina) + 1}/${Math.ceil(filas.length / porPagina)})` : ''}`)
+      const nFilas = Math.min(porPagina, filas.length - off)
+      const fondoH = nFilas * rowH
+
+      // Ticks de meses
+      doc.setFontSize(6.5); doc.setTextColor(130, 130, 130)
+      { const c = new Date(gStart); c.setDate(1)
+        if (c < gStart) c.setMonth(c.getMonth() + 1)
+        while (c <= gEnd) {
+          doc.setDrawColor(228, 232, 238); doc.setLineWidth(0.15)
+          doc.line(GX(c), topY - 4, GX(c), topY + fondoH)
+          doc.text(`${MESES_CORTOS[c.getMonth()]} ${String(c.getFullYear()).slice(2)}`, GX(c) + 0.8, topY - 5.5)
+          c.setMonth(c.getMonth() + 1)
+        } }
+      // Línea de HOY
+      const hoyD = new Date(); hoyD.setHours(0, 0, 0, 0)
+      if (hoyD >= gStart && hoyD <= gEnd) {
+        doc.setDrawColor(220, 38, 38); doc.setLineWidth(0.4)
+        doc.line(GX(hoyD), topY - 4, GX(hoyD), topY + fondoH)
+      }
+
+      let gy = topY
+      for (const r of filas.slice(off, off + porPagina)) {
+        if (r.t === 'cap') {
+          doc.setFillColor(238, 242, 247)
+          doc.rect(MX, gy - 3.2, pw - 2 * MX, rowH, 'F')
+          doc.setFontSize(7); doc.setFont(undefined, 'bold'); doc.setTextColor(30, 30, 30)
+          doc.text(`${r.capId} · ${r.capDesc}`.slice(0, 64), MX + 1, gy)
+          doc.setFont(undefined, 'normal')
+        } else {
+          const a = r.a, f = fechas[a.id]
+          const esCrit = criticas.has(a.id)
+          doc.setFontSize(6.5); doc.setTextColor(90, 90, 90)
+          doc.text(`${idToSeq[a.id]}  ${a.descripcion}`.slice(0, 52), MX + 1, gy)
+          const bx = GX(f.inicio)
+          const bw = Math.max(1.4, GX(f.fin) - bx)
+          if (esCrit) doc.setFillColor(220, 38, 38); else doc.setFillColor(T.mid[0], T.mid[1], T.mid[2])
+          doc.roundedRect(bx, gy - 2.6, bw, 3.4, 0.7, 0.7, 'F')
+          const av = pctReal(datos[a.id]?.avances)
+          if (av > 0) { doc.setFillColor(5, 150, 105); doc.roundedRect(bx, gy - 2.6, Math.max(1, bw * av / 100), 3.4, 0.7, 0.7, 'F') }
+        }
+        gy += rowH
+      }
+      // Leyenda
+      doc.setFontSize(6.5); doc.setTextColor(120, 120, 120)
+      doc.text('■ Programado   ■ Avance real (verde)   ■ Ruta crítica (rojo)   | Hoy (línea roja)', MX, topY + fondoH + 5)
+    }
+  }
+
   // ── Página: flujo de caja semanal ──
   doc.addPage()
   drawContinuationBand(doc, budget, T, 'FLUJO DE CAJA PROGRAMADO — SEMANAL')
   const fl = flujoDeCaja(acts, fechas, datos, pesos, 'semana')
+
+  // Gráfico de barras del flujo
+  let flujoTablaY = 20
+  if (fl.rows.length) {
+    const chX = 16, chW = pw - 32, chY = 24, chH = 38
+    const maxM = Math.max(...fl.rows.map(r => r.monto), 1)
+    const bw = chW / fl.rows.length
+    doc.setDrawColor(210, 214, 222); doc.setLineWidth(0.2)
+    doc.line(chX, chY + chH, chX + chW, chY + chH)
+    fl.rows.forEach((r, i) => {
+      const h = Math.max(0.8, (r.monto / maxM) * chH)
+      doc.setFillColor(T.mid[0], T.mid[1], T.mid[2])
+      doc.rect(chX + i * bw + bw * 0.18, chY + chH - h, bw * 0.64, h, 'F')
+    })
+    doc.setFontSize(6.5); doc.setTextColor(120, 120, 120)
+    doc.text(fl.rows[0].label, chX, chY + chH + 4)
+    doc.text(fl.rows[fl.rows.length - 1].label, chX + chW, chY + chH + 4, { align: 'right' })
+    doc.text(`máx: ${money(maxM)}`, chX + chW, chY - 1, { align: 'right' })
+    flujoTablaY = chY + chH + 9
+  }
+
   doc.autoTable({
-    startY: 20,
+    startY: flujoTablaY,
     head: [['Semana del', 'Egreso del periodo', 'Acumulado', '% Acum.']],
     body: fl.rows.map(r => [
       r.label,

@@ -79,6 +79,63 @@ export const calcularFechas = (acts, fechaInicio, datosActividades = {}) => {
   return map
 }
 
+// ── Ruta crítica (CPM) ──
+// Pase hacia atrás: holgura = LS − ES. Actividades con holgura ~0 son críticas
+// (cualquier atraso en ellas atrasa el fin del proyecto).
+const DAY = 86400000
+export const rutaCritica = (acts, fechas, datos = {}) => {
+  const ids = new Set(acts.map(a => a.id))
+  // Mapa de sucesores con su tipo de vínculo
+  const succ = {}
+  for (const a of acts) {
+    for (const pr of (datos[a.id]?.predecesoras || [])) {
+      const p = normPred(pr)
+      if (!p || !ids.has(p.id) || p.id === a.id) continue
+      ;(succ[p.id] = succ[p.id] || []).push({ id: a.id, tipo: p.tipo, lag: p.lag })
+    }
+  }
+  let finProyecto = null
+  for (const a of acts) { const f = fechas[a.id]; if (f && (!finProyecto || f.fin > finProyecto)) finProyecto = f.fin }
+  if (!finProyecto) return new Set()
+
+  const memo = {}
+  const visitando = new Set()
+  const LS = id => {                       // Latest Start en ms
+    if (memo[id] !== undefined) return memo[id]
+    const f = fechas[id]
+    if (!f) return Infinity
+    if (visitando.has(id)) return f.inicio.getTime()   // ciclo: neutral
+    visitando.add(id)
+    const durMs = f.dur * DAY
+    let ls = Infinity
+    for (const s of (succ[id] || [])) {
+      const sf = fechas[s.id]; if (!sf) continue
+      const lagMs = s.lag * DAY
+      const sLS = LS(s.id)
+      const sLF = sLS + sf.dur * DAY
+      let cand
+      switch (s.tipo) {
+        case 'CC': cand = sLS - lagMs; break              // LS ≤ LS_suc − lag
+        case 'FF': cand = sLF - lagMs - durMs; break      // LF ≤ LF_suc − lag
+        case 'CF': cand = sLF - lagMs; break              // LS ≤ LF_suc − lag
+        default:   cand = sLS - lagMs - durMs             // FC: LF ≤ LS_suc − lag
+      }
+      if (cand < ls) ls = cand
+    }
+    if (ls === Infinity) ls = finProyecto.getTime() - durMs   // sin sucesores: pega al fin
+    visitando.delete(id)
+    return (memo[id] = ls)
+  }
+
+  const criticas = new Set()
+  for (const a of acts) {
+    const f = fechas[a.id]
+    if (!f || !datos[a.id]) continue
+    if (LS(a.id) - f.inicio.getTime() < DAY / 2) criticas.add(a.id)   // holgura < medio día
+  }
+  return criticas
+}
+
 // Resumen global: inicio, fin y duración total del proyecto según el cronograma
 export const resumenCronograma = (acts, fechas) => {
   let inicio = null, fin = null

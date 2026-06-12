@@ -6,7 +6,7 @@ import { useState, useEffect, useMemo, useRef, Fragment } from 'react'
 import { supabase } from '../lib/supabase'
 import { puedeHacer } from '../lib/permissions'
 import { calcItem, makeMoneyFmt, moneyK } from '../lib/calc'
-import { flattenActividades, calcularFechas, resumenCronograma, parsePredecesoras, predsATexto, fmtFecha, hoyISO, addDays, pctPlanificado, pctReal, avanceGlobal, flujoDeCaja, curvaS, MESES_CORTOS as MESES_LIB } from '../lib/cronograma'
+import { flattenActividades, calcularFechas, resumenCronograma, parsePredecesoras, predsATexto, normPred, rutaCritica, fmtFecha, hoyISO, addDays, pctPlanificado, pctReal, avanceGlobal, flujoDeCaja, curvaS, MESES_CORTOS as MESES_LIB } from '../lib/cronograma'
 import { exportPDFCronograma, exportExcelCronograma } from '../lib/exportCronograma'
 import {
   CalendarRange, BarChart2, Coins, Activity, TrendingUp, LineChart,
@@ -26,8 +26,10 @@ const DAY_MS = 86400000
 const MESES_CORTOS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 
 function GanttChart({ acts, fechas, datos, idToSeq = {} }) {
-  const [pxDia, setPxDia] = useState(8)   // 24 = día, 8 = semana, 2.5 = mes
-  const [lblW, setLblW] = useState(250)   // ancho de la columna de nombres (arrastrable)
+  const [pxDia, setPxDia] = useState(8)        // 24 = día, 8 = semana, 2.5 = mes
+  const [lblW, setLblW] = useState(250)        // ancho de la columna de nombres (arrastrable)
+  const [verCritica, setVerCritica] = useState(false)
+  const [verLineas, setVerLineas] = useState(true)
 
   // Arrastre del divisor entre nombres y barras
   const startDrag = e => {
@@ -38,6 +40,8 @@ function GanttChart({ acts, fechas, datos, idToSeq = {} }) {
     window.addEventListener('mousemove', move)
     window.addEventListener('mouseup', up)
   }
+
+  const criticas = useMemo(() => rutaCritica(acts, fechas, datos), [acts, fechas, datos])
 
   const programadas = acts.filter(a => datos[a.id] && fechas[a.id])
   let min = null, max = null
@@ -53,7 +57,9 @@ function GanttChart({ acts, fechas, datos, idToSeq = {} }) {
   const dias  = Math.round((end - start) / DAY_MS)
   const X     = d => ((d - start) / DAY_MS) * pxDia
   const W     = dias * pxDia
-  const LBL   = lblW  // ancho de la columna fija de etiquetas (estado arrastrable)
+  const LBL   = lblW
+  const HDR   = 26
+  const ROW   = 30
 
   // Encabezado de meses
   const meses = []
@@ -61,46 +67,79 @@ function GanttChart({ acts, fechas, datos, idToSeq = {} }) {
     while (c < end) {
       const finMes = new Date(c.getFullYear(), c.getMonth() + 1, 1)
       const hasta = finMes < end ? finMes : end
-      meses.push({ label: `${MESES_CORTOS[c.getMonth()]} ${String(c.getFullYear()).slice(2)}`, left: X(c), width: X(hasta) - X(c) })
+      meses.push({ label: `${MESES_LIB[c.getMonth()]} ${String(c.getFullYear()).slice(2)}`, left: X(c), width: X(hasta) - X(c) })
       c = finMes
     } }
 
   // Ticks semanales (lunes)
   const semanas = []
   { let c = new Date(start)
-    c.setDate(c.getDate() + ((8 - c.getDay()) % 7))   // próximo lunes
-    while (c < end) { semanas.push({ left: X(c), dia: c.getDate() }); c = addDays(c, 7) } }
+    c.setDate(c.getDate() + ((8 - c.getDay()) % 7))
+    while (c < end) { semanas.push({ left: X(c) }); c = addDays(c, 7) } }
 
   const hoy = new Date(); hoy.setHours(0, 0, 0, 0)
   const hoyX = (hoy >= start && hoy <= end) ? X(hoy) : null
 
-  // Agrupar por capítulo con su rango global
-  const caps = []
-  for (const a of programadas) {
-    let g = caps.find(c => c.capId === a.capId)
-    if (!g) { g = { capId: a.capId, capDesc: a.capDesc, acts: [], min: null, max: null }; caps.push(g) }
-    const f = fechas[a.id]
-    g.acts.push(a)
-    if (!g.min || f.inicio < g.min) g.min = f.inicio
-    if (!g.max || f.fin > g.max) g.max = f.fin
+  // Filas planas (banda de capítulo + actividades) para posicionar conexiones
+  const flat = []
+  { let lastCap = null
+    for (const a of programadas) {
+      if (a.capId !== lastCap) {
+        lastCap = a.capId
+        const delCap = programadas.filter(x => x.capId === a.capId)
+        let gMin = null, gMax = null
+        for (const x of delCap) { const f = fechas[x.id]; if (!gMin || f.inicio < gMin) gMin = f.inicio; if (!gMax || f.fin > gMax) gMax = f.fin }
+        flat.push({ t: 'cap', capId: a.capId, capDesc: a.capDesc, min: gMin, max: gMax })
+      }
+      flat.push({ t: 'act', a })
+    } }
+  const idxAct = {}
+  flat.forEach((r, i) => { if (r.t === 'act') idxAct[r.a.id] = i })
+  const totalH = flat.length * ROW
+  const yCentro = id => idxAct[id] * ROW + ROW / 2
+
+  // Conexiones predecesora → sucesora (con su tipo de vínculo)
+  const lineas = []
+  if (verLineas) {
+    for (const a of programadas) {
+      for (const pr of (datos[a.id]?.predecesoras || [])) {
+        const p = normPred(pr)
+        if (!p || idxAct[p.id] === undefined) continue
+        const fp = fechas[p.id], fa = fechas[a.id]
+        const x1 = (p.tipo === 'CC' || p.tipo === 'CF') ? X(fp.inicio) : X(fp.fin)
+        const x2 = (p.tipo === 'FF') ? X(fa.fin) : X(fa.inicio)
+        const critica = criticas.has(p.id) && criticas.has(a.id)
+        lineas.push({ x1, y1: yCentro(p.id), x2, y2: yCentro(a.id), critica, key: `${p.id}>${a.id}` })
+      }
+    }
   }
 
-  const ROW = 30
   const filaBase = { display: 'flex', alignItems: 'center', height: ROW, borderBottom: '1px solid var(--c-line-2)' }
   const lblBase  = { position: 'sticky', left: 0, zIndex: 2, width: LBL, minWidth: LBL, padding: '0 12px', fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', borderRight: '1px solid var(--c-line)', height: '100%', display: 'flex', alignItems: 'center' }
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4, padding: '10px 14px 0' }}>
-        {[['Día', 24], ['Semana', 8], ['Mes', 2.5]].map(([lbl, v]) => (
-          <button key={lbl} className={`btn xs ${pxDia === v ? 'primary' : 'ghost'}`} onClick={() => setPxDia(v)}>{lbl}</button>
-        ))}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '10px 14px 0', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button className={`btn xs ${verCritica ? 'primary' : 'ghost'}`} onClick={() => setVerCritica(v => !v)}
+            title="Resalta las actividades sin holgura: si se atrasan, se atrasa el proyecto">
+            Ruta crítica
+          </button>
+          <button className={`btn xs ${verLineas ? 'primary' : 'ghost'}`} onClick={() => setVerLineas(v => !v)}>
+            Conexiones
+          </button>
+        </div>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {[['Día', 24], ['Semana', 8], ['Mes', 2.5]].map(([lbl, v]) => (
+            <button key={lbl} className={`btn xs ${pxDia === v ? 'primary' : 'ghost'}`} onClick={() => setPxDia(v)}>{lbl}</button>
+          ))}
+        </div>
       </div>
       <div style={{ overflowX: 'auto', margin: '10px 0 4px' }}>
-        <div style={{ width: LBL + W, minWidth: '100%' }}>
-          {/* Encabezado: meses + semanas */}
-          <div style={{ ...filaBase, height: 26, borderBottom: '1px solid var(--c-line)' }}>
-            <div style={{ ...lblBase, background: 'var(--c-surface)', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--c-text-3)', position: 'sticky', justifyContent: 'space-between' }}>
+        <div style={{ width: LBL + W, minWidth: '100%', position: 'relative' }}>
+          {/* Encabezado: meses */}
+          <div style={{ ...filaBase, height: HDR, borderBottom: '1px solid var(--c-line)' }}>
+            <div style={{ ...lblBase, background: 'var(--c-surface)', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--c-text-3)', justifyContent: 'space-between' }}>
               <span>Actividad</span>
               <span onMouseDown={startDrag} title="Arrastra para ajustar el ancho"
                 style={{ cursor: 'col-resize', padding: '0 4px', marginRight: -10, color: 'var(--c-text-3)', fontSize: 12, userSelect: 'none' }}>⋮⋮</span>
@@ -115,51 +154,71 @@ function GanttChart({ acts, fechas, datos, idToSeq = {} }) {
           </div>
 
           {/* Filas */}
-          {caps.map(g => (
-            <Fragment key={g.capId || 'sin-cap'}>
-              {/* Banda del capítulo con barra resumen */}
-              <div style={{ ...filaBase, background: 'var(--c-bg)' }}>
-                <div style={{ ...lblBase, background: 'var(--c-bg)', fontWeight: 700, color: 'var(--c-text)' }}>
-                  {g.capId} · {g.capDesc}
+          {flat.map((r, i) => r.t === 'cap' ? (
+            <div key={`cap-${r.capId || i}`} style={{ ...filaBase, background: 'var(--c-bg)' }}>
+              <div style={{ ...lblBase, background: 'var(--c-bg)', fontWeight: 700, color: 'var(--c-text)' }}>
+                {r.capId} · {r.capDesc}
+              </div>
+              <div style={{ position: 'relative', width: W, height: '100%' }}>
+                {semanas.map((s, j) => pxDia >= 4 && <div key={j} style={{ position: 'absolute', left: s.left, top: 0, bottom: 0, borderLeft: '1px dashed var(--c-line-2)' }} />)}
+                <div title={`${fmtFecha(r.min)} → ${fmtFecha(addDays(r.max, -1))}`}
+                  style={{ position: 'absolute', left: X(r.min), width: Math.max(3, X(r.max) - X(r.min)), top: 11, height: 7, borderRadius: 4, background: 'var(--c-ink)' }} />
+                {hoyX != null && <div style={{ position: 'absolute', left: hoyX, top: 0, bottom: 0, borderLeft: '2px solid var(--c-danger)', opacity: 0.55 }} />}
+              </div>
+            </div>
+          ) : (() => {
+            const a = r.a
+            const f = fechas[a.id]
+            const w = Math.max(3, X(f.fin) - X(f.inicio))
+            const avance = pctReal(datos[a.id]?.avances)
+            const esCritica = verCritica && criticas.has(a.id)
+            return (
+              <div key={a.id} style={{ ...filaBase, opacity: verCritica && !esCritica ? 0.45 : 1 }}>
+                <div style={{ ...lblBase, background: 'var(--c-surface)', color: 'var(--c-text-2)' }} title={`#${idToSeq[a.id] || ''} · ${a.id} — ${a.descripcion}${criticas.has(a.id) ? ' · RUTA CRÍTICA' : ''}`}>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, color: 'var(--c-text-3)', marginRight: 7, flexShrink: 0, minWidth: 18, textAlign: 'right' }}>{idToSeq[a.id]}</span>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.descripcion}</span>
                 </div>
                 <div style={{ position: 'relative', width: W, height: '100%' }}>
-                  {semanas.map((s, i) => pxDia >= 4 && <div key={i} style={{ position: 'absolute', left: s.left, top: 0, bottom: 0, borderLeft: '1px dashed var(--c-line-2)' }} />)}
-                  <div title={`${fmtFecha(g.min)} → ${fmtFecha(addDays(g.max, -1))}`}
-                    style={{ position: 'absolute', left: X(g.min), width: Math.max(3, X(g.max) - X(g.min)), top: 11, height: 7, borderRadius: 4, background: 'var(--c-ink)' }} />
+                  {semanas.map((s, j) => pxDia >= 4 && <div key={j} style={{ position: 'absolute', left: s.left, top: 0, bottom: 0, borderLeft: '1px dashed var(--c-line-2)' }} />)}
+                  <div title={`${a.id} — ${a.descripcion}\n${fmtFecha(f.inicio)} → ${fmtFecha(addDays(f.fin, -1))} · ${f.dur} días · avance ${avance}%${criticas.has(a.id) ? ' · RUTA CRÍTICA' : ''}`}
+                    style={{ position: 'absolute', left: X(f.inicio), width: w, top: 7, height: 16, borderRadius: 5, background: esCritica ? 'var(--c-danger)' : 'var(--c-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                    {avance > 0 && <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${avance}%`, background: 'var(--c-success)', opacity: 0.85 }} />}
+                    {w > 44 && <span style={{ position: 'relative', fontSize: 9.5, color: '#fff', fontWeight: 700 }}>{avance > 0 ? `${avance}%` : `${f.dur}d`}</span>}
+                  </div>
                   {hoyX != null && <div style={{ position: 'absolute', left: hoyX, top: 0, bottom: 0, borderLeft: '2px solid var(--c-danger)', opacity: 0.55 }} />}
                 </div>
               </div>
-              {/* Actividades */}
-              {g.acts.map(a => {
-                const f = fechas[a.id]
-                const w = Math.max(3, X(f.fin) - X(f.inicio))
-                const avance = pctReal(datos[a.id]?.avances)
-                return (
-                  <div key={a.id} style={filaBase}>
-                    <div style={{ ...lblBase, background: 'var(--c-surface)', color: 'var(--c-text-2)' }} title={`#${idToSeq[a.id] || ''} · ${a.id} — ${a.descripcion}`}>
-                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, color: 'var(--c-text-3)', marginRight: 7, flexShrink: 0, minWidth: 18, textAlign: 'right' }}>{idToSeq[a.id]}</span>
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.descripcion}</span>
-                    </div>
-                    <div style={{ position: 'relative', width: W, height: '100%' }}>
-                      {semanas.map((s, i) => pxDia >= 4 && <div key={i} style={{ position: 'absolute', left: s.left, top: 0, bottom: 0, borderLeft: '1px dashed var(--c-line-2)' }} />)}
-                      <div title={`${a.id} — ${a.descripcion}\n${fmtFecha(f.inicio)} → ${fmtFecha(addDays(f.fin, -1))} · ${f.dur} días · avance ${avance}%`}
-                        style={{ position: 'absolute', left: X(f.inicio), width: w, top: 7, height: 16, borderRadius: 5, background: 'var(--c-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                        {/* Relleno de avance real registrado */}
-                        {avance > 0 && <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${avance}%`, background: 'var(--c-success)', opacity: 0.85 }} />}
-                        {w > 44 && <span style={{ position: 'relative', fontSize: 9.5, color: '#fff', fontWeight: 700 }}>{avance > 0 ? `${avance}%` : `${f.dur}d`}</span>}
-                      </div>
-                      {hoyX != null && <div style={{ position: 'absolute', left: hoyX, top: 0, bottom: 0, borderLeft: '2px solid var(--c-danger)', opacity: 0.55 }} />}
-                    </div>
-                  </div>
-                )
+            )
+          })())}
+
+          {/* Conexiones predecesora → sucesora */}
+          {verLineas && lineas.length > 0 && (
+            <svg width={W} height={totalH} style={{ position: 'absolute', left: LBL, top: HDR, pointerEvents: 'none', zIndex: 1, overflow: 'visible' }}>
+              <defs>
+                <marker id="flecha" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M0,0 L8,4 L0,8 z" fill="#64748b" />
+                </marker>
+                <marker id="flechaCrit" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M0,0 L8,4 L0,8 z" fill="var(--c-danger)" />
+                </marker>
+              </defs>
+              {lineas.map(l => {
+                const crit = verCritica && l.critica
+                const xm = l.x1 + 6
+                const yDir = l.y2 > l.y1 ? 1 : -1
+                const path = `M${l.x1},${l.y1} L${xm},${l.y1} L${xm},${l.y2 - yDir * 0} L${l.x2 - 4},${l.y2}`
+                return <path key={l.key} d={path} fill="none"
+                  stroke={crit ? 'var(--c-danger)' : '#64748b'} strokeWidth={crit ? 1.8 : 1.2}
+                  opacity={crit ? 0.9 : 0.55} markerEnd={`url(#${crit ? 'flechaCrit' : 'flecha'})`} />
               })}
-            </Fragment>
-          ))}
+            </svg>
+          )}
         </div>
       </div>
-      <div style={{ display: 'flex', gap: 16, padding: '8px 14px 12px', fontSize: 11, color: 'var(--c-text-3)', alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 16, padding: '8px 14px 12px', fontSize: 11, color: 'var(--c-text-3)', alignItems: 'center', flexWrap: 'wrap' }}>
         <span><span style={{ display: 'inline-block', width: 14, height: 8, borderRadius: 3, background: 'var(--c-primary)', marginRight: 5, verticalAlign: 'middle' }}></span>Programado</span>
         <span><span style={{ display: 'inline-block', width: 14, height: 8, borderRadius: 3, background: 'var(--c-success)', marginRight: 5, verticalAlign: 'middle' }}></span>Avance real</span>
+        {verCritica && <span><span style={{ display: 'inline-block', width: 14, height: 8, borderRadius: 3, background: 'var(--c-danger)', marginRight: 5, verticalAlign: 'middle' }}></span>Ruta crítica ({criticas.size})</span>}
         <span><span style={{ display: 'inline-block', width: 14, height: 5, borderRadius: 3, background: 'var(--c-ink)', marginRight: 5, verticalAlign: 'middle' }}></span>Capítulo</span>
         <span><span style={{ display: 'inline-block', width: 2, height: 12, background: 'var(--c-danger)', marginRight: 5, verticalAlign: 'middle' }}></span>Hoy</span>
       </div>
@@ -247,6 +306,7 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
   const [vistaGantt, setVistaGantt] = useState('gantt')   // 'gantt' visual | 'editar' programación
   const [corte, setCorte] = useState(hoyISO())            // fecha de corte del avance físico
   const [modoFlujo, setModoFlujo] = useState('semana')    // 'semana' | 'mes'
+  const [capsFlujo, setCapsFlujo] = useState([])          // capítulos filtrados ([] = todos)
   const [saving, setSaving] = useState(false)
   const loadedIdRef = useRef(null)
   const pendingRef = useRef(null)
@@ -312,7 +372,17 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
   }, [budget?.items, budget?.catalogos, params])
 
   const global = useMemo(() => avanceGlobal(acts, fechas, datos, pesos, corte), [acts, fechas, datos, pesos, corte])
-  const flujo = useMemo(() => flujoDeCaja(acts, fechas, datos, pesos, modoFlujo), [acts, fechas, datos, pesos, modoFlujo])
+  // Capítulos del proyecto (para el filtro del flujo de caja)
+  const capitulos = useMemo(() => {
+    const m = new Map()
+    acts.forEach(a => { if (!m.has(a.capId)) m.set(a.capId, a.capDesc) })
+    return [...m.entries()].map(([capId, capDesc]) => ({ capId, capDesc }))
+  }, [acts])
+  const actsFlujo = useMemo(
+    () => capsFlujo.length ? acts.filter(a => capsFlujo.includes(a.capId)) : acts,
+    [acts, capsFlujo],
+  )
+  const flujo = useMemo(() => flujoDeCaja(actsFlujo, fechas, datos, pesos, modoFlujo), [actsFlujo, fechas, datos, pesos, modoFlujo])
   const curva = useMemo(() => curvaS(acts, fechas, datos, pesos, resumen), [acts, fechas, datos, pesos, resumen])
   const money = makeMoneyFmt(budget?.moneda)
 
@@ -518,7 +588,16 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
                               defaultValue={predTexto}
                               placeholder="ej: 3, 5CC+2"
                               title="Usa el # de fila. Tipos: 3 = FC (fin→comienzo) · 3CC · 3FF · 3CF · desfase: 3CC+2, 4FC-1"
-                              onBlur={e => updActividad(a.id, { predecesoras: parsePredecesoras(e.target.value, idsValidos, a.id, seqToId) })}
+                              onBlur={e => {
+                                // Validar auto-dependencia: una actividad no puede ser su propia predecesora
+                                const propia = e.target.value.split(/[,;]+/).map(s => s.trim()).filter(Boolean).some(t => {
+                                  const m = t.match(/^([\w.\-]+?)(fc|cc|ff|cf)?([+-]\d+)?$/i)
+                                  if (!m) return false
+                                  return m[1] === a.id || (/^\d+$/.test(m[1]) && parseInt(m[1], 10) === idToSeq[a.id])
+                                })
+                                if (propia) alert(`⚠️ La actividad #${idToSeq[a.id]} (${a.id}) no puede depender de sí misma.\n\nSe ignoró esa referencia.`)
+                                updActividad(a.id, { predecesoras: parsePredecesoras(e.target.value, idsValidos, a.id, seqToId) })
+                              }}
                               style={{ width: 150, fontFamily: 'var(--font-mono)', fontSize: 11 }} />
                             {f?.circular && <span title="Referencia circular — se ancló al inicio del proyecto" style={{ color: 'var(--c-danger)', marginLeft: 4 }}>⚠</span>}
                           </td>
@@ -659,6 +738,21 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
                     <button className={`btn xs ${modoFlujo === 'semana' ? 'primary' : 'ghost'}`} onClick={() => setModoFlujo('semana')}>Semanal</button>
                     <button className={`btn xs ${modoFlujo === 'mes' ? 'primary' : 'ghost'}`} onClick={() => setModoFlujo('mes')}>Mensual</button>
                   </div>
+                </div>
+
+                {/* Filtro por capítulos */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', padding: '10px 16px', borderBottom: '1px solid var(--c-line-2)' }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--c-text-3)', marginRight: 4 }}>Capítulos:</span>
+                  <button className={`btn xs ${capsFlujo.length === 0 ? 'primary' : 'ghost'}`} onClick={() => setCapsFlujo([])}>Todos</button>
+                  {capitulos.map(c => (
+                    <button key={c.capId}
+                      className={`btn xs ${capsFlujo.includes(c.capId) ? 'primary' : 'ghost'}`}
+                      title={c.capDesc}
+                      onClick={() => setCapsFlujo(prev => prev.includes(c.capId) ? prev.filter(x => x !== c.capId) : [...prev, c.capId])}>
+                      {c.capId} · {(c.capDesc || '').length > 22 ? (c.capDesc || '').slice(0, 22) + '…' : c.capDesc}
+                    </button>
+                  ))}
+                  {capsFlujo.length > 0 && <span style={{ fontSize: 11, color: 'var(--c-text-3)' }}>({capsFlujo.length} de {capitulos.length} capítulos)</span>}
                 </div>
 
                 {/* Gráfico de barras */}
