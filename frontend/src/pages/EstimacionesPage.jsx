@@ -48,10 +48,28 @@ export default function EstimacionesPage({ budget, projectRole, user, params }) 
     return m
   }, [budget?.items, budget?.catalogos, params])
 
-  const totalContrato = useMemo(
+  const contratoBase = useMemo(
     () => round2(acts.reduce((s, a) => s + (pus[a.id] || 0) * (+a.cantidad || 0), 0)),
     [acts, pus],
   )
+  // Órdenes de cambio aprobadas ajustan el monto del contrato
+  const [ajusteOC, setAjusteOC] = useState(0)
+  useEffect(() => {
+    let cancel = false
+    const cargarOC = async () => {
+      if (!budget?.id) { setAjusteOC(0); return }
+      const { data } = await supabase.from('ordenes_cambio').select('tipo, lineas_json').eq('presupuesto_id', budget.id).eq('estado', 'aprobada')
+      if (cancel) return
+      const total = (data || []).reduce((s, oc) => {
+        const m = (oc.lineas_json || []).reduce((x, l) => x + (+l.cantidad || 0) * (+l.pu || 0), 0)
+        return s + (oc.tipo === 'deductiva' ? -m : m)
+      }, 0)
+      setAjusteOC(round2(total))
+    }
+    cargarOC()
+    return () => { cancel = true }
+  }, [budget?.id])
+  const totalContrato = round2(contratoBase + ajusteOC)
 
   // ── Carga ──
   useEffect(() => {
@@ -388,6 +406,7 @@ export default function EstimacionesPage({ budget, projectRole, user, params }) 
           <div className="kpi">
             <div className="kpi-label"><DollarSign size={12} className="ico" /> Monto del contrato</div>
             <div className="kpi-val" style={{ fontSize: 17 }}>{money(totalContrato)}</div>
+            {ajusteOC !== 0 && <div className="kpi-foot">incluye {ajusteOC > 0 ? '+' : '−'}{money(Math.abs(ajusteOC))} de órdenes de cambio aprobadas</div>}
           </div>
           <div className="kpi highlight">
             <div className="kpi-label"><Receipt size={12} className="ico" /> Acumulado estimado</div>
