@@ -5,8 +5,8 @@
 import { useState, useEffect, useMemo, useRef, Fragment } from 'react'
 import { supabase } from '../lib/supabase'
 import { puedeHacer } from '../lib/permissions'
-import { calcItem } from '../lib/calc'
-import { flattenActividades, calcularFechas, resumenCronograma, parsePredecesoras, fmtFecha, hoyISO, addDays, pctPlanificado, pctReal, avanceGlobal } from '../lib/cronograma'
+import { calcItem, makeMoneyFmt, moneyK } from '../lib/calc'
+import { flattenActividades, calcularFechas, resumenCronograma, parsePredecesoras, fmtFecha, hoyISO, addDays, pctPlanificado, pctReal, avanceGlobal, flujoDeCaja } from '../lib/cronograma'
 import {
   CalendarRange, BarChart2, Coins, Activity, TrendingUp, LineChart,
   Plus, FileText, AlertTriangle,
@@ -168,6 +168,7 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
   const [tab, setTab] = useState('gantt')
   const [vistaGantt, setVistaGantt] = useState('gantt')   // 'gantt' visual | 'editar' programación
   const [corte, setCorte] = useState(hoyISO())            // fecha de corte del avance físico
+  const [modoFlujo, setModoFlujo] = useState('semana')    // 'semana' | 'mes'
   const [saving, setSaving] = useState(false)
   const loadedIdRef = useRef(null)
   const pendingRef = useRef(null)
@@ -230,6 +231,8 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
   }, [budget?.items, budget?.catalogos, params])
 
   const global = useMemo(() => avanceGlobal(acts, fechas, datos, pesos, corte), [acts, fechas, datos, pesos, corte])
+  const flujo = useMemo(() => flujoDeCaja(acts, fechas, datos, pesos, modoFlujo), [acts, fechas, datos, pesos, modoFlujo])
+  const money = makeMoneyFmt(budget?.moneda)
 
   // Registrar % real de una actividad en la fecha de corte activa
   const registrarAvance = (id, pct) => {
@@ -529,7 +532,94 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
           </Fragment>
         )}
 
-        {tab !== 'gantt' && tab !== 'fisico' && (
+        {tab === 'flujo' && (() => {
+          const maxMonto = Math.max(...flujo.rows.map(r => r.monto), 1)
+          const pico = flujo.rows.reduce((p, r) => (r.monto > (p?.monto || 0) ? r : p), null)
+          return (
+            <Fragment>
+              <div className="kpi-row" style={{ marginBottom: 14 }}>
+                <div className="kpi highlight">
+                  <div className="kpi-label"><Coins size={12} className="ico" /> Costo directo programado</div>
+                  <div className="kpi-val" style={{ fontSize: 18 }}>{money(flujo.total)}</div>
+                  <div className="kpi-foot">distribuido en {flujo.rows.length} {modoFlujo === 'mes' ? 'meses' : 'semanas'}</div>
+                </div>
+                <div className="kpi">
+                  <div className="kpi-label"><TrendingUp size={12} className="ico" /> Periodo pico</div>
+                  <div className="kpi-val" style={{ fontSize: 18 }}>{pico ? money(pico.monto) : '—'}</div>
+                  <div className="kpi-foot">{pico ? (modoFlujo === 'mes' ? pico.label : `semana del ${pico.label}`) : ''}</div>
+                </div>
+                <div className="kpi">
+                  <div className="kpi-label"><Activity size={12} className="ico" /> Promedio por periodo</div>
+                  <div className="kpi-val" style={{ fontSize: 18 }}>{flujo.rows.length ? money(flujo.total / flujo.rows.length) : '—'}</div>
+                  <div className="kpi-foot">para planificar desembolsos</div>
+                </div>
+              </div>
+
+              <div className="card" style={{ padding: 0 }}>
+                <div className="card-header">
+                  <div className="card-title"><Coins size={15} /> Flujo de caja programado</div>
+                  <div style={{ display: 'flex', gap: 2, background: 'var(--c-bg)', padding: 3, borderRadius: 8 }}>
+                    <button className={`btn xs ${modoFlujo === 'semana' ? 'primary' : 'ghost'}`} onClick={() => setModoFlujo('semana')}>Semanal</button>
+                    <button className={`btn xs ${modoFlujo === 'mes' ? 'primary' : 'ghost'}`} onClick={() => setModoFlujo('mes')}>Mensual</button>
+                  </div>
+                </div>
+
+                {/* Gráfico de barras */}
+                <div style={{ padding: '20px 20px 8px', overflowX: 'auto' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 180, minWidth: flujo.rows.length * 34 }}>
+                    {flujo.rows.map((r, i) => (
+                      <div key={i} title={`${modoFlujo === 'mes' ? r.label : 'Semana del ' + r.label}\n${money(r.monto)} · acumulado ${money(r.acumulado)} (${r.pctAcum}%)`}
+                        style={{ flex: 1, minWidth: 28, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, height: '100%', justifyContent: 'flex-end' }}>
+                        <span style={{ fontSize: 9, color: 'var(--c-text-3)', fontFamily: 'var(--font-mono)' }}>{moneyK(r.monto, budget?.moneda)}</span>
+                        <div style={{ width: '100%', height: `${Math.max(3, (r.monto / maxMonto) * 130)}px`, background: 'var(--c-primary)', borderRadius: '4px 4px 0 0', opacity: 0.9 }} />
+                        <span style={{ fontSize: 9, color: 'var(--c-text-3)', whiteSpace: 'nowrap' }}>{r.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Tabla */}
+                <table className="bt">
+                  <thead><tr>
+                    <th>{modoFlujo === 'mes' ? 'Mes' : 'Semana del'}</th>
+                    <th className="num" style={{ width: 150 }}>Egreso del periodo</th>
+                    <th className="num" style={{ width: 150 }}>Acumulado</th>
+                    <th style={{ width: 180 }}>% Acumulado</th>
+                  </tr></thead>
+                  <tbody>
+                    {flujo.rows.map((r, i) => (
+                      <tr key={i}>
+                        <td style={{ fontWeight: 600 }}>{r.label}</td>
+                        <td className="num">{money(r.monto)}</td>
+                        <td className="num" style={{ fontWeight: 700 }}>{money(r.acumulado)}</td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ flex: 1, height: 8, background: 'var(--c-bg)', borderRadius: 4, overflow: 'hidden', border: '1px solid var(--c-line-2)' }}>
+                              <div style={{ width: `${r.pctAcum}%`, height: '100%', background: 'var(--c-accent)' }} />
+                            </div>
+                            <span style={{ fontSize: 11, color: 'var(--c-text-3)', width: 34, textAlign: 'right' }}>{r.pctAcum}%</span>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td style={{ fontWeight: 800, background: 'var(--c-ink)', color: '#fff' }}>TOTAL</td>
+                      <td className="num" style={{ fontWeight: 800, background: 'var(--c-ink)', color: 'var(--c-accent)' }}>{money(flujo.total)}</td>
+                      <td colSpan={2} style={{ background: 'var(--c-ink)' }}></td>
+                    </tr>
+                  </tfoot>
+                </table>
+                <div style={{ padding: '10px 16px', fontSize: 11, color: 'var(--c-text-3)' }}>
+                  Basado en el costo directo de cada actividad distribuido uniformemente en su duración programada.
+                </div>
+              </div>
+            </Fragment>
+          )
+        })()}
+
+        {tab !== 'gantt' && tab !== 'fisico' && tab !== 'flujo' && (
           <div className="card" style={{ padding: 48, textAlign: 'center', color: 'var(--c-text-3)' }}>
             <div style={{ fontSize: 28, marginBottom: 10 }}>🚧</div>
             <div style={{ fontWeight: 700, color: 'var(--c-text-2)', marginBottom: 4 }}>

@@ -81,6 +81,45 @@ export const parsePredecesoras = (texto, idsValidos, propioId) =>
     .map(s => s.trim())
     .filter(s => s && s !== propioId && idsValidos.has(s))
 
+export const MESES_CORTOS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+
+// ── Flujo de caja (módulo 4) ──
+// Reparte el costo de cada actividad uniformemente en sus días programados
+// y agrega por periodo (semana que inicia lunes, o mes calendario).
+const lunesDe = d => {
+  const m = new Date(d); m.setHours(0, 0, 0, 0)
+  m.setDate(m.getDate() - ((m.getDay() + 6) % 7))
+  return m
+}
+
+export const flujoDeCaja = (acts, fechas, datos, pesos, modo = 'semana') => {
+  const buckets = new Map()
+  for (const a of acts) {
+    const f = fechas[a.id]
+    if (!f || !datos[a.id]) continue
+    const costo = pesos[a.id] || 0
+    if (!costo || !f.dur) continue
+    const porDia = costo / f.dur
+    for (let i = 0; i < f.dur; i++) {
+      const d = addDays(f.inicio, i)
+      const ini = modo === 'mes' ? new Date(d.getFullYear(), d.getMonth(), 1) : lunesDe(d)
+      const key = ini.getTime()
+      buckets.set(key, (buckets.get(key) || 0) + porDia)
+    }
+  }
+  const rows = [...buckets.entries()].sort((x, y) => x[0] - y[0]).map(([t, monto]) => {
+    const ini = new Date(t)
+    const label = modo === 'mes'
+      ? `${MESES_CORTOS[ini.getMonth()]} ${String(ini.getFullYear()).slice(2)}`
+      : `${String(ini.getDate()).padStart(2, '0')} ${MESES_CORTOS[ini.getMonth()]}`
+    return { inicio: ini, label, monto }
+  })
+  let acum = 0
+  const total = rows.reduce((s, r) => s + r.monto, 0)
+  rows.forEach(r => { acum += r.monto; r.acumulado = acum; r.pctAcum = total > 0 ? Math.round((acum / total) * 100) : 0 })
+  return { rows, total }
+}
+
 // ── Avance físico (módulo 3) ──
 
 // % planificado de una actividad a una fecha dada (avance lineal en su duración)
