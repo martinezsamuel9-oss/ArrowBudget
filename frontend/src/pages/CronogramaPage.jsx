@@ -6,7 +6,7 @@ import { useState, useEffect, useMemo, useRef, Fragment } from 'react'
 import { supabase } from '../lib/supabase'
 import { puedeHacer } from '../lib/permissions'
 import { calcItem, makeMoneyFmt, moneyK, fmt } from '../lib/calc'
-import { flattenActividades, calcularFechas, resumenCronograma, parsePredecesoras, predsATexto, normPred, rutaCritica, fmtFecha, hoyISO, addDays, pctPlanificado, pctReal, avanceGlobal, flujoDeCaja, curvaS, esLaborable, feriadosFijosHN, MESES_CORTOS as MESES_LIB } from '../lib/cronograma'
+import { flattenActividades, calcularFechas, resumenCronograma, parsePredecesoras, predsATexto, normPred, rutaCritica, fmtFecha, hoyISO, addDays, pctPlanificado, pctReal, avanceGlobal, flujoDeCaja, curvaS, esLaborable, MESES_CORTOS as MESES_LIB } from '../lib/cronograma'
 import { exportPDFCronograma, exportExcelCronograma } from '../lib/exportCronograma'
 import { Dropdown, Modal } from '../components/ui'
 import {
@@ -29,7 +29,7 @@ const MESES_CORTOS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'S
 
 // ── Calendario laboral: días de la semana + feriados ──
 const DIAS_LBL = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
-function CalendarioModal({ open, onClose, calendario, onSave, canEdit, fechaInicio }) {
+function CalendarioModal({ open, onClose, calendario, onSave, canEdit }) {
   const [dias, setDias] = useState([0, 1, 2, 3, 4, 5, 6])
   const [feriados, setFeriados] = useState([])
   const [nuevo, setNuevo] = useState('')
@@ -48,11 +48,6 @@ function CalendarioModal({ open, onClose, calendario, onSave, canEdit, fechaInic
     if (!nuevo) return
     if (!feriados.includes(nuevo)) setFeriados(prev => [...prev, nuevo].sort())
     setNuevo('')
-  }
-  const cargarHN = () => {
-    const y = new Date((fechaInicio || hoyISO()) + 'T00:00:00').getFullYear()
-    const nuevos = [...feriadosFijosHN(y), ...feriadosFijosHN(y + 1)].filter(f => !feriados.includes(f))
-    setFeriados(prev => [...prev, ...nuevos].sort())
   }
   const guardar = () => {
     onSave({ diasSemana: [...dias].sort((a, b) => a - b), feriados })
@@ -89,9 +84,6 @@ function CalendarioModal({ open, onClose, calendario, onSave, canEdit, fechaInic
             <button className="btn primary" onClick={agregar} disabled={!canEdit || !nuevo} style={{ flexShrink: 0 }}>
               <Plus size={13} /> Agregar
             </button>
-            <button className="btn" onClick={cargarHN} disabled={!canEdit} title="Agrega los feriados cívicos fijos de Honduras del año del proyecto y el siguiente" style={{ flexShrink: 0 }}>
-              🇭🇳 Feriados HN
-            </button>
           </div>
           {feriados.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10, maxHeight: 160, overflowY: 'auto' }}>
@@ -104,7 +96,7 @@ function CalendarioModal({ open, onClose, calendario, onSave, canEdit, fechaInic
             </div>
           )}
           <div style={{ fontSize: 11, color: 'var(--c-text-3)', marginTop: 6 }}>
-            Semana Santa y feriados movibles se agregan manualmente con la fecha del año correspondiente.
+            Agrega los feriados de tu país u obra con la fecha del año correspondiente.
           </div>
         </div>
       </div>
@@ -1125,7 +1117,6 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
         })()}
       </div>
       <CalendarioModal open={showCal} onClose={() => setShowCal(false)} calendario={calendario} canEdit={canEdit}
-        fechaInicio={crono?.fecha_inicio}
         onSave={cal => setCrono({ ...crono, datos_json: { ...crono.datos_json, calendario: cal } })} />
     </Fragment>
   )

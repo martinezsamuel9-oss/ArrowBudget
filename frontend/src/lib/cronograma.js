@@ -65,10 +65,6 @@ const addLab = (d, n, C) => {
   while (left > 0 && g++ < 4000) { x = addDays(x, step); if (esLabC(x, C)) left-- }
   return x
 }
-// Feriados cívicos fijos de Honduras (Semana Santa se agrega manualmente)
-export const feriadosFijosHN = year =>
-  [`${year}-01-01`, `${year}-04-14`, `${year}-05-01`, `${year}-09-15`, `${year}-10-03`, `${year}-10-12`, `${year}-10-21`, `${year}-12-25`]
-
 // Normaliza una predecesora: acepta el formato viejo (string id) y el nuevo
 // ({ id, tipo, lag }). Tipos estilo MS Project: FC fin→comienzo (default),
 // CC comienzo→comienzo, FF fin→fin, CF comienzo→fin. lag en días (+/-).
