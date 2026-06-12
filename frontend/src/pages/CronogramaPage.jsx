@@ -8,9 +8,10 @@ import { puedeHacer } from '../lib/permissions'
 import { calcItem, makeMoneyFmt, moneyK, fmt } from '../lib/calc'
 import { flattenActividades, calcularFechas, resumenCronograma, parsePredecesoras, predsATexto, normPred, rutaCritica, fmtFecha, hoyISO, addDays, pctPlanificado, pctReal, avanceGlobal, flujoDeCaja, curvaS, MESES_CORTOS as MESES_LIB } from '../lib/cronograma'
 import { exportPDFCronograma, exportExcelCronograma } from '../lib/exportCronograma'
+import { Dropdown } from '../components/ui'
 import {
   CalendarRange, BarChart2, Coins, Activity, TrendingUp, LineChart,
-  Plus, FileText, AlertTriangle, FileSpreadsheet,
+  Plus, FileText, AlertTriangle, FileSpreadsheet, ChevronDown,
 } from 'lucide-react'
 
 const TABS = [
@@ -744,19 +745,41 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
                   </div>
                 </div>
 
-                {/* Filtro por capítulos */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', padding: '10px 16px', borderBottom: '1px solid var(--c-line-2)' }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--c-text-3)', marginRight: 4 }}>Capítulos:</span>
-                  <button className={`btn xs ${capsFlujo.length === 0 ? 'primary' : 'ghost'}`} onClick={() => setCapsFlujo([])}>Todos</button>
-                  {capitulos.map(c => (
-                    <button key={c.capId}
-                      className={`btn xs ${capsFlujo.includes(c.capId) ? 'primary' : 'ghost'}`}
-                      title={c.capDesc}
-                      onClick={() => setCapsFlujo(prev => prev.includes(c.capId) ? prev.filter(x => x !== c.capId) : [...prev, c.capId])}>
-                      {c.capId} · {(c.capDesc || '').length > 22 ? (c.capDesc || '').slice(0, 22) + '…' : c.capDesc}
+                {/* Filtro por capítulos — lista desplegable (escala a muchos capítulos) */}
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 16px', borderBottom: '1px solid var(--c-line-2)' }}>
+                  <Dropdown align="left" minWidth={320} trigger={
+                    <button className="btn sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      Capítulos: <b>{capsFlujo.length === 0 ? 'Todos' : `${capsFlujo.length} de ${capitulos.length}`}</b>
+                      <ChevronDown size={13} />
                     </button>
-                  ))}
-                  {capsFlujo.length > 0 && <span style={{ fontSize: 11, color: 'var(--c-text-3)' }}>({capsFlujo.length} de {capitulos.length} capítulos)</span>}
+                  }>
+                    <div style={{ padding: '6px 0', maxHeight: 320, overflowY: 'auto' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', cursor: 'pointer', fontSize: 13, fontWeight: 700, borderBottom: '1px solid var(--c-line-2)' }}>
+                        <input type="checkbox" checked={capsFlujo.length === 0} onChange={() => setCapsFlujo([])}
+                          style={{ width: 15, height: 15, accentColor: 'var(--c-accent)' }} />
+                        Todos los capítulos
+                      </label>
+                      {capitulos.map(c => (
+                        <label key={c.capId} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 14px', cursor: 'pointer', fontSize: 13 }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'var(--c-bg)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                          <input type="checkbox" checked={capsFlujo.includes(c.capId)}
+                            onChange={() => setCapsFlujo(prev => prev.includes(c.capId) ? prev.filter(x => x !== c.capId) : [...prev, c.capId])}
+                            style={{ width: 15, height: 15, accentColor: 'var(--c-accent)', flexShrink: 0 }} />
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.capDesc}>
+                            <b style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--c-text-3)', marginRight: 6 }}>{c.capId}</b>
+                            {c.capDesc}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </Dropdown>
+                  {capsFlujo.length > 0 && (
+                    <span style={{ fontSize: 12, color: 'var(--c-text-2)' }}>
+                      Filtrando capítulos: <b>{capsFlujo.join(', ')}</b>
+                      <button className="btn xs ghost" style={{ marginLeft: 8 }} onClick={() => setCapsFlujo([])}>Limpiar</button>
+                    </span>
+                  )}
                 </div>
 
                 {/* Gráfico de barras */}
@@ -914,7 +937,7 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
                 <table className="bt">
                   <thead><tr>
                     <th>Capítulo</th>
-                    <th className="num" style={{ width: 140 }}>Costo</th>
+                    <th style={{ width: 140, textAlign: 'center' }}>Costo</th>
                     <th className="num" style={{ width: 140 }}>Valor planificado</th>
                     <th className="num" style={{ width: 140 }}>Valor ganado</th>
                     <th style={{ width: 170 }}>% Financiero</th>
