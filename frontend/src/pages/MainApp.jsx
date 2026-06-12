@@ -3785,7 +3785,7 @@ export default function MainApp() {
         {/* ── PAGES ── */}
         {page === 'inicio'     && <InicioPage    proyectos={proyectos} openProject={openProject} addProject={addProject} setPage={setPage} userName={userName} />}
         {page === 'proyectos'  && <ProyectosPage proyectos={proyectos} openProject={openProject} addProject={addProject} deleteProject={deleteProject} />}
-        {page === 'cronograma' && <CronogramaPage budget={budget} projectRole={projectRole} user={user} />}
+        {page === 'cronograma' && <CronogramaPage budget={budget} projectRole={projectRole} user={user} params={params} />}
         {page === 'reportes'   && <ReportesPage  proyectos={proyectos} budget={budget} params={params} userEmpresa={userEmpresa} />}
         {page === 'plantillas' && <PlantillasPage budget={budget} setBudget={setBudget} />}
         {page === 'equipo'     && <EquipoPage user={user} orgId={orgId} proyectos={proyectos} />}

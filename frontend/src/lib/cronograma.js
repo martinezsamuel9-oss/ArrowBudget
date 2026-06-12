@@ -80,3 +80,37 @@ export const parsePredecesoras = (texto, idsValidos, propioId) =>
     .split(/[,;\s]+/)
     .map(s => s.trim())
     .filter(s => s && s !== propioId && idsValidos.has(s))
+
+// ── Avance físico (módulo 3) ──
+
+// % planificado de una actividad a una fecha dada (avance lineal en su duración)
+export const pctPlanificado = (f, fecha) => {
+  if (!f) return 0
+  const d = new Date(fecha); d.setHours(0, 0, 0, 0)
+  if (d < f.inicio) return 0
+  if (d >= f.fin) return 100
+  return Math.round(((d - f.inicio) / (f.fin - f.inicio)) * 100)
+}
+
+// Último % real registrado a una fecha de corte (avances ordenados por fecha)
+export const pctReal = (avances, fecha) => {
+  let pct = 0
+  for (const a of (avances || [])) {
+    if (!fecha || a.fecha <= fecha) pct = Math.max(pct, +a.pct || 0)
+  }
+  return Math.min(100, pct)
+}
+
+// Avance global plan vs real a una fecha, ponderado por peso (costo) de cada actividad
+export const avanceGlobal = (acts, fechas, datos, pesos, fecha) => {
+  let totalPeso = 0, plan = 0, real = 0
+  for (const a of acts) {
+    if (!datos[a.id] || !fechas[a.id]) continue
+    const w = pesos[a.id] ?? 1
+    totalPeso += w
+    plan += w * pctPlanificado(fechas[a.id], fecha)
+    real += w * pctReal(datos[a.id].avances, fecha)
+  }
+  if (!totalPeso) return { plan: 0, real: 0 }
+  return { plan: Math.round(plan / totalPeso), real: Math.round(real / totalPeso) }
+}

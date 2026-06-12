@@ -5,7 +5,8 @@
 import { useState, useEffect, useMemo, useRef, Fragment } from 'react'
 import { supabase } from '../lib/supabase'
 import { puedeHacer } from '../lib/permissions'
-import { flattenActividades, calcularFechas, resumenCronograma, parsePredecesoras, fmtFecha, hoyISO, addDays } from '../lib/cronograma'
+import { calcItem } from '../lib/calc'
+import { flattenActividades, calcularFechas, resumenCronograma, parsePredecesoras, fmtFecha, hoyISO, addDays, pctPlanificado, pctReal, avanceGlobal } from '../lib/cronograma'
 import {
   CalendarRange, BarChart2, Coins, Activity, TrendingUp, LineChart,
   Plus, FileText, AlertTriangle,
@@ -116,6 +117,7 @@ function GanttChart({ acts, fechas, datos }) {
               {g.acts.map(a => {
                 const f = fechas[a.id]
                 const w = Math.max(3, X(f.fin) - X(f.inicio))
+                const avance = pctReal(datos[a.id]?.avances)
                 return (
                   <div key={a.id} style={filaBase}>
                     <div style={{ ...lblBase, background: 'var(--c-surface)', color: 'var(--c-text-2)' }}>
@@ -124,9 +126,11 @@ function GanttChart({ acts, fechas, datos }) {
                     </div>
                     <div style={{ position: 'relative', width: W, height: '100%' }}>
                       {semanas.map((s, i) => pxDia >= 4 && <div key={i} style={{ position: 'absolute', left: s.left, top: 0, bottom: 0, borderLeft: '1px dashed var(--c-line-2)' }} />)}
-                      <div title={`${a.id} — ${a.descripcion}\n${fmtFecha(f.inicio)} → ${fmtFecha(addDays(f.fin, -1))} · ${f.dur} días`}
+                      <div title={`${a.id} — ${a.descripcion}\n${fmtFecha(f.inicio)} → ${fmtFecha(addDays(f.fin, -1))} · ${f.dur} días · avance ${avance}%`}
                         style={{ position: 'absolute', left: X(f.inicio), width: w, top: 7, height: 16, borderRadius: 5, background: 'var(--c-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                        {w > 44 && <span style={{ fontSize: 9.5, color: '#fff', fontWeight: 700 }}>{f.dur}d</span>}
+                        {/* Relleno de avance real registrado */}
+                        {avance > 0 && <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${avance}%`, background: 'var(--c-success)', opacity: 0.85 }} />}
+                        {w > 44 && <span style={{ position: 'relative', fontSize: 9.5, color: '#fff', fontWeight: 700 }}>{avance > 0 ? `${avance}%` : `${f.dur}d`}</span>}
                       </div>
                       {hoyX != null && <div style={{ position: 'absolute', left: hoyX, top: 0, bottom: 0, borderLeft: '2px solid var(--c-danger)', opacity: 0.55 }} />}
                     </div>
@@ -138,7 +142,8 @@ function GanttChart({ acts, fechas, datos }) {
         </div>
       </div>
       <div style={{ display: 'flex', gap: 16, padding: '8px 14px 12px', fontSize: 11, color: 'var(--c-text-3)', alignItems: 'center' }}>
-        <span><span style={{ display: 'inline-block', width: 14, height: 8, borderRadius: 3, background: 'var(--c-primary)', marginRight: 5, verticalAlign: 'middle' }}></span>Actividad</span>
+        <span><span style={{ display: 'inline-block', width: 14, height: 8, borderRadius: 3, background: 'var(--c-primary)', marginRight: 5, verticalAlign: 'middle' }}></span>Programado</span>
+        <span><span style={{ display: 'inline-block', width: 14, height: 8, borderRadius: 3, background: 'var(--c-success)', marginRight: 5, verticalAlign: 'middle' }}></span>Avance real</span>
         <span><span style={{ display: 'inline-block', width: 14, height: 5, borderRadius: 3, background: 'var(--c-ink)', marginRight: 5, verticalAlign: 'middle' }}></span>Capítulo</span>
         <span><span style={{ display: 'inline-block', width: 2, height: 12, background: 'var(--c-danger)', marginRight: 5, verticalAlign: 'middle' }}></span>Hoy</span>
       </div>
@@ -146,11 +151,23 @@ function GanttChart({ acts, fechas, datos }) {
   )
 }
 
-export default function CronogramaPage({ budget, projectRole, user }) {
+// Chip de estado de una actividad según plan vs real a la fecha de corte
+function EstadoAvance({ plan, real }) {
+  let txt, bg, fg
+  if (real >= 100)           { txt = 'Completada'; bg = 'var(--c-success)'; fg = '#fff' }
+  else if (plan === 0 && real === 0) { txt = 'No iniciada'; bg = '#9ca3af22'; fg = '#6b7280' }
+  else if (real < plan - 3)  { txt = 'Atrasada'; bg = '#fee2e2'; fg = '#991b1b' }
+  else if (real > plan + 3)  { txt = 'Adelantada'; bg = '#dbeafe'; fg = '#1d4ed8' }
+  else                       { txt = 'Al día'; bg = '#d1fae5'; fg = '#065f46' }
+  return <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: bg, color: fg, whiteSpace: 'nowrap' }}>{txt}</span>
+}
+
+export default function CronogramaPage({ budget, projectRole, user, params }) {
   const [crono, setCrono] = useState(null)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('gantt')
   const [vistaGantt, setVistaGantt] = useState('gantt')   // 'gantt' visual | 'editar' programación
+  const [corte, setCorte] = useState(hoyISO())            // fecha de corte del avance físico
   const [saving, setSaving] = useState(false)
   const loadedIdRef = useRef(null)
   const pendingRef = useRef(null)
@@ -200,6 +217,29 @@ export default function CronogramaPage({ budget, projectRole, user }) {
   )
   const resumen = useMemo(() => resumenCronograma(acts, fechas), [acts, fechas])
   const idsValidos = useMemo(() => new Set(acts.map(a => a.id)), [acts])
+
+  // Peso de cada actividad = su costo en el presupuesto (para el avance ponderado)
+  const pesos = useMemo(() => {
+    const map = {}
+    const walk = its => { for (const it of (its || [])) {
+      if (it.tipo === 'actividad') map[it.id] = calcItem(it, budget?.catalogos, params).subtotal || 1
+      else if (it.children) walk(it.children)
+    } }
+    walk(budget?.items || [])
+    return map
+  }, [budget?.items, budget?.catalogos, params])
+
+  const global = useMemo(() => avanceGlobal(acts, fechas, datos, pesos, corte), [acts, fechas, datos, pesos, corte])
+
+  // Registrar % real de una actividad en la fecha de corte activa
+  const registrarAvance = (id, pct) => {
+    const v = Math.max(0, Math.min(100, Math.round(+pct) || 0))
+    const d = datos[id] || { duracion: 7, predecesoras: [] }
+    const avances = [...(d.avances || [])].filter(x => x.fecha !== corte)
+    avances.push({ fecha: corte, pct: v })
+    avances.sort((a, b) => a.fecha.localeCompare(b.fecha))
+    updActividad(id, { avances })
+  }
 
   const updActividad = (id, patch) => {
     const actividades = { ...(crono.datos_json?.actividades || {}) }
@@ -396,7 +436,100 @@ export default function CronogramaPage({ budget, projectRole, user }) {
           </div>
         )}
 
-        {tab !== 'gantt' && (
+        {tab === 'fisico' && (
+          <Fragment>
+            {/* KPIs del avance a la fecha de corte */}
+            <div className="kpi-row" style={{ marginBottom: 14 }}>
+              <div className="kpi">
+                <div className="kpi-label"><CalendarRange size={12} className="ico" /> Fecha de corte</div>
+                <input type="date" className="input" value={corte} onChange={e => setCorte(e.target.value || hoyISO())} style={{ marginTop: 4, fontWeight: 700 }} />
+              </div>
+              <div className="kpi highlight">
+                <div className="kpi-label"><Activity size={12} className="ico" /> Avance real</div>
+                <div className="kpi-val">{global.real}%</div>
+                <div className="kpi-foot">ponderado por costo de actividad</div>
+              </div>
+              <div className="kpi">
+                <div className="kpi-label"><TrendingUp size={12} className="ico" /> Avance planificado</div>
+                <div className="kpi-val">{global.plan}%</div>
+                <div className="kpi-foot">según el Gantt a la fecha de corte</div>
+              </div>
+              <div className="kpi">
+                <div className="kpi-label"><AlertTriangle size={12} className="ico" /> Desviación</div>
+                <div className="kpi-val" style={{ color: global.real - global.plan < -3 ? 'var(--c-danger)' : global.real - global.plan > 3 ? 'var(--c-primary)' : 'var(--c-success)' }}>
+                  {global.real - global.plan > 0 ? '+' : ''}{global.real - global.plan}%
+                </div>
+                <div className="kpi-foot">{global.real - global.plan < -3 ? 'proyecto atrasado' : global.real - global.plan > 3 ? 'proyecto adelantado' : 'al día'}</div>
+              </div>
+            </div>
+
+            <div className="card" style={{ padding: 0 }}>
+              <div className="card-header">
+                <div className="card-title"><Activity size={15} /> Avance físico por actividad</div>
+                <div style={{ fontSize: 11, color: 'var(--c-text-3)' }}>El % se registra con la fecha de corte seleccionada — cada corte queda en el historial</div>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table className="bt">
+                  <thead><tr>
+                    <th style={{ width: 70 }}>ID</th>
+                    <th>Actividad</th>
+                    <th style={{ width: 130 }}>Programada</th>
+                    <th className="num" style={{ width: 80 }}>% Plan</th>
+                    <th className="num" style={{ width: 96 }}>% Real</th>
+                    <th style={{ width: 150 }}>Progreso</th>
+                    <th style={{ width: 100 }}>Estado</th>
+                  </tr></thead>
+                  <tbody>
+                    {(() => {
+                      const rows = []
+                      let lastCap = null
+                      for (const a of acts) {
+                        if (!datos[a.id]) continue
+                        if (a.capId !== lastCap) {
+                          lastCap = a.capId
+                          rows.push(
+                            <tr key={`cap-${a.capId}`}>
+                              <td colSpan={7} style={{ background: 'var(--c-ink)', color: 'var(--c-accent)', fontWeight: 700, fontSize: 12, padding: '7px 14px' }}>
+                                {a.capId} · {a.capDesc}
+                              </td>
+                            </tr>
+                          )
+                        }
+                        const f = fechas[a.id]
+                        const plan = pctPlanificado(f, corte)
+                        const real = pctReal(datos[a.id].avances, corte)
+                        rows.push(
+                          <tr key={a.id}>
+                            <td className="id">{a.id}</td>
+                            <td style={{ fontWeight: 500 }}>{a.descripcion}</td>
+                            <td style={{ fontSize: 11.5, color: 'var(--c-text-3)' }}>{f ? `${fmtFecha(f.inicio)} → ${fmtFecha(addDays(f.fin, -1))}` : '—'}</td>
+                            <td className="num" style={{ color: 'var(--c-text-3)' }}>{plan}%</td>
+                            <td className="num">
+                              <input type="number" min="0" max="100" className="input sm" disabled={!canEdit}
+                                value={real} onFocus={e => e.target.select()}
+                                onChange={e => registrarAvance(a.id, e.target.value)}
+                                style={{ width: 70, textAlign: 'right', fontWeight: 700 }} />
+                            </td>
+                            <td>
+                              <div style={{ position: 'relative', height: 10, background: 'var(--c-bg)', borderRadius: 5, overflow: 'hidden', border: '1px solid var(--c-line-2)' }}>
+                                <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${plan}%`, background: 'var(--c-line)' }} title={`Plan: ${plan}%`} />
+                                <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${real}%`, background: real >= plan - 3 ? 'var(--c-success)' : 'var(--c-warn)', borderRadius: 5 }} title={`Real: ${real}%`} />
+                              </div>
+                            </td>
+                            <td><EstadoAvance plan={plan} real={real} /></td>
+                          </tr>
+                        )
+                      }
+                      return rows
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </Fragment>
+        )}
+
+        {tab !== 'gantt' && tab !== 'fisico' && (
           <div className="card" style={{ padding: 48, textAlign: 'center', color: 'var(--c-text-3)' }}>
             <div style={{ fontSize: 28, marginBottom: 10 }}>🚧</div>
             <div style={{ fontWeight: 700, color: 'var(--c-text-2)', marginBottom: 4 }}>
