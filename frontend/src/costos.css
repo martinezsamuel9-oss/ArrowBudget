@@ -477,7 +477,8 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
 .bt td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); font-size: 12.5px; }
 .bt td.id { font-family: var(--font-mono); font-size: 11.5px; color: var(--c-text-3); width: 80px; }
 .bt td.actions { width: 130px; text-align: right; padding-right: 14px; }
-.bt tr:hover td { background: #FAFBFD; }
+/* hover solo en el cuerpo: el tfoot (totales con banda oscura) no debe "flashear" */
+.bt tbody tr:hover td { background: #FAFBFD; }
 
 /* Chapter row */
 .bt tr.chapter td {
