@@ -29,8 +29,18 @@ export const flattenActividades = items => {
   return acts
 }
 
-// Forward pass: fecha de inicio de cada actividad = máx(fin de sus predecesoras),
-// o la fecha de inicio del proyecto si no tiene. fin = inicio + duración (exclusivo).
+// Normaliza una predecesora: acepta el formato viejo (string id) y el nuevo
+// ({ id, tipo, lag }). Tipos estilo MS Project: FC fin→comienzo (default),
+// CC comienzo→comienzo, FF fin→fin, CF comienzo→fin. lag en días (+/-).
+export const normPred = p => {
+  if (!p) return null
+  if (typeof p === 'string') return { id: p, tipo: 'FC', lag: 0 }
+  if (!p.id) return null
+  return { id: p.id, tipo: ['FC', 'CC', 'FF', 'CF'].includes(p.tipo) ? p.tipo : 'FC', lag: Math.round(+p.lag) || 0 }
+}
+
+// Forward pass con tipos de vínculo: la fecha de inicio respeta TODAS las
+// restricciones de sus predecesoras (y nunca antes del inicio del proyecto).
 // Tolera ciclos (los corta) y predecesoras inexistentes (las ignora).
 export const calcularFechas = (acts, fechaInicio, datosActividades = {}) => {
   const ids = new Set(acts.map(a => a.id))
@@ -48,10 +58,18 @@ export const calcularFechas = (acts, fechaInicio, datosActividades = {}) => {
     }
     visitando.add(id)
     let inicio = inicioProyecto
-    for (const p of (d.predecesoras || [])) {
-      if (p === id || !ids.has(p)) continue
-      const f = resolver(p)
-      if (f.fin > inicio) inicio = f.fin
+    for (const pr of (d.predecesoras || [])) {
+      const p = normPred(pr)
+      if (!p || p.id === id || !ids.has(p.id)) continue
+      const f = resolver(p.id)
+      let candidato
+      switch (p.tipo) {
+        case 'CC': candidato = addDays(f.inicio, p.lag); break            // comienza con la predecesora
+        case 'FF': candidato = addDays(f.fin, p.lag - dur); break         // termina cuando termina la predecesora
+        case 'CF': candidato = addDays(f.inicio, p.lag - dur); break      // termina cuando comienza la predecesora
+        default:   candidato = addDays(f.fin, p.lag)                      // FC: comienza al terminar la predecesora
+      }
+      if (candidato > inicio) inicio = candidato
     }
     visitando.delete(id)
     return (map[id] = { inicio, fin: addDays(inicio, dur), dur })
@@ -74,12 +92,35 @@ export const resumenCronograma = (acts, fechas) => {
   return { inicio, fin, dias }
 }
 
-// Parsea el input de predecesoras: "1.01, 1.02" → ['1.01','1.02'] (solo ids válidos)
-export const parsePredecesoras = (texto, idsValidos, propioId) =>
-  String(texto || '')
-    .split(/[,;\s]+/)
-    .map(s => s.trim())
-    .filter(s => s && s !== propioId && idsValidos.has(s))
+// Parsea el input de predecesoras estilo Project usando el # de fila:
+//   "3" → fila 3 con FC · "3CC" · "5FF" · "3CC+2" · "4FC-1"
+// También acepta el ID del presupuesto directamente ("1.1.01CC").
+// seqToId: array donde seqToId[n-1] = id de la actividad en la fila n.
+export const parsePredecesoras = (texto, idsValidos, propioId, seqToId = []) => {
+  const out = []
+  for (const token of String(texto || '').split(/[,;]+/).map(s => s.trim()).filter(Boolean)) {
+    const m = token.match(/^([\w.\-]+?)(fc|cc|ff|cf)?([+-]\d+)?$/i)
+    if (!m) continue
+    const base = m[1]
+    let id = null
+    if (/^\d+$/.test(base)) id = seqToId[parseInt(base, 10) - 1] || null   // # de fila
+    else if (idsValidos.has(base)) id = base                               // ID del presupuesto
+    if (!id || id === propioId) continue
+    const pred = { id, tipo: (m[2] || 'FC').toUpperCase(), lag: parseInt(m[3] || '0', 10) || 0 }
+    const i = out.findIndex(x => x.id === id)
+    if (i >= 0) out[i] = pred; else out.push(pred)
+  }
+  return out
+}
+
+// Texto del input a partir de las predecesoras guardadas: "3CC+2, 5"
+export const predsATexto = (preds, idToSeq = {}) =>
+  (preds || []).map(pr => {
+    const p = normPred(pr)
+    if (!p) return null
+    const n = idToSeq[p.id] ?? p.id
+    return `${n}${p.tipo !== 'FC' ? p.tipo : ''}${p.lag ? (p.lag > 0 ? '+' : '') + p.lag : ''}`
+  }).filter(Boolean).join(', ')
 
 export const MESES_CORTOS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 

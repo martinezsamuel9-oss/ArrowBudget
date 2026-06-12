@@ -6,7 +6,7 @@ import { useState, useEffect, useMemo, useRef, Fragment } from 'react'
 import { supabase } from '../lib/supabase'
 import { puedeHacer } from '../lib/permissions'
 import { calcItem, makeMoneyFmt, moneyK } from '../lib/calc'
-import { flattenActividades, calcularFechas, resumenCronograma, parsePredecesoras, fmtFecha, hoyISO, addDays, pctPlanificado, pctReal, avanceGlobal, flujoDeCaja, curvaS, MESES_CORTOS as MESES_LIB } from '../lib/cronograma'
+import { flattenActividades, calcularFechas, resumenCronograma, parsePredecesoras, predsATexto, fmtFecha, hoyISO, addDays, pctPlanificado, pctReal, avanceGlobal, flujoDeCaja, curvaS, MESES_CORTOS as MESES_LIB } from '../lib/cronograma'
 import { exportPDFCronograma, exportExcelCronograma } from '../lib/exportCronograma'
 import {
   CalendarRange, BarChart2, Coins, Activity, TrendingUp, LineChart,
@@ -25,8 +25,19 @@ const TABS = [
 const DAY_MS = 86400000
 const MESES_CORTOS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 
-function GanttChart({ acts, fechas, datos }) {
+function GanttChart({ acts, fechas, datos, idToSeq = {} }) {
   const [pxDia, setPxDia] = useState(8)   // 24 = día, 8 = semana, 2.5 = mes
+  const [lblW, setLblW] = useState(250)   // ancho de la columna de nombres (arrastrable)
+
+  // Arrastre del divisor entre nombres y barras
+  const startDrag = e => {
+    e.preventDefault()
+    const x0 = e.clientX, w0 = lblW
+    const move = ev => setLblW(Math.max(150, Math.min(600, w0 + ev.clientX - x0)))
+    const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up) }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+  }
 
   const programadas = acts.filter(a => datos[a.id] && fechas[a.id])
   let min = null, max = null
@@ -42,7 +53,7 @@ function GanttChart({ acts, fechas, datos }) {
   const dias  = Math.round((end - start) / DAY_MS)
   const X     = d => ((d - start) / DAY_MS) * pxDia
   const W     = dias * pxDia
-  const LBL   = 250   // ancho de la columna fija de etiquetas
+  const LBL   = lblW  // ancho de la columna fija de etiquetas (estado arrastrable)
 
   // Encabezado de meses
   const meses = []
@@ -89,7 +100,11 @@ function GanttChart({ acts, fechas, datos }) {
         <div style={{ width: LBL + W, minWidth: '100%' }}>
           {/* Encabezado: meses + semanas */}
           <div style={{ ...filaBase, height: 26, borderBottom: '1px solid var(--c-line)' }}>
-            <div style={{ ...lblBase, background: 'var(--c-surface)', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--c-text-3)' }}>Actividad</div>
+            <div style={{ ...lblBase, background: 'var(--c-surface)', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--c-text-3)', position: 'sticky', justifyContent: 'space-between' }}>
+              <span>Actividad</span>
+              <span onMouseDown={startDrag} title="Arrastra para ajustar el ancho"
+                style={{ cursor: 'col-resize', padding: '0 4px', marginRight: -10, color: 'var(--c-text-3)', fontSize: 12, userSelect: 'none' }}>⋮⋮</span>
+            </div>
             <div style={{ position: 'relative', width: W, height: '100%' }}>
               {meses.map((m, i) => (
                 <div key={i} style={{ position: 'absolute', left: m.left, width: m.width, top: 0, bottom: 0, borderLeft: '1px solid var(--c-line)', fontSize: 10, fontWeight: 700, color: 'var(--c-text-3)', display: 'flex', alignItems: 'center', paddingLeft: 6, textTransform: 'uppercase', letterSpacing: '0.05em', overflow: 'hidden' }}>
@@ -121,8 +136,8 @@ function GanttChart({ acts, fechas, datos }) {
                 const avance = pctReal(datos[a.id]?.avances)
                 return (
                   <div key={a.id} style={filaBase}>
-                    <div style={{ ...lblBase, background: 'var(--c-surface)', color: 'var(--c-text-2)' }}>
-                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--c-text-3)', marginRight: 6, flexShrink: 0 }}>{a.id}</span>
+                    <div style={{ ...lblBase, background: 'var(--c-surface)', color: 'var(--c-text-2)' }} title={`#${idToSeq[a.id] || ''} · ${a.id} — ${a.descripcion}`}>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, color: 'var(--c-text-3)', marginRight: 7, flexShrink: 0, minWidth: 18, textAlign: 'right' }}>{idToSeq[a.id]}</span>
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.descripcion}</span>
                     </div>
                     <div style={{ position: 'relative', width: W, height: '100%' }}>
@@ -281,6 +296,9 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
   )
   const resumen = useMemo(() => resumenCronograma(acts, fechas), [acts, fechas])
   const idsValidos = useMemo(() => new Set(acts.map(a => a.id)), [acts])
+  // # de fila estilo Project: 1, 2, 3… en el orden del presupuesto
+  const seqToId = useMemo(() => acts.map(a => a.id), [acts])
+  const idToSeq = useMemo(() => Object.fromEntries(acts.map((a, i) => [a.id, i + 1])), [acts])
 
   // Peso de cada actividad = su costo en el presupuesto (para el avance ponderado)
   const pesos = useMemo(() => {
@@ -444,22 +462,23 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
             <div className="card-header">
               <div className="card-title"><BarChart2 size={15} /> {vistaGantt === 'gantt' ? 'Diagrama de Gantt' : 'Programación de actividades'}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {vistaGantt === 'editar' && <span style={{ fontSize: 11, color: 'var(--c-text-3)' }}>Predecesoras: IDs separados por coma (ej: 1.01, 1.02)</span>}
+                {vistaGantt === 'editar' && <span style={{ fontSize: 11, color: 'var(--c-text-3)' }}>Predecesoras con # de fila estilo Project: <b>3</b> (FC) · <b>3CC</b> · <b>3FF</b> · <b>3CF</b> · desfase <b>3CC+2</b></span>}
                 <div style={{ display: 'flex', gap: 2, background: 'var(--c-bg)', padding: 3, borderRadius: 8 }}>
                   <button className={`btn xs ${vistaGantt === 'gantt' ? 'primary' : 'ghost'}`} onClick={() => setVistaGantt('gantt')}>Gantt</button>
                   <button className={`btn xs ${vistaGantt === 'editar' ? 'primary' : 'ghost'}`} onClick={() => setVistaGantt('editar')}>Editar programación</button>
                 </div>
               </div>
             </div>
-            {vistaGantt === 'gantt' && <GanttChart acts={acts} fechas={fechas} datos={datos} />}
+            {vistaGantt === 'gantt' && <GanttChart acts={acts} fechas={fechas} datos={datos} idToSeq={idToSeq} />}
             {vistaGantt === 'editar' && (
             <div style={{ overflowX: 'auto' }}>
               <table className="bt">
                 <thead><tr>
+                  <th style={{ width: 42 }}>#</th>
                   <th style={{ width: 70 }}>ID</th>
                   <th>Actividad</th>
                   <th className="num" style={{ width: 100 }}>Duración (días)</th>
-                  <th style={{ width: 160 }}>Predecesoras</th>
+                  <th style={{ width: 170 }}>Predecesoras</th>
                   <th style={{ width: 100 }}>Inicio</th>
                   <th style={{ width: 100 }}>Fin</th>
                 </tr></thead>
@@ -472,7 +491,7 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
                         lastCap = a.capId
                         rows.push(
                           <tr key={`cap-${a.capId}`}>
-                            <td colSpan={6} style={{ background: 'var(--c-ink)', color: 'var(--c-accent)', fontWeight: 700, fontSize: 12, padding: '7px 14px' }}>
+                            <td colSpan={7} style={{ background: 'var(--c-ink)', color: 'var(--c-accent)', fontWeight: 700, fontSize: 12, padding: '7px 14px' }}>
                               {a.capId} · {a.capDesc}
                             </td>
                           </tr>
@@ -480,8 +499,10 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
                       }
                       const d = datos[a.id] || {}
                       const f = fechas[a.id]
+                      const predTexto = predsATexto(d.predecesoras, idToSeq)
                       rows.push(
                         <tr key={a.id} style={{ opacity: datos[a.id] ? 1 : 0.45 }}>
+                          <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--c-text-3)', textAlign: 'center' }}>{idToSeq[a.id]}</td>
                           <td className="id">{a.id}</td>
                           <td style={{ fontWeight: 500 }}>{a.descripcion}</td>
                           <td className="num">
@@ -493,10 +514,12 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
                           </td>
                           <td>
                             <input className="input sm" disabled={!canEdit || !datos[a.id]}
-                              defaultValue={(d.predecesoras || []).join(', ')}
-                              placeholder="—"
-                              onBlur={e => updActividad(a.id, { predecesoras: parsePredecesoras(e.target.value, idsValidos, a.id) })}
-                              style={{ width: 140, fontFamily: 'var(--font-mono)', fontSize: 11 }} />
+                              key={`${a.id}:${predTexto}`}
+                              defaultValue={predTexto}
+                              placeholder="ej: 3, 5CC+2"
+                              title="Usa el # de fila. Tipos: 3 = FC (fin→comienzo) · 3CC · 3FF · 3CF · desfase: 3CC+2, 4FC-1"
+                              onBlur={e => updActividad(a.id, { predecesoras: parsePredecesoras(e.target.value, idsValidos, a.id, seqToId) })}
+                              style={{ width: 150, fontFamily: 'var(--font-mono)', fontSize: 11 }} />
                             {f?.circular && <span title="Referencia circular — se ancló al inicio del proyecto" style={{ color: 'var(--c-danger)', marginLeft: 4 }}>⚠</span>}
                           </td>
                           <td style={{ fontSize: 12, color: 'var(--c-text-2)' }}>{f ? fmtFecha(f.inicio) : '—'}</td>
