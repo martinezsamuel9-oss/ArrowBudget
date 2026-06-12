@@ -6,12 +6,12 @@ import { useState, useEffect, useMemo, useRef, Fragment } from 'react'
 import { supabase } from '../lib/supabase'
 import { puedeHacer } from '../lib/permissions'
 import { calcItem, makeMoneyFmt, moneyK, fmt } from '../lib/calc'
-import { flattenActividades, calcularFechas, resumenCronograma, parsePredecesoras, predsATexto, normPred, rutaCritica, fmtFecha, hoyISO, addDays, pctPlanificado, pctReal, avanceGlobal, flujoDeCaja, curvaS, MESES_CORTOS as MESES_LIB } from '../lib/cronograma'
+import { flattenActividades, calcularFechas, resumenCronograma, parsePredecesoras, predsATexto, normPred, rutaCritica, fmtFecha, hoyISO, addDays, pctPlanificado, pctReal, avanceGlobal, flujoDeCaja, curvaS, esLaborable, feriadosFijosHN, MESES_CORTOS as MESES_LIB } from '../lib/cronograma'
 import { exportPDFCronograma, exportExcelCronograma } from '../lib/exportCronograma'
-import { Dropdown } from '../components/ui'
+import { Dropdown, Modal } from '../components/ui'
 import {
   CalendarRange, BarChart2, Coins, Activity, TrendingUp, LineChart,
-  Plus, FileText, AlertTriangle, FileSpreadsheet, ChevronDown,
+  Plus, FileText, AlertTriangle, FileSpreadsheet, ChevronDown, X,
 } from 'lucide-react'
 
 const TABS = [
@@ -26,7 +26,93 @@ const TABS = [
 const DAY_MS = 86400000
 const MESES_CORTOS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 
-function GanttChart({ acts, fechas, datos, idToSeq = {} }) {
+
+// ── Calendario laboral: días de la semana + feriados ──
+const DIAS_LBL = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
+function CalendarioModal({ open, onClose, calendario, onSave, canEdit, fechaInicio }) {
+  const [dias, setDias] = useState([0, 1, 2, 3, 4, 5, 6])
+  const [feriados, setFeriados] = useState([])
+  const [nuevo, setNuevo] = useState('')
+  useEffect(() => {
+    if (open) {
+      setDias(calendario?.diasSemana?.length ? [...calendario.diasSemana] : [0, 1, 2, 3, 4, 5, 6])
+      setFeriados([...(calendario?.feriados || [])].sort())
+      setNuevo('')
+    }
+  }, [open]) // eslint-disable-line
+  if (!open) return null
+
+  const toggleDia = d => setDias(prev =>
+    prev.includes(d) ? (prev.length > 1 ? prev.filter(x => x !== d) : prev) : [...prev, d])
+  const agregar = () => {
+    if (!nuevo) return
+    if (!feriados.includes(nuevo)) setFeriados(prev => [...prev, nuevo].sort())
+    setNuevo('')
+  }
+  const cargarHN = () => {
+    const y = new Date((fechaInicio || hoyISO()) + 'T00:00:00').getFullYear()
+    const nuevos = [...feriadosFijosHN(y), ...feriadosFijosHN(y + 1)].filter(f => !feriados.includes(f))
+    setFeriados(prev => [...prev, ...nuevos].sort())
+  }
+  const guardar = () => {
+    onSave({ diasSemana: [...dias].sort((a, b) => a - b), feriados })
+    onClose()
+  }
+  const fmtFer = f => new Date(f + 'T00:00:00').toLocaleDateString('es', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })
+
+  return (
+    <Modal open={open} onClose={onClose} title="Calendario laboral"
+      footer={<>
+        <button className="btn ghost" onClick={onClose}>Cancelar</button>
+        {canEdit && <button className="btn brand" onClick={guardar}>Guardar calendario</button>}
+      </>}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ fontSize: 12.5, color: 'var(--c-text-2)', background: 'var(--c-accent-soft)', padding: '8px 12px', borderRadius: 8, lineHeight: 1.5 }}>
+          Las <b>duraciones se cuentan en días laborables</b>: las actividades saltan los días
+          desmarcados y los feriados, y el Gantt los sombrea.
+        </div>
+        <div className="field">
+          <label className="field-label">Días laborables de la semana</label>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {DIAS_LBL.map((lbl, d) => (
+              <button key={d} className={`btn sm ${dias.includes(d) ? 'primary' : 'ghost'}`} disabled={!canEdit}
+                onClick={() => toggleDia(d)} style={{ flex: 1, justifyContent: 'center' }}>
+                {lbl}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="field">
+          <label className="field-label">Feriados / días no laborables</label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input type="date" className="input" value={nuevo} onChange={e => setNuevo(e.target.value)} disabled={!canEdit} />
+            <button className="btn primary" onClick={agregar} disabled={!canEdit || !nuevo} style={{ flexShrink: 0 }}>
+              <Plus size={13} /> Agregar
+            </button>
+            <button className="btn" onClick={cargarHN} disabled={!canEdit} title="Agrega los feriados cívicos fijos de Honduras del año del proyecto y el siguiente" style={{ flexShrink: 0 }}>
+              🇭🇳 Feriados HN
+            </button>
+          </div>
+          {feriados.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10, maxHeight: 160, overflowY: 'auto' }}>
+              {feriados.map(f => (
+                <span key={f} className="badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  {fmtFer(f)}
+                  {canEdit && <X size={11} style={{ cursor: 'pointer' }} onClick={() => setFeriados(prev => prev.filter(x => x !== f))} />}
+                </span>
+              ))}
+            </div>
+          )}
+          <div style={{ fontSize: 11, color: 'var(--c-text-3)', marginTop: 6 }}>
+            Semana Santa y feriados movibles se agregan manualmente con la fecha del año correspondiente.
+          </div>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function GanttChart({ acts, fechas, datos, idToSeq = {}, calendario = null }) {
   const [pxDia, setPxDia] = useState(8)        // 24 = día, 8 = semana, 2.5 = mes
   const [lblW, setLblW] = useState(250)        // ancho de la columna de nombres (arrastrable)
   const [verCritica, setVerCritica] = useState(false)
@@ -42,7 +128,7 @@ function GanttChart({ acts, fechas, datos, idToSeq = {} }) {
     window.addEventListener('mouseup', up)
   }
 
-  const criticas = useMemo(() => rutaCritica(acts, fechas, datos), [acts, fechas, datos])
+  const criticas = useMemo(() => rutaCritica(acts, fechas, datos, calendario), [acts, fechas, datos, calendario])
 
   const programadas = acts.filter(a => datos[a.id] && fechas[a.id])
   let min = null, max = null
@@ -80,6 +166,15 @@ function GanttChart({ acts, fechas, datos, idToSeq = {} }) {
 
   const hoy = new Date(); hoy.setHours(0, 0, 0, 0)
   const hoyX = (hoy >= start && hoy <= end) ? X(hoy) : null
+
+  // Rangos no laborables (sombreado de fondo)
+  const noLab = []
+  { let runStart = null
+    for (let d = new Date(start); d < end; d = addDays(d, 1)) {
+      if (!esLaborable(d, calendario)) { if (!runStart) runStart = new Date(d) }
+      else if (runStart) { noLab.push({ l: X(runStart), w: X(d) - X(runStart) }); runStart = null }
+    }
+    if (runStart) noLab.push({ l: X(runStart), w: X(end) - X(runStart) }) }
 
   // Filas planas (banda de capítulo + actividades) para posicionar conexiones
   const flat = []
@@ -154,6 +249,15 @@ function GanttChart({ acts, fechas, datos, idToSeq = {} }) {
             </div>
           </div>
 
+          {/* Sombreado de días no laborables (fines de semana / feriados) */}
+          {noLab.length > 0 && (
+            <div style={{ position: 'absolute', left: LBL, top: HDR, width: W, height: totalH, pointerEvents: 'none' }}>
+              {noLab.map((r, i) => (
+                <div key={i} style={{ position: 'absolute', left: r.l, width: r.w, top: 0, bottom: 0, background: 'rgba(100,116,139,0.08)' }} />
+              ))}
+            </div>
+          )}
+
           {/* Filas */}
           {flat.map((r, i) => r.t === 'cap' ? (
             <div key={`cap-${r.capId || i}`} style={{ ...filaBase, background: 'var(--c-bg)' }}>
@@ -222,6 +326,7 @@ function GanttChart({ acts, fechas, datos, idToSeq = {} }) {
         {verCritica && <span><span style={{ display: 'inline-block', width: 14, height: 8, borderRadius: 3, background: 'var(--c-danger)', marginRight: 5, verticalAlign: 'middle' }}></span>Ruta crítica ({criticas.size})</span>}
         <span><span style={{ display: 'inline-block', width: 14, height: 5, borderRadius: 3, background: 'var(--c-ink)', marginRight: 5, verticalAlign: 'middle' }}></span>Capítulo</span>
         <span><span style={{ display: 'inline-block', width: 2, height: 12, background: 'var(--c-danger)', marginRight: 5, verticalAlign: 'middle' }}></span>Hoy</span>
+        <span><span style={{ display: 'inline-block', width: 14, height: 8, borderRadius: 3, background: 'rgba(100,116,139,0.18)', marginRight: 5, verticalAlign: 'middle' }}></span>No laborable</span>
       </div>
     </div>
   )
@@ -307,6 +412,7 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
   const [vistaGantt, setVistaGantt] = useState('gantt')   // 'gantt' visual | 'editar' programación
   const [corte, setCorte] = useState(hoyISO())            // fecha de corte del avance físico
   const [modoFlujo, setModoFlujo] = useState('semana')    // 'semana' | 'mes'
+  const [showCal, setShowCal] = useState(false)           // modal de calendario laboral
   const [capsFlujo, setCapsFlujo] = useState([])          // capítulos filtrados ([] = todos)
   const [saving, setSaving] = useState(false)
   const loadedIdRef = useRef(null)
@@ -351,9 +457,10 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
   // ── Derivados ──
   const acts = useMemo(() => flattenActividades(budget?.items || []), [budget?.items])
   const datos = crono?.datos_json?.actividades || {}
+  const calendario = crono?.datos_json?.calendario || null
   const fechas = useMemo(
-    () => calcularFechas(acts, crono?.fecha_inicio, datos),
-    [acts, crono?.fecha_inicio, datos],
+    () => calcularFechas(acts, crono?.fecha_inicio, datos, calendario),
+    [acts, crono?.fecha_inicio, datos, calendario],
   )
   const resumen = useMemo(() => resumenCronograma(acts, fechas), [acts, fechas])
   const idsValidos = useMemo(() => new Set(acts.map(a => a.id)), [acts])
@@ -383,7 +490,7 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
     () => capsFlujo.length ? acts.filter(a => capsFlujo.includes(a.capId)) : acts,
     [acts, capsFlujo],
   )
-  const flujo = useMemo(() => flujoDeCaja(actsFlujo, fechas, datos, pesos, modoFlujo), [actsFlujo, fechas, datos, pesos, modoFlujo])
+  const flujo = useMemo(() => flujoDeCaja(actsFlujo, fechas, datos, pesos, modoFlujo, calendario), [actsFlujo, fechas, datos, pesos, modoFlujo, calendario])
   const curva = useMemo(() => curvaS(acts, fechas, datos, pesos, resumen), [acts, fechas, datos, pesos, resumen])
   const money = makeMoneyFmt(budget?.moneda)
 
@@ -476,12 +583,15 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
           </div>
         </div>
         <div className="page-head-actions" style={{ display: 'flex', gap: 8 }}>
+          <button className="btn" onClick={() => setShowCal(true)} title="Días laborables y feriados">
+            <CalendarRange size={13} /> Calendario
+          </button>
           <button className="btn" style={{ background: 'var(--c-danger)', borderColor: 'var(--c-danger)', color: '#fff' }}
-            onClick={() => exportPDFCronograma(budget, acts, fechas, datos, pesos, resumen, { logo: budget.logoOfertante, logoCliente: budget.logoCliente, headerBg: budget.apuHeaderBg, headerText: budget.apuHeaderText })}>
+            onClick={() => exportPDFCronograma(budget, acts, fechas, datos, pesos, resumen, { logo: budget.logoOfertante, logoCliente: budget.logoCliente, headerBg: budget.apuHeaderBg, headerText: budget.apuHeaderText }, calendario)}>
             <FileText size={13} /> PDF
           </button>
           <button className="btn" style={{ background: 'var(--c-success)', borderColor: 'var(--c-success)', color: '#fff' }}
-            onClick={() => exportExcelCronograma(budget, acts, fechas, datos, pesos, resumen)}>
+            onClick={() => exportExcelCronograma(budget, acts, fechas, datos, pesos, resumen, calendario)}>
             <FileSpreadsheet size={13} /> Excel
           </button>
         </div>
@@ -540,7 +650,7 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
                 </div>
               </div>
             </div>
-            {vistaGantt === 'gantt' && <GanttChart acts={acts} fechas={fechas} datos={datos} idToSeq={idToSeq} />}
+            {vistaGantt === 'gantt' && <GanttChart acts={acts} fechas={fechas} datos={datos} idToSeq={idToSeq} calendario={calendario} />}
             {vistaGantt === 'editar' && (
             <div style={{ overflowX: 'auto' }}>
               <table className="bt">
@@ -1014,6 +1124,9 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
           )
         })()}
       </div>
+      <CalendarioModal open={showCal} onClose={() => setShowCal(false)} calendario={calendario} canEdit={canEdit}
+        fechaInicio={crono?.fecha_inicio}
+        onSave={cal => setCrono({ ...crono, datos_json: { ...crono.datos_json, calendario: cal } })} />
     </Fragment>
   )
 }

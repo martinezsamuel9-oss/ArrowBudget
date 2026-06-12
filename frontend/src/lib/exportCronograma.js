@@ -14,7 +14,7 @@ const estadoDe = (plan, real) =>
   : 'Al día'
 
 // ── PDF: programación + flujo de caja + curva S ──
-export const exportPDFCronograma = async (budget, acts, fechas, datos, pesos, resumen, empresa = {}) => {
+export const exportPDFCronograma = async (budget, acts, fechas, datos, pesos, resumen, empresa = {}, calendario = null) => {
   const jsPDF = await getJsPDF()
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' })
   const T = pdfTheme(budget, empresa)
@@ -68,7 +68,7 @@ export const exportPDFCronograma = async (budget, acts, fechas, datos, pesos, re
   })
 
   // ── Páginas: diagrama de Gantt dibujado ──
-  const criticas = rutaCritica(acts, fechas, datos)
+  const criticas = rutaCritica(acts, fechas, datos, calendario)
   const programadas = acts.filter(a => datos[a.id] && fechas[a.id])
   const idToSeq = Object.fromEntries(acts.map((a, i) => [a.id, i + 1]))
   if (programadas.length && resumen.inicio && resumen.fin) {
@@ -142,7 +142,7 @@ export const exportPDFCronograma = async (budget, acts, fechas, datos, pesos, re
   // ── Página: flujo de caja semanal ──
   doc.addPage()
   drawContinuationBand(doc, budget, T, 'FLUJO DE CAJA PROGRAMADO — SEMANAL')
-  const fl = flujoDeCaja(acts, fechas, datos, pesos, 'semana')
+  const fl = flujoDeCaja(acts, fechas, datos, pesos, 'semana', calendario)
 
   // Gráfico de barras del flujo
   let flujoTablaY = 20
@@ -230,7 +230,7 @@ export const exportPDFCronograma = async (budget, acts, fechas, datos, pesos, re
 }
 
 // ── Excel: hojas de programación, flujo de caja y curva S ──
-export const exportExcelCronograma = async (budget, acts, fechas, datos, pesos, resumen) => {
+export const exportExcelCronograma = async (budget, acts, fechas, datos, pesos, resumen, calendario = null) => {
   const ExcelJS = await getExcelJS()
   const wb = new ExcelJS.Workbook()
   const money = `"${budget.moneda === 'HNL' ? 'L' : '$'}"#,##0.00`
@@ -273,8 +273,8 @@ export const exportExcelCronograma = async (budget, acts, fechas, datos, pesos, 
   wf.mergeCells('A1:I1')
   setC(wf, 'A1', 'FLUJO DE CAJA PROGRAMADO', { fill: X.titleFill, font: X.titleFont, alignment: X.ac })
   wf.getRow(1).height = 24
-  const fls = flujoDeCaja(acts, fechas, datos, pesos, 'semana')
-  const flm = flujoDeCaja(acts, fechas, datos, pesos, 'mes')
+  const fls = flujoDeCaja(acts, fechas, datos, pesos, 'semana', calendario)
+  const flm = flujoDeCaja(acts, fechas, datos, pesos, 'mes', calendario)
   ;['Semana del', 'Egreso', 'Acumulado', '% Acum.'].forEach((h, i) => setC(wf, String.fromCharCode(65 + i) + '3', h, { fill: X.headerFill, font: X.headerFont, alignment: X.ac }))
   ;['Mes', 'Egreso', 'Acumulado', '% Acum.'].forEach((h, i) => setC(wf, String.fromCharCode(70 + i) + '3', h, { fill: X.headerFill, font: X.headerFont, alignment: X.ac }))
   fls.rows.forEach((row, i) => {

@@ -29,6 +29,46 @@ export const flattenActividades = items => {
   return acts
 }
 
+// ── Calendario laboral ──
+// calendario = { diasSemana: [0-6 laborables], feriados: ['YYYY-MM-DD'] }
+// Default: 7 días laborables sin feriados → idéntico al comportamiento previo.
+const isoDe = d => {
+  const x = new Date(d)
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`
+}
+const normCal = cal => {
+  const ds = Array.isArray(cal?.diasSemana) && cal.diasSemana.length ? cal.diasSemana : [0, 1, 2, 3, 4, 5, 6]
+  return { dias: new Set(ds), feriados: new Set(cal?.feriados || []) }
+}
+const esLabC = (d, C) => C.dias.has(d.getDay()) && !C.feriados.has(isoDe(d))
+export const esLaborable = (d, cal) => esLabC(new Date(d), normCal(cal))
+
+// Desliza hacia adelante hasta el primer día laborable
+const sigLab = (d, C) => { let x = new Date(d), g = 0; while (!esLabC(x, C) && g++ < 370) x = addDays(x, 1); return x }
+
+// fin = día siguiente al último de `dur` días laborables desde `inicio`
+const finLaborable = (inicio, dur, C) => {
+  let x = new Date(inicio), count = 0, g = 0
+  while (count < dur && g++ < 4000) { if (esLabC(x, C)) count++; x = addDays(x, 1) }
+  return x
+}
+// inicio = primer día de `dur` días laborables que terminan en `fin` (exclusivo)
+const inicioDesdeFin = (fin, dur, C) => {
+  let x = addDays(fin, -1), count = 0, g = 0
+  while (g++ < 4000) { if (esLabC(x, C)) { count++; if (count >= dur) return x } x = addDays(x, -1) }
+  return x
+}
+// Suma/resta n días laborables (para desfases +/-)
+const addLab = (d, n, C) => {
+  if (!n) return new Date(d)
+  let x = new Date(d), step = n > 0 ? 1 : -1, left = Math.abs(n), g = 0
+  while (left > 0 && g++ < 4000) { x = addDays(x, step); if (esLabC(x, C)) left-- }
+  return x
+}
+// Feriados cívicos fijos de Honduras (Semana Santa se agrega manualmente)
+export const feriadosFijosHN = year =>
+  [`${year}-01-01`, `${year}-04-14`, `${year}-05-01`, `${year}-09-15`, `${year}-10-03`, `${year}-10-12`, `${year}-10-21`, `${year}-12-25`]
+
 // Normaliza una predecesora: acepta el formato viejo (string id) y el nuevo
 // ({ id, tipo, lag }). Tipos estilo MS Project: FC fin→comienzo (default),
 // CC comienzo→comienzo, FF fin→fin, CF comienzo→fin. lag en días (+/-).
@@ -42,9 +82,10 @@ export const normPred = p => {
 // Forward pass con tipos de vínculo: la fecha de inicio respeta TODAS las
 // restricciones de sus predecesoras (y nunca antes del inicio del proyecto).
 // Tolera ciclos (los corta) y predecesoras inexistentes (las ignora).
-export const calcularFechas = (acts, fechaInicio, datosActividades = {}) => {
+export const calcularFechas = (acts, fechaInicio, datosActividades = {}, calendario = null) => {
   const ids = new Set(acts.map(a => a.id))
-  const inicioProyecto = fechaInicio ? new Date(fechaInicio + 'T00:00:00') : new Date()
+  const C = normCal(calendario)
+  const inicioProyecto = sigLab(fechaInicio ? new Date(fechaInicio + 'T00:00:00') : new Date(), C)
   const map = {}
   const visitando = new Set()
 
@@ -54,7 +95,7 @@ export const calcularFechas = (acts, fechaInicio, datosActividades = {}) => {
     const dur = Math.max(1, Math.round(+d.duracion) || 7)
     if (visitando.has(id)) {
       // ciclo: se ancla al inicio del proyecto para no recursar infinito
-      return (map[id] = { inicio: inicioProyecto, fin: addDays(inicioProyecto, dur), dur, circular: true })
+      return (map[id] = { inicio: inicioProyecto, fin: finLaborable(inicioProyecto, dur, C), dur, circular: true })
     }
     visitando.add(id)
     let inicio = inicioProyecto
@@ -64,15 +105,16 @@ export const calcularFechas = (acts, fechaInicio, datosActividades = {}) => {
       const f = resolver(p.id)
       let candidato
       switch (p.tipo) {
-        case 'CC': candidato = addDays(f.inicio, p.lag); break            // comienza con la predecesora
-        case 'FF': candidato = addDays(f.fin, p.lag - dur); break         // termina cuando termina la predecesora
-        case 'CF': candidato = addDays(f.inicio, p.lag - dur); break      // termina cuando comienza la predecesora
-        default:   candidato = addDays(f.fin, p.lag)                      // FC: comienza al terminar la predecesora
+        case 'CC': candidato = addLab(f.inicio, p.lag, C); break                                  // comienza con la predecesora
+        case 'FF': candidato = inicioDesdeFin(addLab(f.fin, p.lag, C), dur, C); break             // termina cuando termina la predecesora
+        case 'CF': candidato = inicioDesdeFin(addLab(f.inicio, p.lag, C), dur, C); break          // termina cuando comienza la predecesora
+        default:   candidato = addLab(f.fin, p.lag, C)                                            // FC: comienza al terminar la predecesora
       }
       if (candidato > inicio) inicio = candidato
     }
     visitando.delete(id)
-    return (map[id] = { inicio, fin: addDays(inicio, dur), dur })
+    inicio = sigLab(inicio, C)
+    return (map[id] = { inicio, fin: finLaborable(inicio, dur, C), dur })
   }
 
   acts.forEach(a => resolver(a.id))
@@ -83,8 +125,9 @@ export const calcularFechas = (acts, fechaInicio, datosActividades = {}) => {
 // Pase hacia atrás: holgura = LS − ES. Actividades con holgura ~0 son críticas
 // (cualquier atraso en ellas atrasa el fin del proyecto).
 const DAY = 86400000
-export const rutaCritica = (acts, fechas, datos = {}) => {
+export const rutaCritica = (acts, fechas, datos = {}, calendario = null) => {
   const ids = new Set(acts.map(a => a.id))
+  const C = normCal(calendario)
   // Mapa de sucesores con su tipo de vínculo
   const succ = {}
   for (const a of acts) {
@@ -100,29 +143,27 @@ export const rutaCritica = (acts, fechas, datos = {}) => {
 
   const memo = {}
   const visitando = new Set()
-  const LS = id => {                       // Latest Start en ms
-    if (memo[id] !== undefined) return memo[id]
+  const LS = id => {                       // Latest Start (Date), en días laborables
+    if (memo[id]) return memo[id]
     const f = fechas[id]
-    if (!f) return Infinity
-    if (visitando.has(id)) return f.inicio.getTime()   // ciclo: neutral
+    if (!f) return null
+    if (visitando.has(id)) return f.inicio   // ciclo: neutral
     visitando.add(id)
-    const durMs = f.dur * DAY
-    let ls = Infinity
+    let ls = null
     for (const s of (succ[id] || [])) {
       const sf = fechas[s.id]; if (!sf) continue
-      const lagMs = s.lag * DAY
-      const sLS = LS(s.id)
-      const sLF = sLS + sf.dur * DAY
+      const sLS = LS(s.id); if (!sLS) continue
+      const sLF = finLaborable(sLS, sf.dur, C)
       let cand
       switch (s.tipo) {
-        case 'CC': cand = sLS - lagMs; break              // LS ≤ LS_suc − lag
-        case 'FF': cand = sLF - lagMs - durMs; break      // LF ≤ LF_suc − lag
-        case 'CF': cand = sLF - lagMs; break              // LS ≤ LF_suc − lag
-        default:   cand = sLS - lagMs - durMs             // FC: LF ≤ LS_suc − lag
+        case 'CC': cand = addLab(sLS, -s.lag, C); break                                  // LS ≤ LS_suc − lag
+        case 'FF': cand = inicioDesdeFin(addLab(sLF, -s.lag, C), f.dur, C); break        // LF ≤ LF_suc − lag
+        case 'CF': cand = addLab(sLF, -s.lag, C); break                                  // inicio ≤ LF_suc − lag
+        default:   cand = inicioDesdeFin(addLab(sLS, -s.lag, C), f.dur, C)               // FC: LF ≤ LS_suc − lag
       }
-      if (cand < ls) ls = cand
+      if (!ls || cand < ls) ls = cand
     }
-    if (ls === Infinity) ls = finProyecto.getTime() - durMs   // sin sucesores: pega al fin
+    if (!ls) ls = inicioDesdeFin(finProyecto, f.dur, C)   // sin sucesores: pega al fin
     visitando.delete(id)
     return (memo[id] = ls)
   }
@@ -131,7 +172,8 @@ export const rutaCritica = (acts, fechas, datos = {}) => {
   for (const a of acts) {
     const f = fechas[a.id]
     if (!f || !datos[a.id]) continue
-    if (LS(a.id) - f.inicio.getTime() < DAY / 2) criticas.add(a.id)   // holgura < medio día
+    const ls = LS(a.id)
+    if (ls && ls.getTime() - f.inicio.getTime() < DAY / 2) criticas.add(a.id)   // holgura ~0
   }
   return criticas
 }
@@ -190,7 +232,8 @@ const lunesDe = d => {
   return m
 }
 
-export const flujoDeCaja = (acts, fechas, datos, pesos, modo = 'semana') => {
+export const flujoDeCaja = (acts, fechas, datos, pesos, modo = 'semana', calendario = null) => {
+  const C = normCal(calendario)
   const buckets = new Map()
   for (const a of acts) {
     const f = fechas[a.id]
@@ -198,8 +241,9 @@ export const flujoDeCaja = (acts, fechas, datos, pesos, modo = 'semana') => {
     const costo = pesos[a.id] || 0
     if (!costo || !f.dur) continue
     const porDia = costo / f.dur
-    for (let i = 0; i < f.dur; i++) {
-      const d = addDays(f.inicio, i)
+    // recorre el rango real de la actividad y deposita solo en días laborables
+    for (let d = new Date(f.inicio); d < f.fin; d = addDays(d, 1)) {
+      if (!esLabC(d, C)) continue
       const ini = modo === 'mes' ? new Date(d.getFullYear(), d.getMonth(), 1) : lunesDe(d)
       const key = ini.getTime()
       buckets.set(key, (buckets.get(key) || 0) + porDia)
