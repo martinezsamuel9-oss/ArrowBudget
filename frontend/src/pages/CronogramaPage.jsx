@@ -6,7 +6,7 @@ import { useState, useEffect, useMemo, useRef, Fragment } from 'react'
 import { supabase } from '../lib/supabase'
 import { puedeHacer } from '../lib/permissions'
 import { calcItem, makeMoneyFmt, moneyK } from '../lib/calc'
-import { flattenActividades, calcularFechas, resumenCronograma, parsePredecesoras, fmtFecha, hoyISO, addDays, pctPlanificado, pctReal, avanceGlobal, flujoDeCaja } from '../lib/cronograma'
+import { flattenActividades, calcularFechas, resumenCronograma, parsePredecesoras, fmtFecha, hoyISO, addDays, pctPlanificado, pctReal, avanceGlobal, flujoDeCaja, curvaS, MESES_CORTOS as MESES_LIB } from '../lib/cronograma'
 import {
   CalendarRange, BarChart2, Coins, Activity, TrendingUp, LineChart,
   Plus, FileText, AlertTriangle,
@@ -151,6 +151,68 @@ function GanttChart({ acts, fechas, datos }) {
   )
 }
 
+// ── Curva S (módulo 5): SVG plan vs real ──
+function CurvaSChart({ plan, real, resumen }) {
+  if (!plan.length) return <div style={{ padding: 32, textAlign: 'center', color: 'var(--c-text-3)', fontSize: 13 }}>Sin programación aún.</div>
+  const VW = 860, VH = 320, L = 46, R = 16, T = 18, B = 34
+  const IW = VW - L - R, IH = VH - T - B
+  const x0 = plan[0].fecha.getTime()
+  const x1 = Math.max(plan[plan.length - 1].fecha.getTime(), ...real.map(p => p.fecha.getTime()), x0 + 1)
+  const X = f => L + ((f.getTime() - x0) / (x1 - x0)) * IW
+  const Y = pct => T + ((100 - pct) / 100) * IH
+  const path = pts => pts.map((p, i) => `${i ? 'L' : 'M'}${X(p.fecha).toFixed(1)},${Y(p.pct).toFixed(1)}`).join(' ')
+
+  // Ticks de meses en X
+  const meses = []
+  { const c = new Date(x0); c.setDate(1)
+    if (c.getTime() < x0) c.setMonth(c.getMonth() + 1)
+    while (c.getTime() <= x1) { meses.push(new Date(c)); c.setMonth(c.getMonth() + 1) } }
+
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0)
+  const hoyVisible = hoy.getTime() >= x0 && hoy.getTime() <= x1
+
+  return (
+    <svg viewBox={`0 0 ${VW} ${VH}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+      {/* Grid horizontal 0/25/50/75/100 */}
+      {[0, 25, 50, 75, 100].map(p => (
+        <g key={p}>
+          <line x1={L} y1={Y(p)} x2={VW - R} y2={Y(p)} stroke="var(--c-line)" strokeWidth="1" strokeDasharray={p ? '0' : '0'} />
+          <text x={L - 8} y={Y(p) + 3.5} textAnchor="end" fontSize="10" fill="var(--c-text-3)">{p}%</text>
+        </g>
+      ))}
+      {/* Ticks de meses */}
+      {meses.map((m, i) => (
+        <g key={i}>
+          <line x1={X(m)} y1={T} x2={X(m)} y2={VH - B} stroke="var(--c-line-2)" strokeWidth="1" strokeDasharray="3 3" />
+          <text x={X(m)} y={VH - B + 14} textAnchor="middle" fontSize="10" fill="var(--c-text-3)">
+            {MESES_LIB[m.getMonth()]} {String(m.getFullYear()).slice(2)}
+          </text>
+        </g>
+      ))}
+      {/* Línea de HOY */}
+      {hoyVisible && (
+        <g>
+          <line x1={X(hoy)} y1={T} x2={X(hoy)} y2={VH - B} stroke="var(--c-danger)" strokeWidth="1.5" opacity="0.55" />
+          <text x={X(hoy)} y={T - 5} textAnchor="middle" fontSize="9" fontWeight="700" fill="var(--c-danger)">HOY</text>
+        </g>
+      )}
+      {/* Curva planificada */}
+      <path d={path(plan)} fill="none" stroke="var(--c-primary)" strokeWidth="2.5" strokeDasharray="6 4" strokeLinecap="round" />
+      {/* Curva real */}
+      {real.length > 0 && (
+        <g>
+          <path d={path(real)} fill="none" stroke="var(--c-success)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+          {real.map((p, i) => (
+            <circle key={i} cx={X(p.fecha)} cy={Y(p.pct)} r="4" fill="var(--c-success)" stroke="#fff" strokeWidth="1.5">
+              <title>{`${fmtFecha(p.fecha)} — avance real ${p.pct}%`}</title>
+            </circle>
+          ))}
+        </g>
+      )}
+    </svg>
+  )
+}
+
 // Chip de estado de una actividad según plan vs real a la fecha de corte
 function EstadoAvance({ plan, real }) {
   let txt, bg, fg
@@ -232,6 +294,7 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
 
   const global = useMemo(() => avanceGlobal(acts, fechas, datos, pesos, corte), [acts, fechas, datos, pesos, corte])
   const flujo = useMemo(() => flujoDeCaja(acts, fechas, datos, pesos, modoFlujo), [acts, fechas, datos, pesos, modoFlujo])
+  const curva = useMemo(() => curvaS(acts, fechas, datos, pesos, resumen), [acts, fechas, datos, pesos, resumen])
   const money = makeMoneyFmt(budget?.moneda)
 
   // Registrar % real de una actividad en la fecha de corte activa
@@ -619,7 +682,54 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
           )
         })()}
 
-        {tab !== 'gantt' && tab !== 'fisico' && tab !== 'flujo' && (
+        {tab === 'curvas' && (() => {
+          const planHoy = avanceGlobal(acts, fechas, datos, pesos, hoyISO()).plan
+          const ultimoReal = curva.real.length ? curva.real[curva.real.length - 1] : null
+          const realPct = ultimoReal?.pct ?? 0
+          const desv = realPct - planHoy
+          return (
+            <Fragment>
+              <div className="kpi-row" style={{ marginBottom: 14 }}>
+                <div className="kpi">
+                  <div className="kpi-label"><TrendingUp size={12} className="ico" /> Plan a hoy</div>
+                  <div className="kpi-val">{planHoy}%</div>
+                  <div className="kpi-foot">según el Gantt</div>
+                </div>
+                <div className="kpi highlight">
+                  <div className="kpi-label"><Activity size={12} className="ico" /> Real (último corte)</div>
+                  <div className="kpi-val">{realPct}%</div>
+                  <div className="kpi-foot">{ultimoReal ? `corte del ${fmtFecha(ultimoReal.fecha)}` : 'sin cortes registrados aún'}</div>
+                </div>
+                <div className="kpi">
+                  <div className="kpi-label"><AlertTriangle size={12} className="ico" /> Desviación</div>
+                  <div className="kpi-val" style={{ color: desv < -3 ? 'var(--c-danger)' : desv > 3 ? 'var(--c-primary)' : 'var(--c-success)' }}>
+                    {desv > 0 ? '+' : ''}{desv}%
+                  </div>
+                  <div className="kpi-foot">{desv < -3 ? 'obra atrasada vs plan' : desv > 3 ? 'obra adelantada' : 'al día'}</div>
+                </div>
+              </div>
+
+              <div className="card" style={{ padding: 0 }}>
+                <div className="card-header">
+                  <div className="card-title"><LineChart size={15} /> Curva S — planificado vs real</div>
+                  <div style={{ display: 'flex', gap: 14, fontSize: 11, color: 'var(--c-text-3)', alignItems: 'center' }}>
+                    <span><span style={{ display: 'inline-block', width: 18, borderTop: '2.5px dashed var(--c-primary)', marginRight: 5, verticalAlign: 'middle' }}></span>Planificado</span>
+                    <span><span style={{ display: 'inline-block', width: 18, borderTop: '3px solid var(--c-success)', marginRight: 5, verticalAlign: 'middle' }}></span>Real</span>
+                  </div>
+                </div>
+                <div style={{ padding: '16px 16px 8px' }}>
+                  <CurvaSChart plan={curva.plan} real={curva.real} resumen={resumen} />
+                </div>
+                <div style={{ padding: '6px 16px 14px', fontSize: 11, color: 'var(--c-text-3)' }}>
+                  Avance ponderado por costo de actividad. La curva real se construye con cada fecha de corte
+                  registrada en Avance Físico — registra cortes semanales para una curva fiel.
+                </div>
+              </div>
+            </Fragment>
+          )
+        })()}
+
+        {tab === 'financiero' && (
           <div className="card" style={{ padding: 48, textAlign: 'center', color: 'var(--c-text-3)' }}>
             <div style={{ fontSize: 28, marginBottom: 10 }}>🚧</div>
             <div style={{ fontWeight: 700, color: 'var(--c-text-2)', marginBottom: 4 }}>

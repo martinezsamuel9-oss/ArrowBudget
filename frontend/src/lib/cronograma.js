@@ -140,6 +140,33 @@ export const pctReal = (avances, fecha) => {
   return Math.min(100, pct)
 }
 
+// ── Curva S (módulo 5) ──
+// Serie planificada (muestreo semanal del Gantt, 0→100%) y serie real
+// (un punto por cada fecha de corte con avances registrados).
+const isoLocal = d => {
+  const x = new Date(d)
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`
+}
+
+export const curvaS = (acts, fechas, datos, pesos, resumen) => {
+  if (!resumen?.inicio || !resumen?.fin) return { plan: [], real: [] }
+  const plan = []
+  let d = new Date(resumen.inicio)
+  while (d < resumen.fin) {
+    plan.push({ fecha: new Date(d), pct: avanceGlobal(acts, fechas, datos, pesos, isoLocal(d)).plan })
+    d = addDays(d, 7)
+  }
+  plan.push({ fecha: new Date(resumen.fin), pct: 100 })
+
+  const cortes = new Set()
+  for (const a of acts) for (const av of (datos[a.id]?.avances || [])) if (av.fecha) cortes.add(av.fecha)
+  const real = [...cortes].sort().map(f => ({
+    fecha: new Date(f + 'T00:00:00'),
+    pct: avanceGlobal(acts, fechas, datos, pesos, f).real,
+  }))
+  return { plan, real }
+}
+
 // Avance global plan vs real a una fecha, ponderado por peso (costo) de cada actividad
 export const avanceGlobal = (acts, fechas, datos, pesos, fecha) => {
   let totalPeso = 0, plan = 0, real = 0
