@@ -80,6 +80,12 @@ const PERMISOS = {
   /** Aprobar fichas de costo y estimaciones */
   aprobarFichas:        ['supervisor', 'cliente'],
 
+  /** Elaborar estimaciones de cobro (Fase III) */
+  elaborarEstimacion:   ['gerente', 'ing_costos_1', 'ing_costos_2', 'ing_residente'],
+
+  /** Aprobar/rechazar estimaciones (Fase III) */
+  aprobarEstimacion:    ['gerente', 'supervisor', 'cliente'],
+
   /** Gestionar equipo del proyecto (asignar roles) */
   gestionarEquipo:      ['gerente'],
 
