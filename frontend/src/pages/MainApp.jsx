@@ -9,7 +9,7 @@ import {
   ArrowRight, Star, Sparkles, Clock, DollarSign, Activity, TrendingUp,
   MapPin, Building2, ArrowUpRight, Layers, Grid, List, Filter,
   MoreHorizontal, ChevronRight, X, Check, Briefcase, Calendar,
-  FileSpreadsheet, Copy, Edit2, Trash2, Download, ChevronDown, Crown, Coins, RefreshCw, AlertTriangle,
+  FileSpreadsheet, Copy, Edit2, Trash2, Download, ChevronDown, Crown, Coins, RefreshCw, AlertTriangle, CalendarRange,
   ShieldCheck, UserPlus,
 } from 'lucide-react'
 import {
@@ -18,6 +18,7 @@ import {
   findOrCreateInsumo, findPathById, calcExplosionInsumos, CATEGORIAS, EMPTY_CATALOGOS,
 } from '../lib/calc'
 import { mapDb, toDb, UI2DB, DEFAULT_INDIRECTOS } from '../lib/mapping'
+import CronogramaPage from './CronogramaPage'
 import { useClickOutside, MathInput, StatusBadge, Drawer, Modal, Dropdown } from '../components/ui'
 import {
   exportPDFCatalogo, exportPDFPresupuesto, exportPDFFicha, exportPDFGeneral, exportPDFRangoFichas,
@@ -45,8 +46,9 @@ function formatMoney(amount, currency = 'USD') {
 // ============ SIDEBAR ============
 function Sidebar({ page, setPage, projectActivo, setTabProject, tabProject, user, onLogout, projectsCount, onSettings }) {
   const mainNav = [
-    { id: 'inicio',    label: 'Inicio',    Icon: Home },
-    { id: 'proyectos', label: 'Proyectos', Icon: Folder },
+    { id: 'inicio',     label: 'Inicio',     Icon: Home },
+    { id: 'proyectos',  label: 'Proyectos',  Icon: Folder },
+    { id: 'cronograma', label: 'Cronograma', Icon: CalendarRange },
   ]
   const projectNav = [
     { id: 'presupuesto',    label: 'Presupuesto',         Icon: FileText },
@@ -3727,6 +3729,7 @@ export default function MainApp() {
   let crumbs = []
   if (page === 'proyectos')             crumbs = ['Proyectos']
   else if (page === 'proyecto' && budget) crumbs = ['Proyectos', budget.nombreProyecto]
+  else if (page === 'cronograma')        crumbs = ['Cronograma']
   else if (page === 'reportes')           crumbs = ['Reportes']
   else if (page === 'plantillas')        crumbs = ['Biblioteca']
   else if (page === 'equipo')            crumbs = ['Equipo']
@@ -3782,6 +3785,7 @@ export default function MainApp() {
         {/* ── PAGES ── */}
         {page === 'inicio'     && <InicioPage    proyectos={proyectos} openProject={openProject} addProject={addProject} setPage={setPage} userName={userName} />}
         {page === 'proyectos'  && <ProyectosPage proyectos={proyectos} openProject={openProject} addProject={addProject} deleteProject={deleteProject} />}
+        {page === 'cronograma' && <CronogramaPage budget={budget} projectRole={projectRole} user={user} />}
         {page === 'reportes'   && <ReportesPage  proyectos={proyectos} budget={budget} params={params} userEmpresa={userEmpresa} />}
         {page === 'plantillas' && <PlantillasPage budget={budget} setBudget={setBudget} />}
         {page === 'equipo'     && <EquipoPage user={user} orgId={orgId} proyectos={proyectos} />}
