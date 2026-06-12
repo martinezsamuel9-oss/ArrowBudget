@@ -15,7 +15,7 @@ import {
 import {
   round2, fmt, money, moneyK, makeMoneyFmt, currencySymbol, uid, normalize,
   findInsumo, conceptoCost, calcFicha, calcItem, calcKPIs,
-  findOrCreateInsumo, findPathById, calcExplosionInsumos, CATEGORIAS, EMPTY_CATALOGOS,
+  findOrCreateInsumo, findPathById, calcExplosionInsumos, calcResumenFinanciero, CATEGORIAS, EMPTY_CATALOGOS,
 } from '../lib/calc'
 import { mapDb, toDb, UI2DB, DEFAULT_INDIRECTOS } from '../lib/mapping'
 import CronogramaPage from './CronogramaPage'
@@ -3696,18 +3696,12 @@ export default function MainApp() {
 
   const doLogout = () => { signOut(); nav('/login') }
 
-  // KPI totals for budget view
+  // KPI totals for budget view — calcResumenFinanciero evita el doble conteo:
+  // el PU de cada actividad YA incluye los porcentajes, así que el total
+  // general es la suma de subtotales y el costo directo se desagrega de ahí
   const budgetKPIs = useMemo(() => {
     if (!budget) return null
-    const direct = budget.items.reduce((s, it) => s + calcItem(it, budget.catalogos, params).subtotal, 0)
-    const indirectos  = direct * (params.pctIndirectos / 100)
-    const imprevistos = (direct + indirectos) * (params.pctImprevistos / 100)
-    const subtotal    = direct + indirectos + imprevistos
-    const utilidad    = subtotal * (params.pctUtilidad / 100)
-    const subtotalConU = subtotal + utilidad
-    const impuesto    = subtotalConU * (params.pctImpuesto / 100)
-    const total       = subtotalConU + impuesto
-    return { direct, indirectos, imprevistos, utilidad, impuesto, total }
+    return calcResumenFinanciero(budget.items, budget.catalogos, params)
   }, [budget, params])
 
   // Formateador de moneda atado a la moneda del proyecto activo

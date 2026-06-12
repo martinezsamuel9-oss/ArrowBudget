@@ -86,6 +86,54 @@ export const calcItem = (it, cat, p) => {
   return { subtotal: round2(s) }
 }
 
+// Desglose financiero del presupuesto SIN doble conteo.
+// El PU de cada ficha YA incluye indirectos/imprevistos/utilidad/impuesto,
+// así que: total general = Σ PU×cantidad, y el costo directo se obtiene de
+// los componentes de la ficha. Para actividades con precio manual (PU final
+// importado), se desagrega quitando los porcentajes hacia atrás:
+//   PU = CD × (1+ind) × (1 + imprev + util) × (1 + impuesto)
+export const calcResumenFinanciero = (items, cat, p) => {
+  const i = (+p.pctIndirectos || 0) / 100
+  const v = (+p.pctImprevistos || 0) / 100
+  const u = (+p.pctUtilidad || 0) / 100
+  const t = (+p.pctImpuesto || 0) / 100
+  let direct = 0, indirectos = 0, imprevistos = 0, utilidad = 0, impuesto = 0, total = 0
+  const walk = its => {
+    for (const it of (its || [])) {
+      if (it.tipo === 'actividad') {
+        const q = +it.cantidad || 0
+        const f = calcFicha(it.ficha, cat, p)
+        if (f.precioUnitario === 0 && it.precioManual > 0) {
+          const pu = +it.precioManual
+          const sinTax = pu / (1 + t)
+          const cd = sinTax / ((1 + i) * (1 + v + u))
+          direct      += cd * q
+          indirectos  += cd * i * q
+          imprevistos += cd * (1 + i) * v * q
+          utilidad    += cd * (1 + i) * u * q
+          impuesto    += (pu - sinTax) * q
+          total       += pu * q
+        } else {
+          direct      += f.costoDirecto * q
+          indirectos  += f.indirectos * q
+          imprevistos += f.imprevistos * q
+          utilidad    += f.utilidad * q
+          impuesto    += f.impuesto * q
+          total       += f.precioUnitario * q
+        }
+      } else if (it.children) walk(it.children)
+    }
+  }
+  walk(items)
+  const subtotal = round2(direct + indirectos + imprevistos)
+  const subtotalConU = round2(subtotal + utilidad)
+  return {
+    direct: round2(direct), indirectos: round2(indirectos), imprevistos: round2(imprevistos),
+    subtotal, utilidad: round2(utilidad), subtotalConU,
+    impuesto: round2(impuesto), total: round2(total),
+  }
+}
+
 export const calcKPIs = b => {
   const p = {
     pctIndirectos: b.pctIndirectos, pctImprevistos: b.pctImprevistos,
