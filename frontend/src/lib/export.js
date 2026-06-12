@@ -24,7 +24,7 @@ const getXLSX = async () => {
 import {
   round2, fmt, money, makeMoneyFmt, currencySymbol,
   findInsumo, conceptoCost,
-  calcItem, calcFicha, calcExplosionInsumos, CATEGORIAS, uid, normalize,
+  calcItem, calcFicha, calcExplosionInsumos, calcResumenFinanciero, CATEGORIAS, uid, normalize,
 } from './calc'
 
 const X = {
@@ -963,15 +963,16 @@ export const exportPDFResumenEjecutivo = async (budget, params) => {
     white: [255,255,255],
   }
 
-  // ── Calcular totales ──────────────────────────────────────────
-  const directReal  = round2(budget.items.reduce((s, it) => s + calcItem(it, budget.catalogos, params).subtotal, 0))
-  const indirectos  = round2(directReal * (params.pctIndirectos / 100))
-  const imprevistos = round2((directReal + indirectos) * (params.pctImprevistos / 100))
-  const subtotal    = round2(directReal + indirectos + imprevistos)
-  const utilidad    = round2(subtotal * (params.pctUtilidad / 100))
-  const subtotalU   = round2(subtotal + utilidad)
-  const impuesto    = round2(subtotalU * (params.pctImpuesto / 100))
-  const total       = round2(subtotalU + impuesto)
+  // ── Calcular totales (sin doble conteo: los PU ya incluyen los %) ──
+  const R = calcResumenFinanciero(budget.items, budget.catalogos, params)
+  const directReal  = R.direct
+  const indirectos  = R.indirectos
+  const imprevistos = R.imprevistos
+  const subtotal    = R.subtotal
+  const utilidad    = R.utilidad
+  const subtotalU   = R.subtotalConU
+  const impuesto    = R.impuesto
+  const total       = R.total
 
   // ── m² para costo/m² ─────────────────────────────────────────
   const m2Const = +(budget.m2Construccion || 0)
