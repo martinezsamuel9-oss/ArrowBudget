@@ -21,6 +21,7 @@ import { mapDb, toDb, UI2DB, DEFAULT_INDIRECTOS } from '../lib/mapping'
 import CronogramaPage from './CronogramaPage'
 import EstimacionesPage from './EstimacionesPage'
 import OrdenesCambioPage from './OrdenesCambioPage'
+import PlanillasPage from './PlanillasPage'
 import { useClickOutside, MathInput, StatusBadge, Drawer, Modal, Dropdown } from '../components/ui'
 import {
   exportPDFCatalogo, exportPDFPresupuesto, exportPDFFicha, exportPDFGeneral, exportPDFRangoFichas,
@@ -53,6 +54,7 @@ function Sidebar({ page, setPage, projectActivo, setTabProject, tabProject, user
     { id: 'cronograma', label: 'Cronograma', Icon: CalendarRange },
     { id: 'estimaciones', label: 'Estimaciones', Icon: Receipt },
     { id: 'ordenes', label: 'Órdenes de Cambio', Icon: ClipboardList },
+    { id: 'planillas-obra', label: 'Planillas', Icon: HardHat },
   ]
   const projectNav = [
     { id: 'presupuesto',    label: 'Presupuesto',         Icon: FileText },
@@ -3740,6 +3742,7 @@ export default function MainApp() {
   else if (page === 'cronograma')        crumbs = ['Cronograma']
   else if (page === 'estimaciones')      crumbs = ['Estimaciones']
   else if (page === 'ordenes')           crumbs = ['Órdenes de Cambio']
+  else if (page === 'planillas-obra')    crumbs = ['Planillas']
   else if (page === 'reportes')           crumbs = ['Reportes']
   else if (page === 'plantillas')        crumbs = ['Biblioteca']
   else if (page === 'equipo')            crumbs = ['Equipo']
@@ -3798,6 +3801,7 @@ export default function MainApp() {
         {page === 'cronograma' && <CronogramaPage budget={budget} projectRole={projectRole} user={user} params={params} />}
         {page === 'estimaciones' && <EstimacionesPage budget={budget} projectRole={projectRole} user={user} params={params} />}
         {page === 'ordenes' && <OrdenesCambioPage budget={budget} projectRole={projectRole} user={user} params={params} />}
+        {page === 'planillas-obra' && <PlanillasPage budget={budget} projectRole={projectRole} user={user} params={params} />}
         {page === 'reportes'   && <ReportesPage  proyectos={proyectos} budget={budget} params={params} userEmpresa={userEmpresa} />}
         {page === 'plantillas' && <PlantillasPage budget={budget} setBudget={setBudget} />}
         {page === 'equipo'     && <EquipoPage user={user} orgId={orgId} proyectos={proyectos} />}
