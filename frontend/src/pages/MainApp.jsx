@@ -23,6 +23,7 @@ import EstimacionesPage from './EstimacionesPage'
 import OrdenesCambioPage from './OrdenesCambioPage'
 import PlanillasPage from './PlanillasPage'
 import InformesPage from './InformesPage'
+import AsistenteIAPage from './AsistenteIAPage'
 import { useClickOutside, MathInput, StatusBadge, Drawer, Modal, Dropdown } from '../components/ui'
 import {
   exportPDFCatalogo, exportPDFPresupuesto, exportPDFFicha, exportPDFGeneral, exportPDFRangoFichas,
@@ -52,6 +53,7 @@ function Sidebar({ page, setPage, projectActivo, setTabProject, tabProject, user
   const mainNav = [
     { id: 'inicio',     label: 'Inicio',     Icon: Home },
     { id: 'proyectos',  label: 'Proyectos',  Icon: Folder },
+    { id: 'asistente-ia', label: 'Asistente IA', Icon: Sparkles },
     { id: 'cronograma', label: 'Cronograma', Icon: CalendarRange },
     { id: 'estimaciones', label: 'Estimaciones', Icon: Receipt },
     { id: 'ordenes', label: 'Órdenes de Cambio', Icon: ClipboardList },
@@ -3699,6 +3701,24 @@ export default function MainApp() {
     if (data) { const nb = mapDb(data); setProyectos(ps => [nb, ...ps]); setActiveId(nb.id); setPage('proyecto'); setTabProject('presupuesto') }
   }
 
+  // Crear proyecto desde el Asistente IA (items/catálogos ya generados)
+  const crearProyectoIA = async (datos) => {
+    const { data: orgId } = await supabase.rpc('get_user_org_id')
+    if (!orgId) { alert('No se encontró tu organización. Contacta a soporte.'); return }
+    if (!(await validarCupoProyectos(orgId))) return
+    const { data, error } = await supabase.from('presupuestos').insert({
+      user_id: user.id, org_id: orgId,
+      nombre_proyecto: datos.nombreProyecto, cotizante: userEmpresa,
+      cliente: '', lugar: '', tipo: datos.tipo, moneda: datos.moneda || 'USD',
+      pct_indirectos: 10, pct_imprevistos: 1, pct_utilidad: 8, pct_impuesto: 15,
+      m2_construccion: datos.m2Construccion || 0,
+      catalogos_json: { ...datos.catalogos, _m2c: datos.m2Construccion || 0 },
+      items_json: datos.items, estado: 'borrador',
+    }).select().single()
+    if (error) { alert(error.code === '42501' ? MSG_LIMITE_RLS : 'Error al crear proyecto: ' + error.message); return }
+    if (data) { const nb = mapDb(data); setProyectos(ps => [nb, ...ps]); setActiveId(nb.id); setPage('proyecto'); setTabProject('presupuesto') }
+  }
+
   const searchResults = useMemo(() => {
     if (!search.trim() || search.length < 2) return null
     const q = normalize(search)
@@ -3746,6 +3766,7 @@ export default function MainApp() {
   else if (page === 'ordenes')           crumbs = ['Órdenes de Cambio']
   else if (page === 'planillas-obra')    crumbs = ['Planillas']
   else if (page === 'informes')          crumbs = ['Informe ejecutivo']
+  else if (page === 'asistente-ia')      crumbs = ['Asistente IA']
   else if (page === 'reportes')           crumbs = ['Reportes']
   else if (page === 'plantillas')        crumbs = ['Biblioteca']
   else if (page === 'equipo')            crumbs = ['Equipo']
@@ -3806,6 +3827,7 @@ export default function MainApp() {
         {page === 'ordenes' && <OrdenesCambioPage budget={budget} projectRole={projectRole} user={user} params={params} />}
         {page === 'planillas-obra' && <PlanillasPage budget={budget} projectRole={projectRole} user={user} params={params} />}
         {page === 'informes' && <InformesPage budget={budget} params={params} userEmpresa={userEmpresa} />}
+        {page === 'asistente-ia' && <AsistenteIAPage proyectos={proyectos} onCrear={crearProyectoIA} moneda={budget?.moneda || 'USD'} />}
         {page === 'reportes'   && <ReportesPage  proyectos={proyectos} budget={budget} params={params} userEmpresa={userEmpresa} />}
         {page === 'plantillas' && <PlantillasPage budget={budget} setBudget={setBudget} />}
         {page === 'equipo'     && <EquipoPage user={user} orgId={orgId} proyectos={proyectos} />}
