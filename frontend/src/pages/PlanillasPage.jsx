@@ -26,9 +26,12 @@ const Chip = ({ estado }) => {
   return <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 10, background: e.bg, color: e.fg, whiteSpace: 'nowrap' }}>{e.label}</span>
 }
 
-// Importe de una línea = cantidad × P.U. × (1 − descuento%). El descuento es
-// el único valor editable de las líneas ligadas al presupuesto.
-const importeLinea = l => round2((+l.cantidad || 0) * (+l.pu || 0) * (1 - (+l.descuento || 0) / 100))
+// El descuento se aplica SOLO al precio unitario (una vez). El P.U. neto es el
+// precio ya descontado, y el subtotal sale de ahí — no se descuenta de nuevo.
+//   P.U. neto = P.U. × (1 − descuento%)
+//   importe   = cantidad × P.U. neto
+const puNeto = l => round2((+l.pu || 0) * (1 - (+l.descuento || 0) / 100))
+const importeLinea = l => round2((+l.cantidad || 0) * puNeto(l))
 
 // Modal para generar líneas de destajo desde el presupuesto (alcance del
 // contratista), con cantidad pendiente desde el avance físico y P.U. = mano
@@ -462,7 +465,7 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
                     {/* Contrato (bloqueado) */}
                     <td className="num" style={num}>{cc ? fmt(cc) : '—'}</td>
                     <td style={{ textAlign: 'center', ...num }}>{l.unidad || '—'}</td>
-                    <td className="num" style={num}>{money(l.pu)}{(+l.descuento || 0) > 0 && <span style={{ fontSize: 9, color: 'var(--c-warn)', display: 'block' }}>−{fmt(l.descuento)}%</span>}</td>
+                    <td className="num" style={num}>{money(l.pu)}{(+l.descuento || 0) > 0 && <span style={{ fontSize: 9, color: 'var(--c-success)', display: 'block', fontWeight: 700 }}>−{fmt(l.descuento)}% · neto {money(puNeto(l))}</span>}</td>
                     {/* Período anterior (bloqueado) */}
                     <td className="num" style={num}>{fmt(ant.cant)}</td>
                     <td className="num" style={num}>{money(ant.total)}</td>
@@ -756,7 +759,10 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
                         </td>
                         <td className="num">{lock ? <span style={num}>{fmt(l.cantidad)}</span> : <input type="number" min="0" step="any" className="input sm" value={l.cantidad} onFocus={e => e.target.select()} onChange={e => updLinea(l.id, { cantidad: e.target.value })} style={{ width: 88, textAlign: 'right' }} />}</td>
                         <td style={{ textAlign: 'center', verticalAlign: 'top', paddingTop: 8 }}>{lock ? <span style={num}>{l.unidad || '—'}</span> : <input className="input sm" value={l.unidad} onChange={e => updLinea(l.id, { unidad: e.target.value })} style={{ width: 56, textAlign: 'center' }} />}</td>
-                        <td className="num">{lock ? <span style={num}>{money(l.pu)}</span> : <input type="number" min="0" step="any" className="input sm" value={l.pu} onFocus={e => e.target.select()} onChange={e => updLinea(l.id, { pu: e.target.value })} style={{ width: 96, textAlign: 'right' }} />}</td>
+                        <td className="num">
+                          {lock ? <span style={num}>{money(l.pu)}</span> : <input type="number" min="0" step="any" className="input sm" value={l.pu} onFocus={e => e.target.select()} onChange={e => updLinea(l.id, { pu: e.target.value })} style={{ width: 96, textAlign: 'right' }} />}
+                          {(+l.descuento || 0) > 0 && <span style={{ fontSize: 9.5, color: 'var(--c-success)', display: 'block', fontWeight: 700 }}>neto {money(puNeto(l))}</span>}
+                        </td>
                         <td className="num"><input type="number" min="0" max="100" step="any" className="input sm" disabled={!cEditable} value={l.descuento ?? 0} onFocus={e => e.target.select()} onChange={e => updLinea(l.id, { descuento: Math.max(0, Math.min(100, +e.target.value || 0)) })} style={{ width: 70, textAlign: 'right' }} /></td>
                         <td className="num" style={{ fontWeight: 700 }}>{money(importeLinea(l))}</td>
                         <td>{cEditable && <button className="btn xs danger icon" onClick={() => delLinea(l.id)}><Trash2 size={11} /></button>}</td>
@@ -773,7 +779,7 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
                 )}
               </table>
             </div>
-            {cEditable && <div style={{ fontSize: 11, color: 'var(--c-text-3)', padding: '8px 16px' }}>El descuento se aplica sobre el P. Unitario de cada actividad. <b>Subtotal = Cantidad × P.U. × (1 − descuento%)</b>. Las planillas se generan a partir de este contrato.</div>}
+            {cEditable && <div style={{ fontSize: 11, color: 'var(--c-text-3)', padding: '8px 16px' }}>El descuento se aplica <b>una sola vez, sobre el P. Unitario</b> (P.U. neto = P.U. × (1 − desc%)). El <b>Subtotal = Cantidad × P.U. neto</b>; no se descuenta de nuevo. Las planillas se generan a partir de este contrato.</div>}
           </div>
 
           {/* Planillas del contrato */}
