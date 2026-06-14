@@ -11,7 +11,7 @@ import { flattenActividades, hoyISO } from '../lib/cronograma'
 import { Modal, Dropdown } from '../components/ui'
 import { exportPDFPlanilla } from '../lib/exportPlanilla'
 import {
-  HardHat, Plus, FileText, Check, X, ChevronLeft, ChevronDown, Trash2, DollarSign, Users, Coins, Wand2,
+  HardHat, Plus, FileText, Check, X, ChevronLeft, ChevronDown, Trash2, DollarSign, Users, Coins, Wand2, AlertTriangle,
 } from 'lucide-react'
 
 const ESTADOS = {
@@ -489,8 +489,8 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
               <tr>
                 <th className="num" style={{ width: 60 }}>Cant.</th><th style={{ width: 40, textAlign: 'center' }}>Und</th><th className="num" style={{ width: 78 }}>P.U.</th>
                 <th className="num" style={{ width: 60 }}>Cant.</th><th className="num" style={{ width: 90 }}>Total</th>
-                <th className="num" style={{ width: 74 }}>Cant.</th><th className="num" style={{ width: 90 }}>Total</th>
-                <th className="num" style={{ width: 60 }}>Cant.</th><th className="num" style={{ width: 90 }}>Total</th><th className="num" style={{ width: 46 }}>%</th>
+                <th className="num" style={{ width: 92 }}>Cant.</th><th className="num" style={{ width: 90 }}>Total</th>
+                <th className="num" style={{ width: 60 }}>Cant.</th><th className="num" style={{ width: 90 }}>Total</th><th className="num" style={{ width: 52 }}>%</th>
               </tr>
             </thead>
             <tbody>
@@ -502,12 +502,13 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
                 const cantAcum = round2(ant.cant + (+l.cantidad || 0))
                 const totAcum = round2(ant.total + totEste)
                 const pct = cc > 0 ? Math.round(cantAcum / cc * 100) : 0
-                const num = { fontSize: 12, color: 'var(--c-text-2)', verticalAlign: 'top', paddingTop: 8 }
+                const excede = pct > 100   // acumulado supera la cantidad contratada
+                const num = { fontSize: 12, color: 'var(--c-text-2)', verticalAlign: 'middle' }
                 return (
                   <tr key={l.id}>
-                    <td style={{ verticalAlign: 'top', fontSize: 11, fontWeight: 700, color: 'var(--c-text-2)', paddingTop: 8 }}>{l.actividadId || '—'}</td>
-                    <td style={{ verticalAlign: 'top' }}>
-                      <div style={{ fontSize: 12, lineHeight: 1.35, whiteSpace: 'normal', wordBreak: 'break-word', textAlign: 'justify', paddingTop: 6 }}>{l.descripcion}</div>
+                    <td style={{ verticalAlign: 'middle', fontSize: 12, fontWeight: 700, color: 'var(--c-text-2)' }}>{l.actividadId || '—'}</td>
+                    <td style={{ verticalAlign: 'middle' }}>
+                      <div title={l.descripcion} style={{ fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.descripcion}</div>
                     </td>
                     {/* Contrato (bloqueado) */}
                     <td className="num" style={num}>{cc ? fmt(cc) : '—'}</td>
@@ -518,13 +519,20 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
                     {/* Período anterior (bloqueado) */}
                     <td className="num" style={num}>{fmt(ant.cant)}</td>
                     <td className="num" style={num}>{money(ant.total)}</td>
-                    {/* Este período: SOLO la cantidad es editable, total formulado */}
-                    <td className="num" style={{ verticalAlign: 'top', paddingTop: 5 }}><input type="number" min="0" step="any" className="input sm" disabled={!editable} value={l.cantidad ?? ''} placeholder="0" onFocus={e => e.target.select()} onChange={e => updLinea(l.id, { cantidad: e.target.value })} style={{ width: '100%', textAlign: 'right', fontWeight: 700 }} /></td>
+                    {/* Este período: SOLO la cantidad es editable; alerta si excede el contrato */}
+                    <td className="num" style={{ verticalAlign: 'middle' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                        {excede && <AlertTriangle size={13} style={{ color: 'var(--c-danger)', flexShrink: 0 }} title="Excede la cantidad contratada (>100%). Requiere orden de cambio." />}
+                        <input type="number" min="0" step="any" className="input sm" disabled={!editable} value={l.cantidad ?? ''} placeholder="0" onFocus={e => e.target.select()} onChange={e => updLinea(l.id, { cantidad: e.target.value })} style={{ flex: 1, minWidth: 0, textAlign: 'right', fontWeight: 700, ...(excede ? { borderColor: 'var(--c-danger)', color: 'var(--c-danger)' } : {}) }} />
+                      </div>
+                    </td>
                     <td className="num" style={{ ...num, fontWeight: 700, color: 'var(--c-text)' }}>{money(totEste)}</td>
                     {/* Acumulado (bloqueado) */}
                     <td className="num" style={{ ...num, fontWeight: 600 }}>{fmt(cantAcum)}</td>
                     <td className="num" style={{ ...num, fontWeight: 700, color: 'var(--c-text)' }}>{money(totAcum)}</td>
-                    <td className="num" style={{ ...num, fontWeight: 700, color: pct >= 100 ? 'var(--c-success)' : 'var(--c-text-2)' }}>{cc ? `${pct}%` : '—'}</td>
+                    <td className="num" style={{ fontSize: 12, fontWeight: 800, verticalAlign: 'middle', color: excede ? 'var(--c-danger)' : (pct >= 100 ? 'var(--c-success)' : 'var(--c-text-2)') }}>
+                      {cc ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, justifyContent: 'flex-end' }}>{excede && <AlertTriangle size={12} style={{ flexShrink: 0 }} />}{pct}%</span> : '—'}
+                    </td>
                   </tr>
                 )
               })}
