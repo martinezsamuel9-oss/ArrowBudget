@@ -189,6 +189,22 @@ export default function EstimacionesPage({ budget, projectRole, user, params }) 
     if (sel?.id === e.id) setSel(null)
   }
 
+  // Punto 5: una estimación rechazada NO se reabre con el mismo número; se genera
+  // la siguiente correlativa como versión corregida (la rechazada queda en histórico)
+  const reabrirComoNueva = async e => {
+    const numero = lista.reduce((mx, x) => Math.max(mx, x.numero), 0) + 1
+    if (!confirm(`La Estimación No. ${e.numero} fue rechazada.\n\n¿Generar la Estimación No. ${numero} como versión corregida? La No. ${e.numero} queda en el histórico como rechazada.`)) return
+    const { data, error } = await supabase.from('estimaciones').insert({
+      presupuesto_id: budget.id, numero,
+      periodo_inicio: e.periodo_inicio, periodo_fin: e.periodo_fin,
+      lineas_json: e.lineas_json, pct_retencion: e.pct_retencion, pct_amortizacion: e.pct_amortizacion,
+      notas: e.notas, creado_por: user?.id || null,
+    }).select().single()
+    if (error) { alert('Error: ' + error.message); return }
+    setLista(p => [...p, data])
+    setSel(data)
+  }
+
   const pdf = e => exportPDFEstimacion(budget, e, acumDe(e),
     { logo: budget.logoOfertante, logoCliente: budget.logoCliente, headerBg: budget.apuHeaderBg, headerText: budget.apuHeaderText })
 
@@ -208,9 +224,19 @@ export default function EstimacionesPage({ budget, projectRole, user, params }) 
   if (sel) {
     const editable = sel.estado === 'borrador' && canElaborar
     const A = acumDe(sel)
+    // Punto 3: no se permite exceder la cantidad de contrato (acum. anterior +
+    // este periodo ≤ cantidad de contrato). Si cantContrato es 0 (obra nueva /
+    // partida sin tope) no se limita — ahí entra la orden de cambio.
+    const topeDe = actividadId => {
+      const l = sel.lineas_json.find(x => x.actividadId === actividadId)
+      const cc = +l?.cantContrato || 0
+      if (cc <= 0) return Infinity
+      return Math.max(0, round2(cc - (A.prev[actividadId] || 0)))
+    }
     const updLinea = (actividadId, cantidad) => {
-      const lineas_json = sel.lineas_json.map(l => l.actividadId === actividadId
-        ? { ...l, cantidad: Math.max(0, +cantidad || 0) } : l)
+      const tope = topeDe(actividadId)
+      const v = Math.min(Math.max(0, +cantidad || 0), tope)
+      const lineas_json = sel.lineas_json.map(l => l.actividadId === actividadId ? { ...l, cantidad: v } : l)
       setSel({ ...sel, lineas_json })
     }
     return (
@@ -237,7 +263,7 @@ export default function EstimacionesPage({ budget, projectRole, user, params }) 
               </Fragment>
             )}
             {sel.estado === 'rechazada' && canElaborar && (
-              <button className="btn" disabled={busy} onClick={() => cambiarEstado(sel, 'borrador')}>Reabrir como borrador</button>
+              <button className="btn brand" disabled={busy} onClick={() => reabrirComoNueva(sel)}>Generar siguiente estimación corregida</button>
             )}
             {sel.estado === 'aprobada' && canElaborar && (
               <button className="btn" style={{ background: 'var(--c-primary)', borderColor: 'var(--c-primary)', color: '#fff' }} disabled={busy}
@@ -309,7 +335,9 @@ export default function EstimacionesPage({ budget, projectRole, user, params }) 
                       }
                       const prev = A.prev[l.actividadId] || 0
                       const importe = round2((+l.cantidad || 0) * (+l.pu || 0))
-                      const excede = round2(prev + (+l.cantidad || 0)) > (+l.cantContrato || 0) + 0.001
+                      const tope = topeDe(l.actividadId)
+                      const enTope = tope !== Infinity && (+l.cantidad || 0) >= tope - 0.001 && tope > 0
+                      const saldoContrato = tope === Infinity ? null : tope
                       rows.push(
                         <tr key={l.actividadId}>
                           <td className="id">{l.actividadId}</td>
@@ -322,8 +350,9 @@ export default function EstimacionesPage({ budget, projectRole, user, params }) 
                             <input type="number" min="0" step="any" className="input sm" disabled={!editable}
                               value={l.cantidad} onFocus={e => e.target.select()}
                               onChange={e => updLinea(l.actividadId, e.target.value)}
-                              style={{ width: 88, textAlign: 'right', fontWeight: 700, borderColor: excede ? 'var(--c-danger)' : undefined }} />
-                            {excede && <span title={`Acumulado supera la cantidad de contrato (${fmt(l.cantContrato)})`} style={{ color: 'var(--c-danger)', marginLeft: 4 }}>⚠</span>}
+                              title={saldoContrato != null ? `Máximo de este periodo: ${fmt(saldoContrato)} (saldo de contrato)` : 'Sin tope de contrato'}
+                              style={{ width: 88, textAlign: 'right', fontWeight: 700, borderColor: enTope ? 'var(--c-warn)' : undefined }} />
+                            {enTope && <span title="Esta actividad llegó al 100% de su cantidad de contrato. Para cobrar más se requiere una orden de cambio." style={{ color: 'var(--c-warn)', marginLeft: 4, fontSize: 10, fontWeight: 700 }}>100%</span>}
                           </td>
                           <td className="num" style={{ fontWeight: 700 }}>{money(importe)}</td>
                         </tr>

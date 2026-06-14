@@ -107,6 +107,20 @@ export default function OrdenesCambioPage({ budget, projectRole, user, params })
     if (sel?.id === oc.id) setSel(null)
   }
 
+  // Punto 5: una OC rechazada se reabre como la siguiente correlativa (la
+  // rechazada queda en histórico), nunca con el mismo número.
+  const reabrirComoNueva = async oc => {
+    const numero = lista.reduce((mx, x) => Math.max(mx, x.numero), 0) + 1
+    if (!confirm(`La Orden de Cambio No. ${oc.numero} fue rechazada.\n\n¿Generar la No. ${numero} como versión corregida? La No. ${oc.numero} queda en el histórico.`)) return
+    const { data, error } = await supabase.from('ordenes_cambio').insert({
+      presupuesto_id: budget.id, numero, fecha: oc.fecha, concepto: oc.concepto,
+      tipo: oc.tipo, lineas_json: oc.lineas_json, notas: oc.notas, creado_por: user?.id || null,
+    }).select().single()
+    if (error) { alert('Error: ' + error.message); return }
+    setLista(p => [...p, data])
+    setSel(data)
+  }
+
   const pdf = oc => exportPDFOrdenCambio(budget, oc,
     { monto: montoDe(oc), contratoVigente: contratoAntesDe(oc.numero), contratoNuevo: round2(contratoAntesDe(oc.numero) + efectoDe(oc)) },
     { logo: budget.logoOfertante, logoCliente: budget.logoCliente, headerBg: budget.apuHeaderBg, headerText: budget.apuHeaderText })
@@ -155,7 +169,7 @@ export default function OrdenesCambioPage({ budget, projectRole, user, params })
               </Fragment>
             )}
             {sel.estado === 'rechazada' && canElaborar && (
-              <button className="btn" disabled={busy} onClick={() => cambiarEstado(sel, 'borrador')}>Reabrir como borrador</button>
+              <button className="btn brand" disabled={busy} onClick={() => reabrirComoNueva(sel)}>Generar siguiente orden corregida</button>
             )}
             <button className="btn" style={{ background: 'var(--c-danger)', borderColor: 'var(--c-danger)', color: '#fff' }} onClick={() => pdf(sel)}><FileText size={13} /> PDF</button>
           </div>

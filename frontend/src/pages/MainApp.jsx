@@ -1934,6 +1934,16 @@ function ProyectosPage({ proyectos, openProject, addProject, deleteProject }) {
   const [q, setQ] = useState('')
   const [f, setF] = useState('Todos')
   const [layout, setLayout] = useState('grid')
+  // % de fichas con insumos (mismo cálculo que el Inicio, antes estaba fijo en 60%)
+  const getProgress = p => {
+    let filled = 0, total = 0
+    const walk = its => its.forEach(it => {
+      if (it.tipo === 'actividad') { total++; const fi = it.ficha || {}; if ((fi.materiales||[]).length + (fi.manoObra||[]).length + (fi.herramientaEquipo||[]).length + (fi.subcontratos||[]).length > 0) filled++ }
+      else if (it.children) walk(it.children)
+    })
+    walk(p.items || [])
+    return total > 0 ? Math.round(filled / total * 100) : 0
+  }
   const filters = ['Todos', 'Activo', 'En revisión', 'Borrador', 'Aprobado', 'Archivado']
   // 'Todos' excluye archivados; estos solo se ven con su propio filtro
   const list = proyectos.filter(p =>
@@ -2006,7 +2016,7 @@ function ProyectosPage({ proyectos, openProject, addProject, deleteProject }) {
                       <span className="proj-meta-item"><MapPin size={12} /> {p.lugar || '—'}</span>
                       <span className="proj-meta-item"><Layers size={12} /> {k.nCapitulos} cap.</span>
                     </div>
-                    <div className="proj-progress"><div style={{ width: '60%' }}></div></div>
+                    <div className="proj-progress" title={`${getProgress(p)}% de fichas con insumos`}><div style={{ width: `${getProgress(p)}%` }}></div></div>
                   </div>
                   <div className="proj-foot">
                     <div>
