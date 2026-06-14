@@ -12,7 +12,7 @@ import { normLineasOC, montoAjuste, efectoOC, desgloseOC } from '../lib/contrato
 import { exportPDFOrdenCambio } from '../lib/exportOrdenCambio'
 import { Dropdown } from '../components/ui'
 import {
-  ClipboardList, Plus, FileText, Check, ChevronLeft, Trash2, DollarSign, TrendingUp, ChevronDown,
+  ClipboardList, Plus, FileText, Check, X, ChevronLeft, Trash2, DollarSign, TrendingUp, ChevronDown, MessageSquare,
 } from 'lucide-react'
 
 const ESTADOS_OC = {
@@ -137,6 +137,18 @@ export default function OrdenesCambioPage({ budget, projectRole, user, params })
     const r = await guardar(oc, extra); if (r) setSel(r)
   }
 
+  // Guarda SOLO la revisión por partida (aprobacion_json). Va en columna aparte
+  // para que el cliente/supervisión (rol de solo-lectura) pueda guardarla sin
+  // que el trigger de blindaje lo bloquee por tocar las líneas.
+  const guardarAprobacion = async oc => {
+    const { error } = await supabase.from('ordenes_cambio')
+      .update({ aprobacion_json: oc.aprobacion_json || {}, updated_at: new Date().toISOString() })
+      .eq('id', oc.id)
+    if (error) { alert('Error al guardar la revisión: ' + error.message); return false }
+    setLista(p => p.map(x => x.id === oc.id ? { ...x, aprobacion_json: oc.aprobacion_json || {} } : x))
+    return true
+  }
+
   const reabrirComoNueva = async oc => {
     const numero = lista.reduce((mx, x) => Math.max(mx, x.numero), 0) + 1
     if (!confirm(`La Orden de Cambio No. ${oc.numero} fue rechazada.\n\n¿Generar la No. ${numero} como versión corregida?`)) return
@@ -175,6 +187,45 @@ export default function OrdenesCambioPage({ budget, projectRole, user, params })
     const dz = desgloseOC(sel)
     const vigente = contratoAntesDe(sel.numero)
     const setLineas = lineas_json => setSel({ ...sel, lineas_json })
+    // Revisión por partida (cliente / supervisión) cuando la OC está enviada
+    const aprob = sel.aprobacion_json || {}
+    const puedeRevisar = canAprobar && sel.estado === 'enviada'
+    const hayRevision = Object.keys(aprob).length > 0
+    const setAprobLinea = async (lineId, estado) => {
+      const cur = aprob[lineId]?.estado
+      const next = { ...aprob, [lineId]: { ...(aprob[lineId] || {}), estado: cur === estado ? null : estado } }
+      const oc = { ...sel, aprobacion_json: next }; setSel(oc); await guardarAprobacion(oc)
+    }
+    const setComentario = (lineId, comentario) => setSel({ ...sel, aprobacion_json: { ...aprob, [lineId]: { ...(aprob[lineId] || {}), comentario } } })
+    // Celda de revisión por partida (estado + comentario)
+    const celdaRevision = lineId => {
+      const est = aprob[lineId]?.estado
+      return (
+        <td style={{ minWidth: 200, verticalAlign: 'top' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              {puedeRevisar ? (
+                <Fragment>
+                  <button className="btn xs" title="Aprobar partida" onClick={() => setAprobLinea(lineId, 'aprobada')}
+                    style={{ background: est === 'aprobada' ? 'var(--c-success)' : 'transparent', color: est === 'aprobada' ? '#fff' : 'var(--c-success)', borderColor: 'var(--c-success)', padding: '2px 7px' }}><Check size={11} /></button>
+                  <button className="btn xs" title="Rechazar partida" onClick={() => setAprobLinea(lineId, 'rechazada')}
+                    style={{ background: est === 'rechazada' ? 'var(--c-danger)' : 'transparent', color: est === 'rechazada' ? '#fff' : 'var(--c-danger)', borderColor: 'var(--c-danger)', padding: '2px 7px' }}><X size={11} /></button>
+                </Fragment>
+              ) : (
+                <span style={{ fontSize: 11, fontWeight: 700, color: est === 'aprobada' ? 'var(--c-success)' : est === 'rechazada' ? 'var(--c-danger)' : 'var(--c-text-3)' }}>
+                  {est === 'aprobada' ? '✓ Aprobada' : est === 'rechazada' ? '✕ Rechazada' : 'Pendiente'}
+                </span>
+              )}
+            </div>
+            {(puedeRevisar || aprob[lineId]?.comentario) && (
+              <input className="input sm" placeholder="Comentario…" disabled={!puedeRevisar}
+                value={aprob[lineId]?.comentario || ''} onChange={e => setComentario(lineId, e.target.value)}
+                onBlur={() => puedeRevisar && guardarAprobacion(sel)} style={{ width: '100%', fontSize: 11 }} />
+            )}
+          </div>
+        </td>
+      )
+    }
     const idsAjustados = new Set(ajustes.map(a => a.actividadId))
 
     const agregarAjuste = actId => {
@@ -208,12 +259,28 @@ export default function OrdenesCambioPage({ budget, projectRole, user, params })
           </div>
           <div className="page-head-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {editable && <button className="btn primary" disabled={busy} onClick={async () => { if (await guardar(sel)) alert('💾 Orden de cambio guardada.') }}><Check size={13} /> {busy ? 'Guardando…' : 'Guardar'}</button>}
+            {/* Aprobación del cliente / supervisión sobre la orden completa */}
+            {puedeRevisar && <button className="btn" style={{ background: 'var(--c-success)', borderColor: 'var(--c-success)', color: '#fff' }} disabled={busy}
+              onClick={() => cambiarEstado(sel, 'aprobada', '¿Aprobar la orden de cambio? Solo las partidas aprobadas modificarán el contrato.')}><Check size={13} /> Aprobar orden</button>}
+            {puedeRevisar && <button className="btn" style={{ background: 'var(--c-danger)', borderColor: 'var(--c-danger)', color: '#fff' }} disabled={busy}
+              onClick={() => cambiarEstado(sel, 'rechazada', '¿Rechazar la orden de cambio completa?')}><X size={13} /> Rechazar orden</button>}
             {sel.estado === 'rechazada' && canElaborar && <button className="btn brand" disabled={busy} onClick={() => reabrirComoNueva(sel)}>Generar siguiente orden corregida</button>}
             <button className="btn" style={{ background: 'var(--c-danger)', borderColor: 'var(--c-danger)', color: '#fff' }} onClick={() => pdf(sel)}><FileText size={13} /> PDF</button>
           </div>
         </div>
 
         <div className="page-body">
+          {/* Aviso de fase del flujo */}
+          {(editable || puedeRevisar) && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', marginBottom: 14, borderRadius: 10, background: editable ? 'var(--c-accent-soft)' : '#fef3c7', border: `1px solid ${editable ? 'var(--c-line)' : '#f59e0b'}` }}>
+              <MessageSquare size={17} style={{ color: editable ? 'var(--c-text-3)' : '#b45309', flexShrink: 0 }} />
+              <div style={{ fontSize: 12.5, color: 'var(--c-text-2)', lineHeight: 1.45 }}>
+                {editable
+                  ? <>Estás en <b>Borrador</b>: configuración por el <b>ejecutor / contratista principal</b>. Define ajustes y obra nueva; al <b>Enviar</b>, el cliente/supervisión revisa cada partida.</>
+                  : <>Revisión del <b>cliente / supervisión</b>: aprueba o rechaza <b>cada partida</b> con su comentario y luego <b>Aprobar orden</b>. Solo las partidas <b>aprobadas</b> modifican el contrato.</>}
+              </div>
+            </div>
+          )}
           <div className="kpi-row" style={{ marginBottom: 14 }}>
             <div className="kpi">
               <div className="kpi-label">Fecha</div>
@@ -259,6 +326,7 @@ export default function OrdenesCambioPage({ budget, projectRole, user, params })
                       <th className="num" style={{ width: 96 }}>Cant. nueva</th>
                       <th className="num" style={{ width: 80 }}>Δ Cant.</th>
                       <th className="num" style={{ width: 120 }}>Monto</th>
+                      {(puedeRevisar || hayRevision) && <th style={{ width: 210 }}>Revisión cliente/sup.</th>}
                       <th style={{ width: 40 }}></th>
                     </tr></thead>
                     <tbody>
@@ -280,6 +348,7 @@ export default function OrdenesCambioPage({ budget, projectRole, user, params })
                             </td>
                             <td className="num" style={{ fontWeight: 700, color: delta > 0 ? 'var(--c-success)' : delta < 0 ? 'var(--c-danger)' : 'var(--c-text-3)' }}>{delta > 0 ? '+' : ''}{fmt(delta)}</td>
                             <td className="num" style={{ fontWeight: 700, color: monto > 0 ? 'var(--c-success)' : monto < 0 ? 'var(--c-danger)' : 'var(--c-text-3)' }}>{monto < 0 ? '− ' : monto > 0 ? '+ ' : ''}{money(Math.abs(monto))}</td>
+                            {(puedeRevisar || hayRevision) && celdaRevision(a.id)}
                             <td>{editable && <button className="btn xs danger icon" onClick={() => delLinea(a.id)}><Trash2 size={11} /></button>}</td>
                           </tr>
                         )
@@ -307,6 +376,7 @@ export default function OrdenesCambioPage({ budget, projectRole, user, params })
                       <th className="num" style={{ width: 100 }}>Cantidad</th>
                       <th className="num" style={{ width: 120 }}>P. Unitario</th>
                       <th className="num" style={{ width: 120 }}>Monto</th>
+                      {(puedeRevisar || hayRevision) && <th style={{ width: 210 }}>Revisión cliente/sup.</th>}
                       <th style={{ width: 40 }}></th>
                     </tr></thead>
                     <tbody>
@@ -317,6 +387,7 @@ export default function OrdenesCambioPage({ budget, projectRole, user, params })
                           <td className="num"><input type="number" min="0" step="any" className="input sm" disabled={!editable} value={n.cantidad} onFocus={e => e.target.select()} onChange={e => updLinea(n.id, { cantidad: e.target.value })} style={{ width: 86, textAlign: 'right' }} /></td>
                           <td className="num"><input type="number" min="0" step="any" className="input sm" disabled={!editable} value={n.pu} onFocus={e => e.target.select()} onChange={e => updLinea(n.id, { pu: e.target.value })} style={{ width: 106, textAlign: 'right' }} /></td>
                           <td className="num" style={{ fontWeight: 700, color: 'var(--c-success)' }}>+ {money(round2((+n.cantidad || 0) * (+n.pu || 0)))}</td>
+                          {(puedeRevisar || hayRevision) && celdaRevision(n.id)}
                           <td>{editable && <button className="btn xs danger icon" onClick={() => delLinea(n.id)}><Trash2 size={11} /></button>}</td>
                         </tr>
                       ))}
@@ -348,6 +419,7 @@ export default function OrdenesCambioPage({ budget, projectRole, user, params })
               <span style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>CONTRATO MODIFICADO</span>
               <span style={{ fontSize: 15, fontWeight: 800, fontFamily: 'var(--font-mono)', color: 'var(--c-accent)' }}>{money(round2(vigente + dz.neto))}</span>
             </div>
+            {hayRevision && <div style={{ fontSize: 11, color: 'var(--c-text-3)', padding: '8px 16px' }}>Efecto propuesto. Solo las partidas <b>aprobadas</b> por el cliente/supervisión modifican realmente el contrato.</div>}
           </div>
         </div>
       </Fragment>

@@ -38,13 +38,23 @@ export const desgloseOC = oc => {
   return { aumento: round2(aumento), disminucion: round2(disminucion), obraNueva: round2(obraNueva), neto: round2(aumento + disminucion + obraNueva) }
 }
 
-// Δ cantidad de contrato por actividad, según OCs APROBADAS (suma de ajustes)
+// ¿Cuenta esta partida? Si la OC tiene revisión por partida (aprobacion_json),
+// solo cuentan las marcadas 'aprobada'. Sin revisión por partida (legado) →
+// cuentan todas (la aprobación global de la OC basta).
+export const lineaCuenta = (oc, lineId) => {
+  const ap = oc?.aprobacion_json || {}
+  if (!Object.keys(ap).length) return true
+  return ap[lineId]?.estado === 'aprobada'
+}
+
+// Δ cantidad de contrato por actividad, según OCs APROBADAS (suma de ajustes
+// de las partidas aprobadas)
 export const deltaCantPorActividad = ordenes => {
   const d = {}
   for (const oc of (ordenes || [])) {
     if (oc.estado !== 'aprobada') continue
     for (const a of normLineasOC(oc).ajustes) {
-      if (!a.actividadId) continue
+      if (!a.actividadId || !lineaCuenta(oc, a.id)) continue
       d[a.actividadId] = round2((d[a.actividadId] || 0) + ((+a.cantNueva || 0) - (+a.cantOriginal || 0)))
     }
   }
@@ -57,7 +67,7 @@ export const obraNuevaAprobada = ordenes => {
   for (const oc of (ordenes || [])) {
     if (oc.estado !== 'aprobada') continue
     for (const n of normLineasOC(oc).nuevas) {
-      if (!(n.descripcion || '').trim()) continue
+      if (!(n.descripcion || '').trim() || !lineaCuenta(oc, n.id)) continue
       out.push({
         actividadId: `OC${oc.numero}·${n.id}`,
         descripcion: n.descripcion, unidad: n.unidad || '',
