@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase'
 import { puedeHacer } from '../lib/permissions'
 import { calcItem, makeMoneyFmt, fmt, round2 } from '../lib/calc'
 import { flattenActividades, pctReal, hoyISO } from '../lib/cronograma'
+import { efectoOC, deltaCantPorActividad, obraNuevaAprobada } from '../lib/contrato'
 import { exportPDFEstimacion } from '../lib/exportEstimacion'
 import {
   Receipt, Plus, FileText, Check, X, Send, ChevronLeft, Trash2, Coins, AlertTriangle, DollarSign,
@@ -52,23 +53,24 @@ export default function EstimacionesPage({ budget, projectRole, user, params }) 
     () => round2(acts.reduce((s, a) => s + (pus[a.id] || 0) * (+a.cantidad || 0), 0)),
     [acts, pus],
   )
-  // Órdenes de cambio aprobadas ajustan el monto del contrato
-  const [ajusteOC, setAjusteOC] = useState(0)
+  // Órdenes de cambio aprobadas: ajustan el monto del contrato, la cantidad
+  // de contrato por actividad (destraba el tope) y aportan obra nueva estimable
+  const [ordenes, setOrdenes] = useState([])
   useEffect(() => {
     let cancel = false
     const cargarOC = async () => {
-      if (!budget?.id) { setAjusteOC(0); return }
-      const { data } = await supabase.from('ordenes_cambio').select('tipo, lineas_json').eq('presupuesto_id', budget.id).eq('estado', 'aprobada')
-      if (cancel) return
-      const total = (data || []).reduce((s, oc) => {
-        const m = (oc.lineas_json || []).reduce((x, l) => x + (+l.cantidad || 0) * (+l.pu || 0), 0)
-        return s + (oc.tipo === 'deductiva' ? -m : m)
-      }, 0)
-      setAjusteOC(round2(total))
+      if (!budget?.id) { setOrdenes([]); return }
+      const { data } = await supabase.from('ordenes_cambio').select('numero, estado, tipo, lineas_json').eq('presupuesto_id', budget.id)
+      if (!cancel) setOrdenes(data || [])
     }
     cargarOC()
     return () => { cancel = true }
   }, [budget?.id])
+  const ajusteOC = useMemo(() => round2(ordenes.filter(o => o.estado === 'aprobada').reduce((s, o) => s + efectoOC(o), 0)), [ordenes])
+  const deltaCant = useMemo(() => deltaCantPorActividad(ordenes), [ordenes])
+  const obraNueva = useMemo(() => obraNuevaAprobada(ordenes), [ordenes])
+  // Cantidad de contrato por actividad ya AJUSTADA por OCs aprobadas
+  const cantContratoDe = a => round2((+a.cantidad || 0) + (deltaCant[a.id] || 0))
   const totalContrato = round2(contratoBase + ajusteOC)
 
   // ── Carga ──
@@ -131,15 +133,26 @@ export default function EstimacionesPage({ budget, projectRole, user, params }) 
     const { data: cr } = await supabase.from('cronogramas').select('datos_json').eq('presupuesto_id', budget.id).maybeSingle()
     if (cr?.datos_json?.actividades) avances = cr.datos_json.actividades
     const prev = acumPrevio(numero)
+    // Partidas del contrato (con cantidad ajustada por OCs aprobadas)
     const lineas = acts.map(a => {
-      const ejecutadaAcum = round2((pctReal(avances[a.id]?.avances) / 100) * (+a.cantidad || 0))
+      const cc = cantContratoDe(a)
+      const ejecutadaAcum = round2((pctReal(avances[a.id]?.avances) / 100) * cc)
       const pendiente = Math.max(0, round2(ejecutadaAcum - (prev[a.id] || 0)))
       return {
         actividadId: a.id, descripcion: a.descripcion, unidad: a.unidad,
         capId: a.capId, capDesc: a.capDesc,
-        cantContrato: +a.cantidad || 0, pu: round2(pus[a.id] || 0), cantidad: pendiente,
+        cantContrato: cc, pu: round2(pus[a.id] || 0), cantidad: pendiente,
       }
     })
+    // Obra nueva aprobada en OCs → partidas estimables
+    for (const n of obraNueva) {
+      lineas.push({
+        actividadId: n.actividadId, descripcion: n.descripcion, unidad: n.unidad,
+        capId: n.capId, capDesc: n.capDesc,
+        cantContrato: round2(n.cantidad), pu: round2(n.pu),
+        cantidad: Math.max(0, round2(n.cantidad - (prev[n.actividadId] || 0))),
+      })
+    }
     const { data, error } = await supabase.from('estimaciones').insert({
       presupuesto_id: budget.id, numero,
       periodo_inicio: hoyISO(), periodo_fin: hoyISO(),

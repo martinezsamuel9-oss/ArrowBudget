@@ -1,13 +1,18 @@
-// ============ ÓRDENES DE CAMBIO PAGE (Fase III · módulo 2) ============
-// Modificaciones al contrato (aditivas/deductivas) con líneas libres,
-// correlativo, flujo de aprobación y efecto sobre el monto del contrato.
+// ============ ÓRDENES DE CAMBIO PAGE (Fase III · módulo 2, formato SALCO) ============
+// Cuadro por partida: cada actividad del contrato puede tener aumento o
+// disminución de obra (ajuste de cantidad), más obra nueva. El efecto neto
+// modifica el contrato y, al aprobarse, ajusta la cantidad de contrato por
+// actividad que usan las estimaciones (destraba el tope "salvo OC").
 import { useState, useEffect, useMemo, Fragment } from 'react'
 import { supabase } from '../lib/supabase'
 import { puedeHacer } from '../lib/permissions'
 import { calcItem, makeMoneyFmt, fmt, round2, uid } from '../lib/calc'
+import { flattenActividades } from '../lib/cronograma'
+import { normLineasOC, montoAjuste, efectoOC, desgloseOC } from '../lib/contrato'
 import { exportPDFOrdenCambio } from '../lib/exportOrdenCambio'
+import { Dropdown } from '../components/ui'
 import {
-  ClipboardList, Plus, FileText, Check, X, Send, ChevronLeft, Trash2, DollarSign, TrendingUp,
+  ClipboardList, Plus, FileText, Check, X, Send, ChevronLeft, Trash2, DollarSign, TrendingUp, ChevronDown,
 } from 'lucide-react'
 
 const ESTADOS_OC = {
@@ -16,7 +21,6 @@ const ESTADOS_OC = {
   aprobada:  { label: 'Aprobada',  bg: '#d1fae5',   fg: '#065f46' },
   rechazada: { label: 'Rechazada', bg: '#fee2e2',   fg: '#991b1b' },
 }
-
 const ChipOC = ({ estado }) => {
   const e = ESTADOS_OC[estado] || ESTADOS_OC.borrador
   return <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 10, background: e.bg, color: e.fg, whiteSpace: 'nowrap' }}>{e.label}</span>
@@ -32,10 +36,22 @@ export default function OrdenesCambioPage({ budget, projectRole, user, params })
   const canElaborar = puedeHacer(projectRole, 'elaborarOrdenCambio')
   const canAprobar  = puedeHacer(projectRole, 'aprobarOrdenCambio')
 
-  const contratoOriginal = useMemo(() => {
-    if (!budget) return 0
-    return round2(budget.items.reduce((s, it) => s + calcItem(it, budget.catalogos, params).subtotal, 0))
-  }, [budget, params])
+  const acts = useMemo(() => flattenActividades(budget?.items || []), [budget?.items])
+  const puDe = useMemo(() => {
+    const m = {}
+    const walk = its => { for (const it of (its || [])) {
+      if (it.tipo === 'actividad') m[it.id] = calcItem(it, budget?.catalogos, params).precioUnitario
+      else if (it.children) walk(it.children)
+    } }
+    walk(budget?.items || [])
+    return m
+  }, [budget?.items, budget?.catalogos, params])
+  const actById = useMemo(() => Object.fromEntries(acts.map(a => [a.id, a])), [acts])
+
+  const contratoOriginal = useMemo(
+    () => round2(budget ? budget.items.reduce((s, it) => s + calcItem(it, budget.catalogos, params).subtotal, 0) : 0),
+    [budget, params],
+  )
 
   useEffect(() => {
     let cancel = false
@@ -45,106 +61,103 @@ export default function OrdenesCambioPage({ budget, projectRole, user, params })
       const { data } = await supabase.from('ordenes_cambio').select('*').eq('presupuesto_id', budget.id).order('numero')
       if (!cancel) { setLista(data || []); setLoading(false) }
     }
-    cargar()
-    setSel(null)
+    cargar(); setSel(null)
     return () => { cancel = true }
   }, [budget?.id])
 
-  const montoDe = oc => round2((oc.lineas_json || []).reduce((s, l) => s + (+l.cantidad || 0) * (+l.pu || 0), 0))
-  const efectoDe = oc => (oc.tipo === 'deductiva' ? -1 : 1) * montoDe(oc)
-
-  // Contrato vigente ANTES de una OC dada (original ± OC aprobadas anteriores)
   const contratoAntesDe = numero => round2(
-    contratoOriginal + lista.filter(o => o.estado === 'aprobada' && o.numero < numero).reduce((s, o) => s + efectoDe(o), 0)
-  )
-  const ocAprobadas = round2(lista.filter(o => o.estado === 'aprobada').reduce((s, o) => s + efectoDe(o), 0))
+    contratoOriginal + lista.filter(o => o.estado === 'aprobada' && o.numero < numero).reduce((s, o) => s + efectoOC(o), 0))
+  const ocAprobadas = round2(lista.filter(o => o.estado === 'aprobada').reduce((s, o) => s + efectoOC(o), 0))
   const contratoActualizado = round2(contratoOriginal + ocAprobadas)
 
   const nueva = async () => {
     const numero = lista.reduce((mx, o) => Math.max(mx, o.numero), 0) + 1
     const { data, error } = await supabase.from('ordenes_cambio').insert({
-      presupuesto_id: budget.id, numero,
-      lineas_json: [{ id: uid(), descripcion: '', unidad: '', cantidad: 1, pu: 0 }],
-      creado_por: user?.id || null,
+      presupuesto_id: budget.id, numero, tipo: 'aditiva',
+      lineas_json: [], creado_por: user?.id || null,
     }).select().single()
     if (error) {
       alert('Error al crear la orden de cambio: ' + error.message +
         (/ordenes_cambio/.test(error.message) ? '\n\n(¿Se ejecutó supabase/fase3/fase3_02_ordenes_cambio.sql?)' : ''))
       return
     }
-    setLista(p => [...p, data])
-    setSel(data)
+    setLista(p => [...p, data]); setSel(data)
   }
 
   const guardar = async (oc, extra = {}) => {
     setBusy(true)
+    const efecto = efectoOC(oc)
     const { error } = await supabase.from('ordenes_cambio').update({
-      fecha: oc.fecha, concepto: oc.concepto || null, tipo: oc.tipo,
-      lineas_json: oc.lineas_json, monto: montoDe(oc), notas: oc.notas || null,
-      updated_at: new Date().toISOString(),
-      ...extra,
+      fecha: oc.fecha, concepto: oc.concepto || null,
+      tipo: efecto < 0 ? 'deductiva' : 'aditiva',
+      lineas_json: oc.lineas_json, monto: efecto, notas: oc.notas || null,
+      updated_at: new Date().toISOString(), ...extra,
     }).eq('id', oc.id)
     setBusy(false)
     if (error) { alert('Error al guardar: ' + error.message); return false }
-    const actualizada = { ...oc, ...extra, monto: montoDe(oc) }
-    setLista(p => p.map(x => x.id === oc.id ? actualizada : x))
-    return actualizada
+    const act = { ...oc, ...extra, monto: efecto }
+    setLista(p => p.map(x => x.id === oc.id ? act : x))
+    return act
   }
 
   const cambiarEstado = async (oc, estado, msj) => {
     if (msj && !confirm(msj)) return
     const extra = { estado }
     if (estado === 'aprobada') extra.aprobado_por = user?.id || null
-    const r = await guardar(oc, extra)
-    if (r) setSel(r)
+    const r = await guardar(oc, extra); if (r) setSel(r)
+  }
+
+  const reabrirComoNueva = async oc => {
+    const numero = lista.reduce((mx, x) => Math.max(mx, x.numero), 0) + 1
+    if (!confirm(`La Orden de Cambio No. ${oc.numero} fue rechazada.\n\n¿Generar la No. ${numero} como versión corregida?`)) return
+    const { data, error } = await supabase.from('ordenes_cambio').insert({
+      presupuesto_id: budget.id, numero, fecha: oc.fecha, concepto: oc.concepto,
+      tipo: oc.tipo, lineas_json: oc.lineas_json, notas: oc.notas, creado_por: user?.id || null,
+    }).select().single()
+    if (error) { alert('Error: ' + error.message); return }
+    setLista(p => [...p, data]); setSel(data)
   }
 
   const eliminar = async oc => {
     if (!confirm(`¿Eliminar la Orden de Cambio No. ${oc.numero}?\n\nEsta acción no se puede deshacer.`)) return
     const { error } = await supabase.from('ordenes_cambio').delete().eq('id', oc.id)
     if (error) return alert('Error: ' + error.message)
-    setLista(p => p.filter(x => x.id !== oc.id))
-    if (sel?.id === oc.id) setSel(null)
-  }
-
-  // Punto 5: una OC rechazada se reabre como la siguiente correlativa (la
-  // rechazada queda en histórico), nunca con el mismo número.
-  const reabrirComoNueva = async oc => {
-    const numero = lista.reduce((mx, x) => Math.max(mx, x.numero), 0) + 1
-    if (!confirm(`La Orden de Cambio No. ${oc.numero} fue rechazada.\n\n¿Generar la No. ${numero} como versión corregida? La No. ${oc.numero} queda en el histórico.`)) return
-    const { data, error } = await supabase.from('ordenes_cambio').insert({
-      presupuesto_id: budget.id, numero, fecha: oc.fecha, concepto: oc.concepto,
-      tipo: oc.tipo, lineas_json: oc.lineas_json, notas: oc.notas, creado_por: user?.id || null,
-    }).select().single()
-    if (error) { alert('Error: ' + error.message); return }
-    setLista(p => [...p, data])
-    setSel(data)
+    setLista(p => p.filter(x => x.id !== oc.id)); if (sel?.id === oc.id) setSel(null)
   }
 
   const pdf = oc => exportPDFOrdenCambio(budget, oc,
-    { monto: montoDe(oc), contratoVigente: contratoAntesDe(oc.numero), contratoNuevo: round2(contratoAntesDe(oc.numero) + efectoDe(oc)) },
+    { contratoVigente: contratoAntesDe(oc.numero), contratoNuevo: round2(contratoAntesDe(oc.numero) + efectoOC(oc)) },
     { logo: budget.logoOfertante, logoCliente: budget.logoCliente, headerBg: budget.apuHeaderBg, headerText: budget.apuHeaderText })
 
   if (!budget) return (
-    <div className="page-body">
-      <div style={{ textAlign: 'center', padding: '80px 20px', color: 'var(--c-text-3)' }}>
-        <ClipboardList size={40} style={{ marginBottom: 12, opacity: 0.4 }} />
-        <div style={{ fontWeight: 600, marginBottom: 6 }}>Sin proyecto activo</div>
-        <div style={{ fontSize: 13 }}>Abre un proyecto para gestionar sus órdenes de cambio.</div>
-      </div>
-    </div>
+    <div className="page-body"><div style={{ textAlign: 'center', padding: '80px 20px', color: 'var(--c-text-3)' }}>
+      <ClipboardList size={40} style={{ marginBottom: 12, opacity: 0.4 }} />
+      <div style={{ fontWeight: 600, marginBottom: 6 }}>Sin proyecto activo</div>
+      <div style={{ fontSize: 13 }}>Abre un proyecto para gestionar sus órdenes de cambio.</div>
+    </div></div>
   )
   if (loading) return <div className="page-body" style={{ padding: 60, textAlign: 'center', color: 'var(--c-text-3)' }}>Cargando órdenes de cambio…</div>
 
   // ════════ EDITOR ════════
   if (sel) {
     const editable = sel.estado === 'borrador' && canElaborar
-    const monto = montoDe(sel)
+    const { ajustes, nuevas } = normLineasOC(sel)
+    const dz = desgloseOC(sel)
     const vigente = contratoAntesDe(sel.numero)
-    const signo = sel.tipo === 'deductiva' ? -1 : 1
-    const updLinea = (id, patch) => setSel({ ...sel, lineas_json: sel.lineas_json.map(l => l.id === id ? { ...l, ...patch } : l) })
-    const addLinea = () => setSel({ ...sel, lineas_json: [...sel.lineas_json, { id: uid(), descripcion: '', unidad: '', cantidad: 1, pu: 0 }] })
-    const delLinea = id => setSel({ ...sel, lineas_json: sel.lineas_json.filter(l => l.id !== id) })
+    const setLineas = lineas_json => setSel({ ...sel, lineas_json })
+    const idsAjustados = new Set(ajustes.map(a => a.actividadId))
+
+    const agregarAjuste = actId => {
+      const a = actById[actId]; if (!a) return
+      const linea = { id: uid(), tipo: 'ajuste', actividadId: actId, capId: a.capId, capDesc: a.capDesc,
+        descripcion: a.descripcion, unidad: a.unidad, pu: round2(puDe[actId] || 0),
+        cantOriginal: +a.cantidad || 0, cantNueva: +a.cantidad || 0 }
+      setLineas([...(sel.lineas_json || []), linea])
+    }
+    const updLinea = (id, patch) => setLineas(sel.lineas_json.map(l => l.id === id ? { ...l, ...patch } : l))
+    const delLinea = id => setLineas(sel.lineas_json.filter(l => l.id !== id))
+    const addNueva = () => setLineas([...(sel.lineas_json || []), { id: uid(), tipo: 'nueva', descripcion: '', unidad: '', cantidad: 1, pu: 0 }])
+
     return (
       <Fragment>
         <div className="page-head">
@@ -163,14 +176,12 @@ export default function OrdenesCambioPage({ budget, projectRole, user, params })
             {sel.estado === 'enviada' && canAprobar && (
               <Fragment>
                 <button className="btn" style={{ background: 'var(--c-success)', borderColor: 'var(--c-success)', color: '#fff' }} disabled={busy}
-                  onClick={() => cambiarEstado(sel, 'aprobada', '¿Aprobar esta orden de cambio? El monto del contrato se actualizará.')}><Check size={13} /> Aprobar</button>
+                  onClick={() => cambiarEstado(sel, 'aprobada', '¿Aprobar esta orden de cambio? El contrato y las cantidades de las partidas ajustadas se actualizarán.')}><Check size={13} /> Aprobar</button>
                 <button className="btn" style={{ background: 'var(--c-danger)', borderColor: 'var(--c-danger)', color: '#fff' }} disabled={busy}
                   onClick={() => cambiarEstado(sel, 'rechazada')}><X size={13} /> Rechazar</button>
               </Fragment>
             )}
-            {sel.estado === 'rechazada' && canElaborar && (
-              <button className="btn brand" disabled={busy} onClick={() => reabrirComoNueva(sel)}>Generar siguiente orden corregida</button>
-            )}
+            {sel.estado === 'rechazada' && canElaborar && <button className="btn brand" disabled={busy} onClick={() => reabrirComoNueva(sel)}>Generar siguiente orden corregida</button>}
             <button className="btn" style={{ background: 'var(--c-danger)', borderColor: 'var(--c-danger)', color: '#fff' }} onClick={() => pdf(sel)}><FileText size={13} /> PDF</button>
           </div>
         </div>
@@ -181,72 +192,135 @@ export default function OrdenesCambioPage({ budget, projectRole, user, params })
               <div className="kpi-label">Fecha</div>
               <input type="date" className="input" disabled={!editable} value={sel.fecha || ''} onChange={e => setSel({ ...sel, fecha: e.target.value })} style={{ marginTop: 4 }} />
             </div>
-            <div className="kpi">
-              <div className="kpi-label">Tipo</div>
-              <div style={{ display: 'flex', gap: 2, background: 'var(--c-bg)', padding: 3, borderRadius: 8, marginTop: 4 }}>
-                <button className={`btn xs ${sel.tipo === 'aditiva' ? 'primary' : 'ghost'}`} disabled={!editable} onClick={() => setSel({ ...sel, tipo: 'aditiva' })} style={{ flex: 1 }}>Aditiva (+)</button>
-                <button className={`btn xs ${sel.tipo === 'deductiva' ? 'primary' : 'ghost'}`} disabled={!editable} onClick={() => setSel({ ...sel, tipo: 'deductiva' })} style={{ flex: 1 }}>Deductiva (−)</button>
-              </div>
-            </div>
-            <div className="kpi" style={{ gridColumn: 'span 2' }}>
+            <div className="kpi" style={{ gridColumn: 'span 3' }}>
               <div className="kpi-label">Concepto / motivo del cambio</div>
-              <input className="input" disabled={!editable} placeholder="ej: Cliente solicita cambio de piso en nivel 2"
+              <input className="input" disabled={!editable} placeholder="ej: Ajustes por condiciones de sitio y obra adicional solicitada"
                 value={sel.concepto || ''} onChange={e => setSel({ ...sel, concepto: e.target.value })} style={{ marginTop: 4 }} />
             </div>
           </div>
 
+          {/* Ajuste de partidas del contrato */}
           <div className="card" style={{ padding: 0, marginBottom: 16 }}>
             <div className="card-header">
-              <div className="card-title"><ClipboardList size={15} /> Líneas de la orden</div>
-              {editable && <button className="btn sm" onClick={addLinea}><Plus size={13} /> Agregar línea</button>}
+              <div className="card-title"><ClipboardList size={15} /> Ajuste de partidas del contrato (aumento / disminución de obra)</div>
+              {editable && (
+                <Dropdown align="right" minWidth={360} trigger={<button className="btn sm"><Plus size={13} /> Agregar partida <ChevronDown size={12} /></button>}>
+                  <div style={{ padding: '6px 0', maxHeight: 340, overflowY: 'auto' }}>
+                    {acts.filter(a => !idsAjustados.has(a.id)).map(a => (
+                      <button key={a.id} onClick={() => agregarAjuste(a.id)}
+                        style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--c-bg)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <b style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--c-text-3)', marginRight: 6 }}>{a.id}</b>{a.descripcion}
+                      </button>
+                    ))}
+                    {acts.filter(a => !idsAjustados.has(a.id)).length === 0 && <div style={{ padding: 14, fontSize: 12, color: 'var(--c-text-3)' }}>Todas las partidas ya están en la orden.</div>}
+                  </div>
+                </Dropdown>
+              )}
             </div>
-            <div style={{ overflowX: 'auto' }}>
-              <table className="bt">
-                <thead><tr>
-                  <th>Descripción</th>
-                  <th style={{ width: 90, textAlign: 'center' }}>Unidad</th>
-                  <th className="num" style={{ width: 110 }}>Cantidad</th>
-                  <th className="num" style={{ width: 130 }}>P. Unitario</th>
-                  <th className="num" style={{ width: 130 }}>Importe</th>
-                  <th style={{ width: 50 }}></th>
-                </tr></thead>
-                <tbody>
-                  {(sel.lineas_json || []).map(l => (
-                    <tr key={l.id}>
-                      <td><input className="input sm" disabled={!editable} placeholder="Descripción del trabajo" value={l.descripcion} onChange={e => updLinea(l.id, { descripcion: e.target.value })} style={{ width: '100%' }} /></td>
-                      <td><input className="input sm" disabled={!editable} placeholder="m², ml…" value={l.unidad} onChange={e => updLinea(l.id, { unidad: e.target.value })} style={{ width: 80, textAlign: 'center' }} /></td>
-                      <td className="num"><input type="number" min="0" step="any" className="input sm" disabled={!editable} value={l.cantidad} onFocus={e => e.target.select()} onChange={e => updLinea(l.id, { cantidad: e.target.value })} style={{ width: 96, textAlign: 'right' }} /></td>
-                      <td className="num"><input type="number" min="0" step="any" className="input sm" disabled={!editable} value={l.pu} onFocus={e => e.target.select()} onChange={e => updLinea(l.id, { pu: e.target.value })} style={{ width: 110, textAlign: 'right' }} /></td>
-                      <td className="num" style={{ fontWeight: 700 }}>{money(round2((+l.cantidad || 0) * (+l.pu || 0)))}</td>
-                      <td>{editable && <button className="btn xs danger icon" onClick={() => delLinea(l.id)}><Trash2 size={11} /></button>}</td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colSpan={4} style={{ textAlign: 'right', fontWeight: 800, background: 'var(--c-ink)', color: '#fff' }}>
-                      TOTAL {sel.tipo === 'deductiva' ? 'DEDUCTIVO' : 'ADITIVO'}
-                    </td>
-                    <td className="num" style={{ fontWeight: 800, background: 'var(--c-ink)', color: 'var(--c-accent)' }}>{signo < 0 ? '− ' : ''}{money(monto)}</td>
-                    <td style={{ background: 'var(--c-ink)' }}></td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
+            {ajustes.length === 0
+              ? <div style={{ padding: 18, textAlign: 'center', color: 'var(--c-text-3)', fontSize: 13 }}>Sin ajustes de partidas. {editable && 'Usa "Agregar partida" para aumentar o disminuir cantidades del contrato.'}</div>
+              : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="bt">
+                    <thead><tr>
+                      <th style={{ width: 64 }}>ID</th>
+                      <th>Partida</th>
+                      <th style={{ width: 50, textAlign: 'center' }}>Und</th>
+                      <th className="num" style={{ width: 96 }}>P. Unitario</th>
+                      <th className="num" style={{ width: 90 }}>Cant. orig.</th>
+                      <th className="num" style={{ width: 96 }}>Cant. nueva</th>
+                      <th className="num" style={{ width: 80 }}>Δ Cant.</th>
+                      <th className="num" style={{ width: 120 }}>Monto</th>
+                      <th style={{ width: 40 }}></th>
+                    </tr></thead>
+                    <tbody>
+                      {ajustes.map(a => {
+                        const delta = round2((+a.cantNueva || 0) - (+a.cantOriginal || 0))
+                        const monto = montoAjuste(a)
+                        return (
+                          <tr key={a.id}>
+                            <td className="id">{a.actividadId}</td>
+                            <td style={{ fontWeight: 500 }}>{a.descripcion}</td>
+                            <td style={{ textAlign: 'center', color: 'var(--c-text-2)' }}>{a.unidad || '—'}</td>
+                            <td className="num">{money(a.pu)}</td>
+                            <td className="num" style={{ color: 'var(--c-text-3)' }}>{fmt(a.cantOriginal)}</td>
+                            <td className="num">
+                              <input type="number" min="0" step="any" className="input sm" disabled={!editable}
+                                value={a.cantNueva} onFocus={e => e.target.select()}
+                                onChange={e => updLinea(a.id, { cantNueva: Math.max(0, +e.target.value || 0) })}
+                                style={{ width: 82, textAlign: 'right', fontWeight: 700 }} />
+                            </td>
+                            <td className="num" style={{ fontWeight: 700, color: delta > 0 ? 'var(--c-success)' : delta < 0 ? 'var(--c-danger)' : 'var(--c-text-3)' }}>{delta > 0 ? '+' : ''}{fmt(delta)}</td>
+                            <td className="num" style={{ fontWeight: 700, color: monto > 0 ? 'var(--c-success)' : monto < 0 ? 'var(--c-danger)' : 'var(--c-text-3)' }}>{monto < 0 ? '− ' : monto > 0 ? '+ ' : ''}{money(Math.abs(monto))}</td>
+                            <td>{editable && <button className="btn xs danger icon" onClick={() => delLinea(a.id)}><Trash2 size={11} /></button>}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
           </div>
 
-          <div className="card" style={{ padding: 0, maxWidth: 460 }}>
+          {/* Obra nueva */}
+          <div className="card" style={{ padding: 0, marginBottom: 16 }}>
+            <div className="card-header">
+              <div className="card-title"><Plus size={15} /> Obra nueva (no contemplada en el contrato)</div>
+              {editable && <button className="btn sm" onClick={addNueva}><Plus size={13} /> Agregar línea</button>}
+            </div>
+            {nuevas.length === 0
+              ? <div style={{ padding: 18, textAlign: 'center', color: 'var(--c-text-3)', fontSize: 13 }}>Sin obra nueva.</div>
+              : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="bt">
+                    <thead><tr>
+                      <th>Descripción</th>
+                      <th style={{ width: 80, textAlign: 'center' }}>Unidad</th>
+                      <th className="num" style={{ width: 100 }}>Cantidad</th>
+                      <th className="num" style={{ width: 120 }}>P. Unitario</th>
+                      <th className="num" style={{ width: 120 }}>Monto</th>
+                      <th style={{ width: 40 }}></th>
+                    </tr></thead>
+                    <tbody>
+                      {nuevas.map(n => (
+                        <tr key={n.id}>
+                          <td><input className="input sm" disabled={!editable} placeholder="Descripción de la obra nueva" value={n.descripcion} onChange={e => updLinea(n.id, { descripcion: e.target.value })} style={{ width: '100%' }} /></td>
+                          <td><input className="input sm" disabled={!editable} placeholder="m², ml…" value={n.unidad} onChange={e => updLinea(n.id, { unidad: e.target.value })} style={{ width: 70, textAlign: 'center' }} /></td>
+                          <td className="num"><input type="number" min="0" step="any" className="input sm" disabled={!editable} value={n.cantidad} onFocus={e => e.target.select()} onChange={e => updLinea(n.id, { cantidad: e.target.value })} style={{ width: 86, textAlign: 'right' }} /></td>
+                          <td className="num"><input type="number" min="0" step="any" className="input sm" disabled={!editable} value={n.pu} onFocus={e => e.target.select()} onChange={e => updLinea(n.id, { pu: e.target.value })} style={{ width: 106, textAlign: 'right' }} /></td>
+                          <td className="num" style={{ fontWeight: 700, color: 'var(--c-success)' }}>+ {money(round2((+n.cantidad || 0) * (+n.pu || 0)))}</td>
+                          <td>{editable && <button className="btn xs danger icon" onClick={() => delLinea(n.id)}><Trash2 size={11} /></button>}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+          </div>
+
+          {/* Resumen estilo cuadro SALCO */}
+          <div className="card" style={{ padding: 0, maxWidth: 520 }}>
             <div className="card-header"><div className="card-title"><TrendingUp size={15} /> Efecto sobre el contrato</div></div>
             {[
-              ['Contrato vigente', money(vigente), false],
-              [`Esta orden (${sel.tipo})`, `${signo < 0 ? '− ' : '+ '}${money(monto)}`, false],
-              ['CONTRATO ACTUALIZADO', money(round2(vigente + signo * monto)), true],
-            ].map(([l, v, b]) => (
-              <div key={l} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 16px', borderTop: '1px solid var(--c-line-2)', background: b ? 'var(--c-ink)' : 'transparent' }}>
-                <span style={{ fontSize: 13, fontWeight: b ? 800 : 500, color: b ? '#fff' : 'var(--c-text-2)' }}>{l}</span>
-                <span style={{ fontSize: b ? 15 : 13, fontWeight: 700, fontFamily: 'var(--font-mono)', color: b ? 'var(--c-accent)' : 'var(--c-text)' }}>{v}</span>
+              ['Aumento de obra', `+ ${money(dz.aumento)}`, 'var(--c-success)'],
+              ['Disminución de obra', `${money(dz.disminucion)}`, 'var(--c-danger)'],
+              ['Obra nueva', `+ ${money(dz.obraNueva)}`, 'var(--c-success)'],
+              ['Efecto neto de la orden', `${dz.neto < 0 ? '− ' : '+ '}${money(Math.abs(dz.neto))}`, dz.neto < 0 ? 'var(--c-danger)' : 'var(--c-success)'],
+            ].map(([l, v, c]) => (
+              <div key={l} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 16px', borderTop: '1px solid var(--c-line-2)' }}>
+                <span style={{ fontSize: 13, color: 'var(--c-text-2)' }}>{l}</span>
+                <span style={{ fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-mono)', color: c }}>{v}</span>
               </div>
             ))}
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 16px', borderTop: '1px solid var(--c-line-2)' }}>
+              <span style={{ fontSize: 13, color: 'var(--c-text-2)' }}>Contrato vigente</span>
+              <span style={{ fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-mono)' }}>{money(vigente)}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 16px', background: 'var(--c-ink)' }}>
+              <span style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>CONTRATO MODIFICADO</span>
+              <span style={{ fontSize: 15, fontWeight: 800, fontFamily: 'var(--font-mono)', color: 'var(--c-accent)' }}>{money(round2(vigente + dz.neto))}</span>
+            </div>
           </div>
         </div>
       </Fragment>
@@ -285,43 +359,35 @@ export default function OrdenesCambioPage({ budget, projectRole, user, params })
 
         <div className="card" style={{ padding: 0 }}>
           {lista.length === 0
-            ? (
-              <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--c-text-3)' }}>
+            ? <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--c-text-3)' }}>
                 <ClipboardList size={36} style={{ marginBottom: 10, opacity: 0.4 }} />
                 <div style={{ fontWeight: 600, marginBottom: 4, color: 'var(--c-text-2)' }}>Aún no hay órdenes de cambio</div>
-                <div style={{ fontSize: 13 }}>Registra aquí los trabajos adicionales o deducciones acordadas con el cliente.</div>
+                <div style={{ fontSize: 13 }}>Ajusta cantidades de partidas existentes o agrega obra nueva acordada con el cliente.</div>
               </div>
-            )
             : (
               <table className="bt">
                 <thead><tr>
                   <th style={{ width: 60 }}>No.</th>
                   <th style={{ width: 100 }}>Fecha</th>
                   <th>Concepto</th>
-                  <th style={{ width: 100 }}>Tipo</th>
                   <th style={{ width: 110 }}>Estado</th>
-                  <th className="num" style={{ width: 140 }}>Monto</th>
+                  <th className="num" style={{ width: 150 }}>Efecto neto</th>
                   <th style={{ width: 180 }}></th>
                 </tr></thead>
                 <tbody>
                   {lista.map(oc => {
-                    const m = montoDe(oc)
+                    const ef = efectoOC(oc)
                     return (
                       <tr key={oc.id} style={{ cursor: 'pointer' }} onClick={() => setSel(oc)}>
                         <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>#{oc.numero}</td>
                         <td style={{ fontSize: 12, color: 'var(--c-text-2)' }}>{oc.fecha || '—'}</td>
                         <td style={{ fontWeight: 500 }}>{oc.concepto || <span style={{ color: 'var(--c-text-4)', fontStyle: 'italic' }}>Sin concepto</span>}</td>
-                        <td style={{ fontSize: 12, fontWeight: 700, color: oc.tipo === 'deductiva' ? 'var(--c-danger)' : 'var(--c-success)' }}>
-                          {oc.tipo === 'deductiva' ? '− Deductiva' : '+ Aditiva'}
-                        </td>
                         <td><ChipOC estado={oc.estado} /></td>
-                        <td className="num" style={{ fontWeight: 700 }}>{money(m)}</td>
+                        <td className="num" style={{ fontWeight: 700, color: ef < 0 ? 'var(--c-danger)' : 'var(--c-success)' }}>{ef < 0 ? '− ' : '+ '}{money(Math.abs(ef))}</td>
                         <td className="actions" onClick={ev => ev.stopPropagation()}>
                           <button className="btn xs" onClick={() => setSel(oc)}>Abrir</button>
                           <button className="btn xs ghost" style={{ marginLeft: 4 }} onClick={() => pdf(oc)}><FileText size={11} /> PDF</button>
-                          {oc.estado === 'borrador' && canElaborar && (
-                            <button className="btn xs danger icon" style={{ marginLeft: 4 }} onClick={() => eliminar(oc)}><Trash2 size={11} /></button>
-                          )}
+                          {oc.estado === 'borrador' && canElaborar && <button className="btn xs danger icon" style={{ marginLeft: 4 }} onClick={() => eliminar(oc)}><Trash2 size={11} /></button>}
                         </td>
                       </tr>
                     )
