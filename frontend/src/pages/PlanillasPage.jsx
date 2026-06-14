@@ -10,6 +10,7 @@ import { calcItem, calcFicha, conceptoCost, makeMoneyFmt, fmt, round2, uid } fro
 import { flattenActividades, hoyISO } from '../lib/cronograma'
 import { Modal, Dropdown } from '../components/ui'
 import { exportPDFPlanilla } from '../lib/exportPlanilla'
+import { efectoOC, deltaCantPorActividad } from '../lib/contrato'
 import {
   HardHat, Plus, FileText, Check, X, ChevronLeft, ChevronDown, Trash2, DollarSign, Users, Coins, Wand2, AlertTriangle,
 } from 'lucide-react'
@@ -221,8 +222,24 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
   const canElaborar = puedeHacer(projectRole, 'elaborarPlanilla')
   const canAprobar  = puedeHacer(projectRole, 'aprobarPlanilla')
 
+  const [ordenes, setOrdenes] = useState([])  // órdenes de cambio del proyecto
+
   const acts = useMemo(() => flattenActividades(budget?.items || []), [budget?.items])
   const actById = useMemo(() => Object.fromEntries(acts.map(a => [a.id, a])), [acts])
+  // Precio de venta unitario por actividad (precio al propietario), para las
+  // líneas de ajuste de la OC propietario↔ejecutor.
+  const puVenta = useMemo(() => {
+    const m = {}
+    const walk = its => { for (const it of (its || [])) {
+      if (it.tipo === 'actividad') m[it.id] = round2(calcItem(it, budget?.catalogos, params).precioUnitario)
+      else if (it.children) walk(it.children)
+    } }
+    walk(budget?.items || [])
+    return m
+  }, [budget?.items, budget?.catalogos, params])
+  // Δ cantidad de contrato por actividad según OCs APROBADAS (se incorpora al
+  // tope de la planilla: al aprobar la OC, la línea deja de exceder el 100%).
+  const deltaAprob = useMemo(() => deltaCantPorActividad(ordenes), [ordenes])
   // Mano de obra unitaria por actividad (lo que se le paga al destajista; los
   // materiales los pone la empresa) y cantidad de contrato
   const moUnit = useMemo(() => {
@@ -263,15 +280,17 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
   useEffect(() => {
     let cancel = false
     const cargar = async () => {
-      if (!budget?.id) { setContratos([]); setPlanillas([]); setLoading(false); return }
+      if (!budget?.id) { setContratos([]); setPlanillas([]); setOrdenes([]); setLoading(false); return }
       setLoading(true)
-      const [{ data: cs }, { data: ps }] = await Promise.all([
+      const [{ data: cs }, { data: ps }, { data: os }] = await Promise.all([
         supabase.from('contratos_obra').select('*').eq('presupuesto_id', budget.id).order('created_at'),
         supabase.from('planillas').select('*').eq('presupuesto_id', budget.id).order('created_at'),
+        supabase.from('ordenes_cambio').select('*').eq('presupuesto_id', budget.id).order('numero'),
       ])
       if (cancel) return
       setContratos(cs || [])
       setPlanillas(ps || [])
+      setOrdenes(os || [])
       setLoading(false)
     }
     cargar(); setSelContrato(null); setSelPlanilla(null)
@@ -374,6 +393,55 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
     setPlanillas(p => [...p, data]); setSelPlanilla(data)
   }
 
+  // Sincroniza la OC de excedentes (propietario ↔ ejecutor): cuando el
+  // acumulado de una actividad supera la cantidad contratada, crea/actualiza
+  // una orden de cambio en borrador (aditiva) con el aumento por actividad,
+  // ligada a la planilla y fechada en su período. Si ya no hay excedentes,
+  // elimina la OC en borrador. Al aprobar la OC, el delta se incorpora al
+  // contrato y la línea deja de exceder el 100%.
+  const sincronizarOC = async p => {
+    const acum = acumAntDe(p)
+    const porAct = {}
+    for (const l of (p.lineas_json || [])) {
+      if (l.tipo !== 'destajo' || !l.actividadId) continue
+      const cc = round2((+l.cantContrato || 0) + (deltaAprob[l.actividadId] || 0))
+      const ant = acum[`${l.actividadId}|${l.manoObraId || ''}`] || { cant: 0 }
+      const cantAcum = round2((+ant.cant || 0) + (+l.cantidad || 0))
+      const exc = cc > 0 ? round2(cantAcum - cc) : 0
+      if (exc <= 0) continue
+      const a = actById[l.actividadId]
+      if (!porAct[l.actividadId]) porAct[l.actividadId] = { cc, exceso: 0, descripcion: a?.descripcion || l.descripcion, unidad: a?.unidad || l.unidad, pu: round2(puVenta[l.actividadId] || 0), capId: l.capId, capDesc: a?.capDesc || '' }
+      porAct[l.actividadId].exceso = round2(porAct[l.actividadId].exceso + exc)
+    }
+    const lineas = Object.entries(porAct).map(([actId, v]) => ({
+      id: uid(), tipo: 'ajuste', actividadId: actId, capId: v.capId, capDesc: v.capDesc,
+      descripcion: v.descripcion, unidad: v.unidad, pu: v.pu,
+      cantOriginal: v.cc, cantNueva: round2(v.cc + v.exceso),
+    }))
+    const existente = ordenes.find(o => o.origen_planilla_id === p.id && o.estado === 'borrador')
+    if (lineas.length) {
+      const concepto = `Excedente de obra — Planilla No. ${p.numero}${p.contratista ? ' · ' + p.contratista : ''}`
+      const fecha = p.periodo_fin || p.periodo_inicio || hoyISO()
+      const monto = efectoOC({ lineas_json: lineas })
+      if (existente) {
+        const { error } = await supabase.from('ordenes_cambio').update({ lineas_json: lineas, monto, concepto, fecha, updated_at: new Date().toISOString() }).eq('id', existente.id)
+        if (error) return
+        setOrdenes(prev => prev.map(o => o.id === existente.id ? { ...o, lineas_json: lineas, monto, concepto, fecha } : o))
+      } else {
+        const numero = ordenes.reduce((mx, o) => Math.max(mx, o.numero), 0) + 1
+        const { data, error } = await supabase.from('ordenes_cambio').insert({
+          presupuesto_id: budget.id, numero, tipo: 'aditiva', estado: 'borrador',
+          concepto, fecha, lineas_json: lineas, monto, origen_planilla_id: p.id, creado_por: user?.id || null,
+        }).select().single()
+        if (error) return
+        setOrdenes(prev => [...prev, data])
+      }
+    } else if (existente) {
+      await supabase.from('ordenes_cambio').delete().eq('id', existente.id)
+      setOrdenes(prev => prev.filter(o => o.id !== existente.id))
+    }
+  }
+
   // ── CRUD Planilla ──
   const guardar = async (p, extra = {}) => {
     const t = totalesDe(p)
@@ -385,10 +453,12 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
       subtotal: t.sub, retencion: t.ret, amortizacion: t.amo, deducciones: t.ded, neto: t.neto,
       notas: p.notas || null, updated_at: new Date().toISOString(), ...extra,
     }).eq('id', p.id)
-    setBusy(false)
-    if (error) { alert('Error al guardar: ' + error.message); return false }
+    if (error) { setBusy(false); alert('Error al guardar: ' + error.message); return false }
     const act = { ...p, ...extra, subtotal: t.sub, neto: t.neto }
     setPlanillas(prev => prev.map(x => x.id === p.id ? act : x))
+    // Generación automática de la OC de excedentes (solo quien elabora)
+    if (canElaborar) { try { await sincronizarOC(act) } catch { /* no bloquear el guardado */ } }
+    setBusy(false)
     return act
   }
 
@@ -448,7 +518,9 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
     // mismo contrato (número menor). Bloqueado en el cuadro.
     const acumAnt = acumAntDe(sel)
     const anteriorDe = l => acumAnt[`${l.actividadId || ''}|${l.manoObraId || ''}`] || { cant: 0, total: 0 }
-    const contratoDe = l => +l.cantContrato || (+actById[l.actividadId]?.cantidad) || 0
+    // Cantidad de contrato + aumentos por OCs aprobadas (se incorpora el
+    // excedente una vez aprobada la orden de cambio).
+    const contratoDe = l => round2((+l.cantContrato || (+actById[l.actividadId]?.cantidad) || 0) + (l.actividadId ? (deltaAprob[l.actividadId] || 0) : 0))
     // Control acumulado de anticipo y retención del contrato (planillas
     // anteriores no rechazadas + esta). Saldo retención = total retenido;
     // amortización acumulada = anticipo descontado hasta ahora.
