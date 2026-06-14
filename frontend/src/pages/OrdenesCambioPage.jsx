@@ -12,7 +12,7 @@ import { normLineasOC, montoAjuste, efectoOC, desgloseOC } from '../lib/contrato
 import { exportPDFOrdenCambio } from '../lib/exportOrdenCambio'
 import { Dropdown } from '../components/ui'
 import {
-  ClipboardList, Plus, FileText, Check, X, Send, ChevronLeft, Trash2, DollarSign, TrendingUp, ChevronDown,
+  ClipboardList, Plus, FileText, Check, ChevronLeft, Trash2, DollarSign, TrendingUp, ChevronDown,
 } from 'lucide-react'
 
 const ESTADOS_OC = {
@@ -24,6 +24,36 @@ const ESTADOS_OC = {
 const ChipOC = ({ estado }) => {
   const e = ESTADOS_OC[estado] || ESTADOS_OC.borrador
   return <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 10, background: e.bg, color: e.fg, whiteSpace: 'nowrap' }}>{e.label}</span>
+}
+
+// Desplegable de estado (como el de la planilla): Borrador → Enviada →
+// Aprobada/Rechazada, según permisos del rol.
+const TRANS_OC = { borrador: ['enviada'], enviada: ['aprobada', 'rechazada'], aprobada: [], rechazada: [] }
+function EstadoOCMenu({ estado, canElaborar, canAprobar, onChange }) {
+  const allowed = (TRANS_OC[estado] || []).filter(() => (estado === 'enviada' ? canAprobar : canElaborar))
+  if (!allowed.length) return <ChipOC estado={estado} />
+  return (
+    <Dropdown align="left" minWidth={180} trigger={
+      <button className="btn sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        <ChipOC estado={estado} /><ChevronDown size={12} />
+      </button>
+    }>
+      <div style={{ padding: '6px 0' }}>
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--c-text-3)', padding: '4px 12px 8px' }}>Cambiar estado</div>
+        {Object.keys(ESTADOS_OC).map(v => {
+          const can = allowed.includes(v)
+          return (
+            <button key={v} onClick={() => can && onChange(v)}
+              style={{ width: '100%', textAlign: 'left', padding: '7px 12px', display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', fontSize: 13, cursor: can ? 'pointer' : 'default', opacity: can ? 1 : 0.35 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: ESTADOS_OC[v].fg, flexShrink: 0 }}></span>
+              {ESTADOS_OC[v].label}
+              {v === estado && <Check size={13} style={{ marginLeft: 'auto', color: 'var(--c-success)' }} />}
+            </button>
+          )
+        })}
+      </div>
+    </Dropdown>
+  )
 }
 
 export default function OrdenesCambioPage({ budget, projectRole, user, params }) {
@@ -165,22 +195,19 @@ export default function OrdenesCambioPage({ budget, projectRole, user, params })
             <button className="btn sm ghost" onClick={() => setSel(null)}><ChevronLeft size={14} /> Órdenes de cambio</button>
             <div>
               <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--c-text)', display: 'flex', alignItems: 'center', gap: 10 }}>
-                Orden de Cambio No. {sel.numero} <ChipOC estado={sel.estado} />
+                Orden de Cambio No. {sel.numero}
+                <EstadoOCMenu estado={sel.estado} canElaborar={canElaborar} canAprobar={canAprobar}
+                  onChange={v => cambiarEstado(sel, v, {
+                    enviada: '¿Enviar la orden de cambio para aprobación del cliente?',
+                    aprobada: '¿Aprobar esta orden de cambio? El contrato y las cantidades de las partidas ajustadas se actualizarán.',
+                    rechazada: '¿Rechazar la orden de cambio?',
+                  }[v])} />
               </div>
               <div style={{ fontSize: 13, color: 'var(--c-text-3)', marginTop: 2 }}>{budget.nombreProyecto}</div>
             </div>
           </div>
           <div className="page-head-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {editable && <button className="btn primary" disabled={busy} onClick={async () => { if (await guardar(sel)) alert('💾 Orden de cambio guardada.') }}><Check size={13} /> {busy ? 'Guardando…' : 'Guardar'}</button>}
-            {editable && <button className="btn brand" disabled={busy} onClick={() => cambiarEstado(sel, 'enviada', '¿Enviar la orden de cambio para aprobación del cliente?')}><Send size={13} /> Enviar</button>}
-            {sel.estado === 'enviada' && canAprobar && (
-              <Fragment>
-                <button className="btn" style={{ background: 'var(--c-success)', borderColor: 'var(--c-success)', color: '#fff' }} disabled={busy}
-                  onClick={() => cambiarEstado(sel, 'aprobada', '¿Aprobar esta orden de cambio? El contrato y las cantidades de las partidas ajustadas se actualizarán.')}><Check size={13} /> Aprobar</button>
-                <button className="btn" style={{ background: 'var(--c-danger)', borderColor: 'var(--c-danger)', color: '#fff' }} disabled={busy}
-                  onClick={() => cambiarEstado(sel, 'rechazada')}><X size={13} /> Rechazar</button>
-              </Fragment>
-            )}
             {sel.estado === 'rechazada' && canElaborar && <button className="btn brand" disabled={busy} onClick={() => reabrirComoNueva(sel)}>Generar siguiente orden corregida</button>}
             <button className="btn" style={{ background: 'var(--c-danger)', borderColor: 'var(--c-danger)', color: '#fff' }} onClick={() => pdf(sel)}><FileText size={13} /> PDF</button>
           </div>
