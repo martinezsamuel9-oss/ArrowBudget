@@ -26,6 +26,10 @@ const Chip = ({ estado }) => {
   return <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 10, background: e.bg, color: e.fg, whiteSpace: 'nowrap' }}>{e.label}</span>
 }
 
+// Importe de una línea = cantidad × P.U. × (1 − descuento%). El descuento es
+// el único valor editable de las líneas ligadas al presupuesto.
+const importeLinea = l => round2((+l.cantidad || 0) * (+l.pu || 0) * (1 - (+l.descuento || 0) / 100))
+
 // Modal para generar líneas de destajo desde el presupuesto (alcance del
 // contratista), con cantidad pendiente desde el avance físico y P.U. = mano
 // de obra unitaria. Componente top-level para no perder foco.
@@ -240,8 +244,8 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
 
   const totalesDe = p => {
     const ls = p.lineas_json || []
-    const destajo = round2(ls.filter(l => l.tipo === 'destajo').reduce((s, l) => s + (+l.cantidad || 0) * (+l.pu || 0), 0))
-    const dia = round2(ls.filter(l => l.tipo === 'dia').reduce((s, l) => s + (+l.cantidad || 0) * (+l.pu || 0), 0))
+    const destajo = round2(ls.filter(l => l.tipo === 'destajo').reduce((s, l) => s + importeLinea(l), 0))
+    const dia = round2(ls.filter(l => l.tipo === 'dia').reduce((s, l) => s + importeLinea(l), 0))
     const sub = round2(destajo + dia)
     const ret = round2(sub * (+p.pct_retencion || 0) / 100)
     const amo = round2(sub * (+p.pct_amortizacion || 0) / 100)
@@ -378,52 +382,74 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
     // definido aquí, cada tecla remontaría los inputs y se perdería el foco.
     const renderSeccion = (titulo, tipo, Icon) => {
       const ls = (sel.lineas_json || []).filter(l => l.tipo === tipo)
+      const esDestajo = tipo === 'destajo'
+      // Maestro de descuento: refleja el % común si todas las líneas comparten
+      // uno; al cambiarlo lo aplica a todas (cada línea sigue siendo editable)
+      const descComun = ls.length && ls.every(l => (+l.descuento || 0) === (+ls[0].descuento || 0)) ? (+ls[0].descuento || 0) : ''
+      const setDescTodas = v => setLineas((sel.lineas_json || []).map(l => l.tipo === tipo ? { ...l, descuento: v } : l))
+      const cols = esDestajo ? 8 : 6
       return (
         <div className="card" style={{ padding: 0, marginBottom: 16 }}>
           <div className="card-header">
             <div className="card-title"><Icon size={15} /> {titulo}</div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {editable && tipo === 'destajo' && <button className="btn sm brand" onClick={() => setShowGen(true)}><Wand2 size={13} /> Generar por actividad</button>}
-              {editable && tipo === 'destajo' && <button className="btn sm" onClick={() => setShowGenMO(true)}><HardHat size={13} /> Generar por oficio</button>}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {esDestajo && ls.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <span style={{ fontSize: 11, color: 'var(--c-text-3)' }}>Descuento % a todas:</span>
+                  <input type="number" min="0" max="100" step="any" className="input sm" disabled={!editable}
+                    value={descComun} placeholder="0"
+                    onChange={e => setDescTodas(Math.max(0, Math.min(100, +e.target.value || 0)))}
+                    style={{ width: 64, textAlign: 'right', fontWeight: 700 }} />
+                </div>
+              )}
+              {editable && esDestajo && <button className="btn sm brand" onClick={() => setShowGen(true)}><Wand2 size={13} /> Generar por actividad</button>}
+              {editable && esDestajo && <button className="btn sm" onClick={() => setShowGenMO(true)}><HardHat size={13} /> Generar por oficio</button>}
               {editable && <button className="btn sm" onClick={() => addLinea(tipo)}><Plus size={13} /> Agregar línea</button>}
             </div>
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table className="bt">
               <thead><tr>
-                {tipo === 'destajo' && <th style={{ width: 150 }}>Actividad (presupuesto)</th>}
+                {esDestajo && <th style={{ width: 150 }}>Actividad (presupuesto)</th>}
                 <th>Descripción</th>
                 <th style={{ width: 80, textAlign: 'center' }}>Unidad</th>
                 <th className="num" style={{ width: 100 }}>Cantidad</th>
                 <th className="num" style={{ width: 120 }}>P. Unitario</th>
+                {esDestajo && <th className="num" style={{ width: 84 }}>Desc. %</th>}
                 <th className="num" style={{ width: 120 }}>Importe</th>
                 <th style={{ width: 44 }}></th>
               </tr></thead>
               <tbody>
-                {ls.length === 0 && <tr><td colSpan={tipo === 'destajo' ? 7 : 6} className="empty" style={{ padding: 18, textAlign: 'center', color: 'var(--c-text-3)', fontSize: 13 }}>Sin líneas. {editable && 'Usa "Agregar línea".'}</td></tr>}
-                {ls.map(l => (
+                {ls.length === 0 && <tr><td colSpan={cols} className="empty" style={{ padding: 18, textAlign: 'center', color: 'var(--c-text-3)', fontSize: 13 }}>Sin líneas. {editable && 'Usa "Agregar línea".'}</td></tr>}
+                {ls.map(l => {
+                  // Líneas ligadas al presupuesto: cantidad/P.U./descripción/unidad bloqueadas
+                  const ligada = esDestajo && !!l.actividadId
+                  const lock = !editable || ligada
+                  return (
                   <tr key={l.id}>
-                    {tipo === 'destajo' && (
+                    {esDestajo && (
                       <td>
-                        <select className="input sm" disabled={!editable} value={l.actividadId || ''} onChange={e => vincular(l.id, e.target.value)} style={{ width: 140, fontSize: 11 }}>
+                        <select className="input sm" disabled={!editable || !!l.actividadId} value={l.actividadId || ''} onChange={e => vincular(l.id, e.target.value)} style={{ width: 140, fontSize: 11 }}>
                           <option value="">— libre —</option>
                           {acts.map(a => <option key={a.id} value={a.id}>{a.id} · {a.descripcion.slice(0, 30)}</option>)}
                         </select>
                       </td>
                     )}
-                    <td><input className="input sm" disabled={!editable} placeholder="Descripción" value={l.descripcion} onChange={e => updLinea(l.id, { descripcion: e.target.value })} style={{ width: '100%' }} /></td>
-                    <td><input className="input sm" disabled={!editable} placeholder={tipo === 'dia' ? 'día, hora…' : 'm², ml…'} value={l.unidad} onChange={e => updLinea(l.id, { unidad: e.target.value })} style={{ width: 70, textAlign: 'center' }} /></td>
-                    <td className="num"><input type="number" min="0" step="any" className="input sm" disabled={!editable} value={l.cantidad} onFocus={e => e.target.select()} onChange={e => updLinea(l.id, { cantidad: e.target.value })} style={{ width: 86, textAlign: 'right' }} /></td>
-                    <td className="num"><input type="number" min="0" step="any" className="input sm" disabled={!editable} value={l.pu} onFocus={e => e.target.select()} onChange={e => updLinea(l.id, { pu: e.target.value })} style={{ width: 106, textAlign: 'right' }} /></td>
-                    <td className="num" style={{ fontWeight: 700 }}>{money(round2((+l.cantidad || 0) * (+l.pu || 0)))}</td>
+                    <td><input className="input sm" disabled={lock} placeholder="Descripción" value={l.descripcion} onChange={e => updLinea(l.id, { descripcion: e.target.value })} style={{ width: '100%' }} /></td>
+                    <td><input className="input sm" disabled={lock} placeholder={tipo === 'dia' ? 'día, hora…' : 'm², ml…'} value={l.unidad} onChange={e => updLinea(l.id, { unidad: e.target.value })} style={{ width: 70, textAlign: 'center' }} /></td>
+                    <td className="num"><input type="number" min="0" step="any" className="input sm" disabled={lock} value={l.cantidad} onFocus={e => e.target.select()} onChange={e => updLinea(l.id, { cantidad: e.target.value })} style={{ width: 86, textAlign: 'right' }} /></td>
+                    <td className="num"><input type="number" min="0" step="any" className="input sm" disabled={lock} value={l.pu} onFocus={e => e.target.select()} onChange={e => updLinea(l.id, { pu: e.target.value })} style={{ width: 106, textAlign: 'right' }} /></td>
+                    {esDestajo && <td className="num"><input type="number" min="0" max="100" step="any" className="input sm" disabled={!editable} value={l.descuento ?? 0} onFocus={e => e.target.select()} onChange={e => updLinea(l.id, { descuento: Math.max(0, Math.min(100, +e.target.value || 0)) })} style={{ width: 70, textAlign: 'right' }} /></td>}
+                    <td className="num" style={{ fontWeight: 700 }}>{money(importeLinea(l))}</td>
                     <td>{editable && <button className="btn xs danger icon" onClick={() => delLinea(l.id)}><Trash2 size={11} /></button>}</td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
               {ls.length > 0 && (
                 <tfoot><tr>
-                  <td colSpan={tipo === 'destajo' ? 5 : 4} style={{ textAlign: 'right', fontWeight: 800, background: 'var(--c-ink)', color: '#fff' }}>SUBTOTAL {titulo.toUpperCase()}</td>
-                  <td className="num" style={{ fontWeight: 800, background: 'var(--c-ink)', color: 'var(--c-accent)' }}>{money(tipo === 'destajo' ? t.destajo : t.dia)}</td>
+                  <td colSpan={cols - 2} style={{ textAlign: 'right', fontWeight: 800, background: 'var(--c-ink)', color: '#fff' }}>SUBTOTAL {titulo.toUpperCase()}</td>
+                  <td className="num" style={{ fontWeight: 800, background: 'var(--c-ink)', color: 'var(--c-accent)' }}>{money(esDestajo ? t.destajo : t.dia)}</td>
                   <td style={{ background: 'var(--c-ink)' }}></td>
                 </tr></tfoot>
               )}

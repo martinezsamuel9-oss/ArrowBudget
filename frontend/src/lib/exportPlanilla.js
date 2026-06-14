@@ -19,21 +19,23 @@ export const exportPDFPlanilla = async (budget, pla, tot, empresa = {}) => {
   const lineasTipo = (titulo, tipo) => {
     const ls = (pla.lineas_json || []).filter(l => l.tipo === tipo && (l.descripcion || '').trim() && (+l.cantidad > 0))
     if (!ls.length) return
+    const impLinea = l => round2((+l.cantidad || 0) * (+l.pu || 0) * (1 - (+l.descuento || 0) / 100))
     doc.autoTable({
       startY: y,
-      head: [[{ content: titulo, colSpan: 5, styles: { fillColor: T.bg, textColor: T.acc, halign: 'left', fontStyle: 'bold' } }],
-             ['Descripción', 'Und', 'Cantidad', 'P. Unitario', 'Importe']],
+      head: [[{ content: titulo, colSpan: 6, styles: { fillColor: T.bg, textColor: T.acc, halign: 'left', fontStyle: 'bold' } }],
+             ['Descripción', 'Und', 'Cantidad', 'P. Unitario', 'Desc. %', 'Importe']],
       body: ls.map(l => [
         l.descripcion,
         { content: l.unidad || '—', styles: { halign: 'center' } },
         { content: fmt(l.cantidad), styles: { halign: 'right' } },
         { content: money(l.pu), styles: { halign: 'right' } },
-        { content: money(round2((+l.cantidad || 0) * (+l.pu || 0))), styles: { halign: 'right', fontStyle: 'bold' } },
+        { content: (+l.descuento || 0) ? `${fmt(l.descuento)}%` : '—', styles: { halign: 'right' } },
+        { content: money(impLinea(l)), styles: { halign: 'right', fontStyle: 'bold' } },
       ]),
       styles: { fontSize: 8, cellPadding: 1.7 },
       headStyles: { fillColor: T.mid, textColor: 255, fontStyle: 'bold' },
       alternateRowStyles: { fillColor: [248, 250, 252] },
-      columnStyles: { 1: { cellWidth: 14 }, 2: { cellWidth: 24 }, 3: { cellWidth: 28 }, 4: { cellWidth: 30 } },
+      columnStyles: { 1: { cellWidth: 13 }, 2: { cellWidth: 22 }, 3: { cellWidth: 26 }, 4: { cellWidth: 18 }, 5: { cellWidth: 28 } },
       margin: { top: 18, left: 12, right: 12, bottom: 16 },
       rowPageBreak: 'avoid',
       didDrawPage: d => { if (d.pageNumber > 1) drawContinuationBand(doc, budget, T, `PLANILLA No. ${pla.numero}`) },
