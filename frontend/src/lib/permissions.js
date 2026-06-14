@@ -104,6 +104,11 @@ const PERMISOS = {
    *  fuera: solo ve estimaciones, órdenes de cambio y cronograma. */
   verGastosEjecucion:   ['gerente', 'ing_costos_1', 'ing_costos_2', 'ing_residente', 'compras', 'administrador_empresa', 'cliente'],
 
+  /** Ver módulos de presupuesto y herramientas (presupuesto, catálogos,
+   *  indirectos, explosión, asistente IA, reportes, biblioteca, equipo,
+   *  planes). El supervisor queda fuera: solo estimaciones, OC y cronograma. */
+  verModuloPresupuesto: ['gerente', 'ing_costos_1', 'ing_costos_2', 'ing_residente', 'compras', 'administrador_empresa', 'cliente'],
+
   /** Gestionar equipo del proyecto (asignar roles) */
   gestionarEquipo:      ['gerente'],
 

@@ -61,20 +61,21 @@ function AccesoDenegado({ modulo }) {
 
 // ============ SIDEBAR ============
 function Sidebar({ page, setPage, projectActivo, projectRole, setTabProject, tabProject, user, onLogout, projectsCount, onSettings }) {
-  // Módulos de gasto de ejecución: ocultos para el supervisor (solo ve
-  // estimaciones, órdenes de cambio y cronograma). Si aún no hay rol de
-  // proyecto definido, no se restringe.
+  // El supervisor solo ve estimaciones, órdenes de cambio y cronograma (más
+  // Inicio/Proyectos). Se le ocultan los módulos de gasto de ejecución y los
+  // de presupuesto/herramientas. Sin rol de proyecto definido, no se restringe.
   const verGastos = !projectRole || puedeHacer(projectRole, 'verGastosEjecucion')
+  const verPresup = !projectRole || puedeHacer(projectRole, 'verModuloPresupuesto')
   const mainNav = [
     { id: 'inicio',     label: 'Inicio',     Icon: Home },
     { id: 'proyectos',  label: 'Proyectos',  Icon: Folder },
-    { id: 'asistente-ia', label: 'Asistente IA', Icon: Sparkles },
+    { id: 'asistente-ia', label: 'Asistente IA', Icon: Sparkles, presup: true },
     { id: 'cronograma', label: 'Cronograma', Icon: CalendarRange },
     { id: 'estimaciones', label: 'Estimaciones', Icon: Receipt },
     { id: 'ordenes', label: 'Órdenes de Cambio', Icon: ClipboardList },
     { id: 'planillas-obra', label: 'Contratos de Obra', Icon: HardHat, gasto: true },
     { id: 'informes', label: 'Informe ejecutivo', Icon: BarChart2, gasto: true },
-  ].filter(item => !item.gasto || verGastos)
+  ].filter(item => (!item.gasto || verGastos) && (!item.presup || verPresup))
   const projectNav = [
     { id: 'presupuesto',    label: 'Presupuesto',         Icon: FileText },
     { id: 'cat-mat',        label: 'Materiales',           Icon: Package },
@@ -124,7 +125,7 @@ function Sidebar({ page, setPage, projectActivo, projectRole, setTabProject, tab
       </div>
 
       {/* Proyecto activo */}
-      {projectActivo && (
+      {projectActivo && verPresup && (
         <div className="side-section">
           <div className="side-section-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <Folder size={11} /> Proyecto Activo
@@ -162,6 +163,7 @@ function Sidebar({ page, setPage, projectActivo, projectRole, setTabProject, tab
       <div className="side-spacer"></div>
 
       {/* Herramientas */}
+      {verPresup && (
       <div className="side-section">
         <div className="side-section-label">Herramientas</div>
         <nav className="side-nav">
@@ -177,6 +179,7 @@ function Sidebar({ page, setPage, projectActivo, projectRole, setTabProject, tab
           ))}
         </nav>
       </div>
+      )}
 
       {/* User foot */}
       <div className="side-foot">
@@ -3540,6 +3543,18 @@ export default function MainApp() {
       })
   }, [activeId, user, proyectos])
 
+  // Redirigir si el rol no puede ver la página actual (p. ej. supervisor que
+  // abre un proyecto cae en 'proyecto' → se le manda a estimaciones).
+  useEffect(() => {
+    if (!projectRole) return
+    const PRESUP = ['proyecto', 'explosion', 'reportes', 'plantillas', 'equipo', 'planes', 'asistente-ia']
+    const GASTOS = ['planillas-obra', 'informes']
+    if ((PRESUP.includes(page) && !puedeHacer(projectRole, 'verModuloPresupuesto')) ||
+        (GASTOS.includes(page) && !puedeHacer(projectRole, 'verGastosEjecucion'))) {
+      setPage('estimaciones')
+    }
+  }, [projectRole, page])
+
   const budget    = useMemo(() => proyectos.find(p => p.id === activeId) || null, [proyectos, activeId])
   const setBudget = b => setProyectos(ps => ps.map(p => p.id === b.id ? b : p))
 
@@ -3789,6 +3804,10 @@ export default function MainApp() {
   else if (page === 'explosion' && budget) crumbs = [budget.nombreProyecto, 'Explosión de Insumos']
   else if (page === 'planes')            crumbs = ['Planes']
 
+  // Gates de visibilidad por rol (supervisor solo ve estimaciones/OC/cronograma)
+  const vPresup = !projectRole || puedeHacer(projectRole, 'verModuloPresupuesto')
+  const vGastos = !projectRole || puedeHacer(projectRole, 'verGastosEjecucion')
+
   const tabToCat = { 'cat-mat': 'materiales', 'cat-mo': 'manoObra', 'cat-he': 'herramientaEquipo', 'cat-sub': 'subcontratos' }
   const tabsP = budget ? [
     { k: 'presupuesto', label: 'Presupuesto',         icon: <FileText size={14} />, badge: calcKPIs(budget).nActividades },
@@ -3842,21 +3861,22 @@ export default function MainApp() {
         {page === 'cronograma' && <CronogramaPage budget={budget} projectRole={projectRole} user={user} params={params} />}
         {page === 'estimaciones' && <EstimacionesPage budget={budget} projectRole={projectRole} user={user} params={params} />}
         {page === 'ordenes' && <OrdenesCambioPage budget={budget} projectRole={projectRole} user={user} params={params} />}
-        {page === 'planillas-obra' && (projectRole && !puedeHacer(projectRole, 'verGastosEjecucion')
-          ? <AccesoDenegado modulo="los contratos de obra y planillas" />
-          : <PlanillasPage budget={budget} projectRole={projectRole} user={user} params={params} />)}
-        {page === 'informes' && (projectRole && !puedeHacer(projectRole, 'verGastosEjecucion')
-          ? <AccesoDenegado modulo="el informe ejecutivo" />
-          : <InformesPage budget={budget} params={params} userEmpresa={userEmpresa} />)}
-        {page === 'asistente-ia' && <AsistenteIAPage proyectos={proyectos} onCrear={crearProyectoIA} moneda={budget?.moneda || 'USD'} />}
-        {page === 'reportes'   && <ReportesPage  proyectos={proyectos} budget={budget} params={params} userEmpresa={userEmpresa} />}
-        {page === 'plantillas' && <PlantillasPage budget={budget} setBudget={setBudget} />}
-        {page === 'equipo'     && <EquipoPage user={user} orgId={orgId} proyectos={proyectos} />}
-        {page === 'explosion'  && budget && <ExplosionView budget={budget} params={params} />}
-        {page === 'planes'     && <PlanesPage />}
+        {page === 'planillas-obra' && (vGastos
+          ? <PlanillasPage budget={budget} projectRole={projectRole} user={user} params={params} />
+          : <AccesoDenegado modulo="los contratos de obra y planillas" />)}
+        {page === 'informes' && (vGastos
+          ? <InformesPage budget={budget} params={params} userEmpresa={userEmpresa} />
+          : <AccesoDenegado modulo="el informe ejecutivo" />)}
+        {page === 'asistente-ia' && (vPresup ? <AsistenteIAPage proyectos={proyectos} onCrear={crearProyectoIA} moneda={budget?.moneda || 'USD'} /> : <AccesoDenegado modulo="el asistente de IA" />)}
+        {page === 'reportes'   && (vPresup ? <ReportesPage  proyectos={proyectos} budget={budget} params={params} userEmpresa={userEmpresa} /> : <AccesoDenegado modulo="los reportes" />)}
+        {page === 'plantillas' && (vPresup ? <PlantillasPage budget={budget} setBudget={setBudget} /> : <AccesoDenegado modulo="la biblioteca" />)}
+        {page === 'equipo'     && (vPresup ? <EquipoPage user={user} orgId={orgId} proyectos={proyectos} /> : <AccesoDenegado modulo="el equipo" />)}
+        {page === 'explosion'  && budget && (vPresup ? <ExplosionView budget={budget} params={params} /> : <AccesoDenegado modulo="la explosión de insumos" />)}
+        {page === 'planes'     && (vPresup ? <PlanesPage /> : <AccesoDenegado modulo="planes y facturación" />)}
 
         {/* ── PROYECTO VIEW ── */}
-        {page === 'proyecto' && budget && (
+        {page === 'proyecto' && budget && !vPresup && <AccesoDenegado modulo="el presupuesto del proyecto" />}
+        {page === 'proyecto' && budget && vPresup && (
           <Fragment>
             {/* Page header */}
             <div className="page-head">
