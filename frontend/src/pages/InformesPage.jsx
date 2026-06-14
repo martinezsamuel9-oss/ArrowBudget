@@ -18,7 +18,8 @@ const sumLineasDestajoPorCap = planillas => {
     if (!['aprobada', 'pagada'].includes(p.estado)) continue
     for (const l of (p.lineas_json || [])) {
       if (l.tipo !== 'destajo' || !l.capId) continue
-      m[l.capId] = round2((m[l.capId] || 0) + (+l.cantidad || 0) * (+l.pu || 0))
+      // P.U. neto: el descuento se aplica una vez sobre el precio unitario
+      m[l.capId] = round2((m[l.capId] || 0) + (+l.cantidad || 0) * (+l.pu || 0) * (1 - (+l.descuento || 0) / 100))
     }
   }
   return m

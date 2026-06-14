@@ -8,10 +8,10 @@ import { supabase } from '../lib/supabase'
 import { puedeHacer } from '../lib/permissions'
 import { calcItem, calcFicha, conceptoCost, makeMoneyFmt, fmt, round2, uid } from '../lib/calc'
 import { flattenActividades, hoyISO } from '../lib/cronograma'
-import { Modal } from '../components/ui'
+import { Modal, Dropdown } from '../components/ui'
 import { exportPDFPlanilla } from '../lib/exportPlanilla'
 import {
-  HardHat, Plus, FileText, Check, X, Send, ChevronLeft, Trash2, DollarSign, Users, Coins, Wand2,
+  HardHat, Plus, FileText, Check, X, ChevronLeft, ChevronDown, Trash2, DollarSign, Users, Coins, Wand2,
 } from 'lucide-react'
 
 const ESTADOS = {
@@ -24,6 +24,39 @@ const ESTADOS = {
 const Chip = ({ estado }) => {
   const e = ESTADOS[estado] || ESTADOS.borrador
   return <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 10, background: e.bg, color: e.fg, whiteSpace: 'nowrap' }}>{e.label}</span>
+}
+
+// Desplegable de estado de la planilla (como el del presupuesto): muestra el
+// chip y permite las transiciones válidas según el rol. El flujo es
+// Borrador → Enviada → Aprobada/Rechazada → Pagada.
+const TRANS_PLANILLA = { borrador: ['enviada'], enviada: ['aprobada', 'rechazada'], aprobada: ['pagada'], rechazada: [], pagada: [] }
+function EstadoPlanillaMenu({ estado, canElaborar, canAprobar, onChange }) {
+  let allowed = TRANS_PLANILLA[estado] || []
+  // Permisos: elaborar mueve borrador→enviada y aprobada→pagada; aprobar decide enviada→aprobada/rechazada
+  allowed = allowed.filter(v => (estado === 'enviada' ? canAprobar : canElaborar))
+  if (!allowed.length) return <Chip estado={estado} />
+  return (
+    <Dropdown align="left" minWidth={180} trigger={
+      <button className="btn sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        <Chip estado={estado} /><ChevronDown size={12} />
+      </button>
+    }>
+      <div style={{ padding: '6px 0' }}>
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--c-text-3)', padding: '4px 12px 8px' }}>Cambiar estado</div>
+        {Object.keys(ESTADOS).map(v => {
+          const can = allowed.includes(v)
+          return (
+            <button key={v} onClick={() => can && onChange(v)}
+              style={{ width: '100%', textAlign: 'left', padding: '7px 12px', display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', fontSize: 13, cursor: can ? 'pointer' : 'default', opacity: can ? 1 : 0.35 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: ESTADOS[v].fg, flexShrink: 0 }}></span>
+              {ESTADOS[v].label}
+              {v === estado && <Check size={13} style={{ marginLeft: 'auto', color: 'var(--c-success)' }} />}
+            </button>
+          )
+        })}
+      </div>
+    </Dropdown>
+  )
 }
 
 // El descuento se aplica SOLO al precio unitario (una vez). El P.U. neto es el
@@ -554,7 +587,9 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
             <button className="btn sm ghost" onClick={() => setSel(null)}><ChevronLeft size={14} /> Contrato</button>
             <div>
               <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--c-text)', display: 'flex', alignItems: 'center', gap: 10 }}>
-                Planilla No. {sel.numero} <Chip estado={sel.estado} />
+                Planilla No. {sel.numero}
+                <EstadoPlanillaMenu estado={sel.estado} canElaborar={canElaborar} canAprobar={canAprobar}
+                  onChange={v => cambiarEstado(sel, v, { enviada: '¿Enviar la planilla para aprobación?', rechazada: '¿Rechazar la planilla?', pagada: '¿Marcar como pagada?' }[v])} />
               </div>
               <div style={{ fontSize: 13, color: 'var(--c-text-3)', marginTop: 2 }}>{sel.contratista} · {budget.nombreProyecto}</div>
             </div>
@@ -562,15 +597,7 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
           <div className="page-head-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {canElaborar && contrato && <button className="btn" disabled={busy} onClick={async () => { if (editable) await guardar(sel); generarPlanilla(contrato) }}><Plus size={13} /> Siguiente planilla</button>}
             {editable && <button className="btn primary" disabled={busy} onClick={async () => { if (await guardar(sel)) alert('💾 Planilla guardada.') }}><Check size={13} /> {busy ? 'Guardando…' : 'Guardar'}</button>}
-            {editable && <button className="btn brand" disabled={busy} onClick={() => cambiarEstado(sel, 'enviada', '¿Enviar la planilla para aprobación?')}><Send size={13} /> Enviar</button>}
-            {sel.estado === 'enviada' && canAprobar && (
-              <Fragment>
-                <button className="btn" style={{ background: 'var(--c-success)', borderColor: 'var(--c-success)', color: '#fff' }} disabled={busy} onClick={() => cambiarEstado(sel, 'aprobada')}><Check size={13} /> Aprobar</button>
-                <button className="btn" style={{ background: 'var(--c-danger)', borderColor: 'var(--c-danger)', color: '#fff' }} disabled={busy} onClick={() => cambiarEstado(sel, 'rechazada')}><X size={13} /> Rechazar</button>
-              </Fragment>
-            )}
             {sel.estado === 'rechazada' && canElaborar && <button className="btn brand" disabled={busy} onClick={() => reabrirComoNueva(sel)}>Generar siguiente planilla corregida</button>}
-            {sel.estado === 'aprobada' && canElaborar && <button className="btn" style={{ background: 'var(--c-primary)', borderColor: 'var(--c-primary)', color: '#fff' }} disabled={busy} onClick={() => cambiarEstado(sel, 'pagada', '¿Marcar como pagada?')}><DollarSign size={13} /> Marcar pagada</button>}
             <button className="btn" style={{ background: 'var(--c-danger)', borderColor: 'var(--c-danger)', color: '#fff' }} onClick={() => pdf(sel)}><FileText size={13} /> PDF</button>
           </div>
         </div>
