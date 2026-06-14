@@ -16,7 +16,9 @@ export const exportPDFPlanilla = async (budget, pla, tot, empresa = {}, acumAnt 
   doc.text(`Periodo: ${pla.periodo_inicio || '—'} al ${pla.periodo_fin || '—'}   ·   Estado: ${(pla.estado || 'borrador').toUpperCase()}`, pw / 2, y + 6, { align: 'center' })
   y += 11
 
-  const impLinea = l => round2((+l.cantidad || 0) * (+l.pu || 0) * (1 - (+l.descuento || 0) / 100))
+  // P.U. neto = precio ya con descuento (la planilla no revela que hubo descuento).
+  const puNetoL = l => round2((+l.pu || 0) * (1 - (+l.descuento || 0) / 100))
+  const impLinea = l => round2((+l.cantidad || 0) * puNetoL(l))
 
   // ── DESTAJO: cuadro de estimación acumulada (Contrato | Anterior | Este | Acum.) ──
   const lsD = (pla.lineas_json || []).filter(l => l.tipo === 'destajo' && (l.descripcion || '').trim())
@@ -45,7 +47,7 @@ export const exportPDFPlanilla = async (budget, pla, tot, empresa = {}, acumAnt 
         return [
           l.descripcion,
           { content: cc ? fmt(cc) : '—', styles: { halign: 'right' } },
-          { content: money(l.pu), styles: { halign: 'right' } },
+          { content: money(puNetoL(l)), styles: { halign: 'right' } },
           { content: fmt(ant.cant), styles: { halign: 'right' } },
           { content: money(ant.total), styles: { halign: 'right' } },
           { content: fmt(l.cantidad), styles: { halign: 'right', fontStyle: 'bold' } },

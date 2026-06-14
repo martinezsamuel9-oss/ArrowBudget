@@ -465,7 +465,9 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
                     {/* Contrato (bloqueado) */}
                     <td className="num" style={num}>{cc ? fmt(cc) : '—'}</td>
                     <td style={{ textAlign: 'center', ...num }}>{l.unidad || '—'}</td>
-                    <td className="num" style={num}>{money(l.pu)}{(+l.descuento || 0) > 0 && <span style={{ fontSize: 9, color: 'var(--c-success)', display: 'block', fontWeight: 700 }}>−{fmt(l.descuento)}% · neto {money(puNeto(l))}</span>}</td>
+                    {/* La planilla muestra el P.U. neto (ya con descuento) como precio final;
+                        no revela que hubo descuento — el contratista no ve el rango. */}
+                    <td className="num" style={num}>{money(puNeto(l))}</td>
                     {/* Período anterior (bloqueado) */}
                     <td className="num" style={num}>{fmt(ant.cant)}</td>
                     <td className="num" style={num}>{money(ant.total)}</td>
