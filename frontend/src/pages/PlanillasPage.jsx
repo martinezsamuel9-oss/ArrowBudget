@@ -521,6 +521,8 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
     // Cantidad de contrato + aumentos por OCs aprobadas (se incorpora el
     // excedente una vez aprobada la orden de cambio).
     const contratoDe = l => round2((+l.cantContrato || (+actById[l.actividadId]?.cantidad) || 0) + (l.actividadId ? (deltaAprob[l.actividadId] || 0) : 0))
+    // OC de excedente ligada a esta planilla (si existe)
+    const ocExc = ordenes.find(o => o.origen_planilla_id === sel.id)
     // Control acumulado de anticipo y retención del contrato (planillas
     // anteriores no rechazadas + esta). Saldo retención = total retenido;
     // amortización acumulada = anticipo descontado hasta ahora.
@@ -711,6 +713,18 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
               <div className="kpi-val" style={{ fontSize: 18 }}>{money(t.neto)}</div>
             </div>
           </div>
+
+          {ocExc && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', marginBottom: 14, borderRadius: 10, background: ocExc.estado === 'aprobada' ? 'var(--c-success-soft, #d1fae5)' : '#fef3c7', border: `1px solid ${ocExc.estado === 'aprobada' ? 'var(--c-success)' : '#f59e0b'}` }}>
+              <AlertTriangle size={18} style={{ color: ocExc.estado === 'aprobada' ? 'var(--c-success)' : '#b45309', flexShrink: 0 }} />
+              <div style={{ flex: 1, fontSize: 12.5, color: 'var(--c-text-2)', lineHeight: 1.45 }}>
+                Se generó la <b>Orden de Cambio No. {ocExc.numero}</b> por el excedente de obra (aumento ligado a las actividades), por <b>{money(ocExc.monto || 0)}</b>.{' '}
+                {ocExc.estado === 'aprobada'
+                  ? 'Aprobada: el aumento ya se incorporó al contrato.'
+                  : <>Estado: <b>{(ESTADOS[ocExc.estado]?.label || ocExc.estado)}</b>. Apruébala en <b>Órdenes de Cambio</b> para incorporar el aumento al contrato.</>}
+              </div>
+            </div>
+          )}
 
           {renderDestajo()}
           {renderDia()}
