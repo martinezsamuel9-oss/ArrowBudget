@@ -85,52 +85,77 @@ function GenerarDestajoModal({ open, onClose, acts, moUnit, pendientes, money, y
   )
 }
 
-// Modal para generar destajo POR OFICIO (mano de obra): elige una M.O. del
-// catálogo y discrimina las actividades que la usan. Componente top-level.
+// Modal para generar destajo POR OFICIO (mano de obra): elige uno o varios
+// oficios del catálogo y discrimina las actividades que los usan. Top-level.
 function GenerarPorOficioModal({ open, onClose, porOficio, money, yaCombos, onConfirmar }) {
-  const [moId, setMoId] = useState(null)
-  const [sel, setSel] = useState({})
-  useEffect(() => { if (open) { setMoId(null); setSel({}) } }, [open])
+  const [step, setStep] = useState('oficios')
+  const [ofSel, setOfSel] = useState({})   // { insumoId: bool } — multi-selección de oficios
+  const [sel, setSel] = useState({})        // { `${moId}|${actId}`: bool }
+  useEffect(() => { if (open) { setStep('oficios'); setOfSel({}); setSel({}) } }, [open])
   if (!open) return null
+
   const oficios = Object.entries(porOficio).map(([id, v]) => ({ id, ...v })).sort((a, b) => b.acts.length - a.acts.length)
-  const actual = moId ? porOficio[moId] : null
-  const disponibles = actual ? actual.acts.filter(a => !yaCombos.has(`${a.id}|${moId}`)) : []
-  const ids = Object.keys(sel).filter(k => sel[k])
-  const toggle = id => setSel(p => ({ ...p, [id]: !p[id] }))
+  const ofIds = Object.keys(ofSel).filter(k => ofSel[k])
+  const secciones = ofIds
+    .map(id => ({ id, insumo: porOficio[id].insumo, acts: porOficio[id].acts.filter(a => !yaCombos.has(`${a.id}|${id}`)) }))
+    .filter(s => s.acts.length)
+  const combosDisp = secciones.flatMap(s => s.acts.map(a => `${s.id}|${a.id}`))
+  const selIds = Object.keys(sel).filter(k => sel[k])
+  const toggleOf = id => setOfSel(p => ({ ...p, [id]: !p[id] }))
+  const toggle = key => setSel(p => ({ ...p, [key]: !p[key] }))
+  const marcarTodo = on => { const n = {}; if (on) combosDisp.forEach(k => n[k] = true); setSel(n) }
 
   return (
     <Modal open={open} onClose={onClose} title="Generar por mano de obra (oficio)"
-      footer={<>
-        <button className="btn ghost" onClick={moId ? () => { setMoId(null); setSel({}) } : onClose}>{moId ? '← Oficios' : 'Cancelar'}</button>
-        {moId && <button className="btn brand" disabled={!ids.length} onClick={() => onConfirmar(moId, ids)}><Check size={13} /> Agregar {ids.length} actividad{ids.length !== 1 ? 'es' : ''}</button>}
-      </>}>
-      {!moId ? (
+      footer={step === 'oficios'
+        ? <>
+            <button className="btn ghost" onClick={onClose}>Cancelar</button>
+            <button className="btn brand" disabled={!ofIds.length} onClick={() => { setSel({}); setStep('acts') }}>Continuar ({ofIds.length}) →</button>
+          </>
+        : <>
+            <button className="btn ghost" onClick={() => setStep('oficios')}>← Oficios</button>
+            <button className="btn brand" disabled={!selIds.length} onClick={() => onConfirmar(selIds.map(k => { const i = k.indexOf('|'); return { moId: k.slice(0, i), actId: k.slice(i + 1) } }))}>
+              <Check size={13} /> Agregar {selIds.length} actividad{selIds.length !== 1 ? 'es' : ''}
+            </button>
+          </>}>
+      {step === 'oficios' ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ fontSize: 12.5, color: 'var(--c-text-2)', background: 'var(--c-accent-soft)', padding: '8px 12px', borderRadius: 8, lineHeight: 1.5 }}>
-            Elige el <b>oficio</b> que ejecuta este contratista. Luego marcas en qué actividades aplica; cada una será una línea con su cantidad y el costo del oficio por unidad.
+            Marca <b>uno o varios oficios</b> que ejecuta este contratista. Luego eliges en qué actividades aplica cada uno; cada combinación será una línea con su cantidad y el costo del oficio por unidad.
           </div>
           {oficios.length === 0 && <div style={{ padding: 16, textAlign: 'center', fontSize: 13, color: 'var(--c-text-3)' }}>No hay mano de obra usada en las fichas del presupuesto.</div>}
           {oficios.map(o => (
-            <button key={o.id} className="card" onClick={() => { setMoId(o.id); setSel({}) }}
-              style={{ padding: '10px 14px', cursor: 'pointer', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontWeight: 600, fontSize: 14 }}>{o.insumo.descripcion}</span>
-              <span style={{ fontSize: 12, color: 'var(--c-text-3)' }}>{o.acts.length} actividad{o.acts.length !== 1 ? 'es' : ''} →</span>
-            </button>
+            <label key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 8, border: '1px solid var(--c-line)', cursor: 'pointer', background: ofSel[o.id] ? 'var(--c-accent-soft)' : 'var(--c-surface)' }}>
+              <input type="checkbox" checked={!!ofSel[o.id]} onChange={() => toggleOf(o.id)} style={{ width: 15, height: 15, accentColor: 'var(--c-accent)' }} />
+              <span style={{ flex: 1, fontWeight: 600, fontSize: 14 }}>{o.insumo.descripcion}</span>
+              <span style={{ fontSize: 12, color: 'var(--c-text-3)' }}>{o.acts.length} actividad{o.acts.length !== 1 ? 'es' : ''}</span>
+            </label>
           ))}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ fontWeight: 700, fontSize: 14 }}>{actual.insumo.descripcion}</div>
-          <div style={{ maxHeight: 340, overflowY: 'auto', border: '1px solid var(--c-line)', borderRadius: 8 }}>
-            {disponibles.length === 0 && <div style={{ padding: 16, textAlign: 'center', fontSize: 13, color: 'var(--c-text-3)' }}>Todas las actividades de este oficio ya están en la planilla.</div>}
-            {disponibles.map(a => (
-              <label key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderBottom: '1px solid var(--c-line-2)', cursor: 'pointer', background: sel[a.id] ? 'var(--c-accent-soft)' : 'transparent' }}>
-                <input type="checkbox" checked={!!sel[a.id]} onChange={() => toggle(a.id)} style={{ width: 15, height: 15, accentColor: 'var(--c-accent)' }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500 }}><span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--c-text-3)', marginRight: 6 }}>{a.id}</span>{a.descripcion}</div>
-                  <div style={{ fontSize: 11, color: 'var(--c-text-3)' }}>{fmt(a.cantidad)} {a.unidad} · {money(a.pu)}/{a.unidad}</div>
-                </div>
-              </label>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+            <button className="btn xs" onClick={() => marcarTodo(true)}>Seleccionar todo</button>
+            <button className="btn xs ghost" onClick={() => marcarTodo(false)}>Ninguno</button>
+          </div>
+          <div style={{ maxHeight: 360, overflowY: 'auto', border: '1px solid var(--c-line)', borderRadius: 8 }}>
+            {secciones.length === 0 && <div style={{ padding: 16, textAlign: 'center', fontSize: 13, color: 'var(--c-text-3)' }}>Todas las actividades de los oficios elegidos ya están en la planilla.</div>}
+            {secciones.map(s => (
+              <div key={s.id}>
+                <div style={{ padding: '7px 12px', background: 'var(--c-ink)', color: 'var(--c-accent)', fontWeight: 700, fontSize: 12 }}>{s.insumo.descripcion}</div>
+                {s.acts.map(a => {
+                  const key = `${s.id}|${a.id}`
+                  return (
+                    <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderBottom: '1px solid var(--c-line-2)', cursor: 'pointer', background: sel[key] ? 'var(--c-accent-soft)' : 'transparent' }}>
+                      <input type="checkbox" checked={!!sel[key]} onChange={() => toggle(key)} style={{ width: 15, height: 15, accentColor: 'var(--c-accent)' }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 500 }}><span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--c-text-3)', marginRight: 6 }}>{a.id}</span>{a.descripcion}</div>
+                        <div style={{ fontSize: 11, color: 'var(--c-text-3)' }}>{fmt(a.cantidad)} {a.unidad} · {money(a.pu)}/{a.unidad}</div>
+                      </div>
+                    </label>
+                  )
+                })}
+              </div>
             ))}
           </div>
         </div>
@@ -334,12 +359,12 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
     }
     // Por oficio: combos actividad|oficio ya presentes (para no duplicar)
     const yaCombos = new Set((sel.lineas_json || []).filter(l => l.tipo === 'destajo' && l.manoObraId).map(l => `${l.actividadId}|${l.manoObraId}`))
-    const generarPorOficio = (moId, actIds) => {
-      const o = porOficio[moId]; if (!o) return
-      const nuevas = actIds.map(aid => {
-        const a = o.acts.find(x => x.id === aid)
-        return { id: uid(), tipo: 'destajo', actividadId: aid, manoObraId: moId, capId: a.capId, descripcion: `${o.insumo.descripcion} · ${a.descripcion}`, unidad: a.unidad, cantidad: a.cantidad, pu: round2(a.pu) }
-      })
+    const generarPorOficio = combos => {
+      const nuevas = combos.map(({ moId, actId }) => {
+        const o = porOficio[moId]; const a = o?.acts.find(x => x.id === actId)
+        if (!o || !a) return null
+        return { id: uid(), tipo: 'destajo', actividadId: actId, manoObraId: moId, capId: a.capId, descripcion: `${o.insumo.descripcion} · ${a.descripcion}`, unidad: a.unidad, cantidad: a.cantidad, pu: round2(a.pu) }
+      }).filter(Boolean)
       setSel({ ...sel, lineas_json: [...(sel.lineas_json || []), ...nuevas] })
       setShowGenMO(false)
     }
