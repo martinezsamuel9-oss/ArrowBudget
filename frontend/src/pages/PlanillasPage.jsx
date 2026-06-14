@@ -464,28 +464,33 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
     // período | Acumulado). Contrato y acumulados bloqueados; editable solo la
     // cantidad de este período y el descuento. ──
     const lsDestajo = (sel.lineas_json || []).filter(l => l.tipo === 'destajo')
+    // Subtotales por columna de total: período anterior, este período, acumulado
+    const subAnt = round2(lsDestajo.reduce((s, l) => s + anteriorDe(l).total, 0))
+    const subEste = round2(lsDestajo.reduce((s, l) => s + importeLinea(l), 0))
+    const subAcum = round2(subAnt + subEste)
     const HG = { background: 'var(--c-ink)', color: 'var(--c-accent)', fontSize: 10, fontWeight: 700, textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.04em' }
+    const FT = { background: 'var(--c-ink)', color: 'var(--c-accent)', fontWeight: 800 }
     const renderDestajo = () => (
       <div className="card" style={{ padding: 0, marginBottom: 16 }}>
         <div className="card-header">
           <div className="card-title"><HardHat size={15} /> Obra por destajo</div>
         </div>
         <div style={{ overflowX: 'auto' }}>
-          <table className="bt" style={{ minWidth: 1180 }}>
+          <table className="bt" style={{ minWidth: 1080, tableLayout: 'fixed' }}>
             <thead>
               <tr>
-                <th rowSpan={2} style={{ width: 150 }}>Actividad</th>
-                <th rowSpan={2}>Descripción</th>
+                <th rowSpan={2} style={{ width: 90 }}>Actividad</th>
+                <th rowSpan={2} style={{ width: 300 }}>Descripción</th>
                 <th colSpan={3} style={HG}>Contrato de obra</th>
                 <th colSpan={2} style={HG}>Período anterior</th>
                 <th colSpan={2} style={HG}>Este período</th>
                 <th colSpan={3} style={HG}>Acumulado</th>
               </tr>
               <tr>
-                <th className="num" style={{ width: 70 }}>Cant.</th><th style={{ width: 48, textAlign: 'center' }}>Und</th><th className="num" style={{ width: 84 }}>P.U.</th>
-                <th className="num" style={{ width: 70 }}>Cant.</th><th className="num" style={{ width: 96 }}>Total</th>
-                <th className="num" style={{ width: 78 }}>Cant.</th><th className="num" style={{ width: 96 }}>Total</th>
-                <th className="num" style={{ width: 70 }}>Cant.</th><th className="num" style={{ width: 96 }}>Total</th><th className="num" style={{ width: 54 }}>%</th>
+                <th className="num" style={{ width: 60 }}>Cant.</th><th style={{ width: 40, textAlign: 'center' }}>Und</th><th className="num" style={{ width: 78 }}>P.U.</th>
+                <th className="num" style={{ width: 60 }}>Cant.</th><th className="num" style={{ width: 90 }}>Total</th>
+                <th className="num" style={{ width: 74 }}>Cant.</th><th className="num" style={{ width: 90 }}>Total</th>
+                <th className="num" style={{ width: 60 }}>Cant.</th><th className="num" style={{ width: 90 }}>Total</th><th className="num" style={{ width: 46 }}>%</th>
               </tr>
             </thead>
             <tbody>
@@ -497,12 +502,12 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
                 const cantAcum = round2(ant.cant + (+l.cantidad || 0))
                 const totAcum = round2(ant.total + totEste)
                 const pct = cc > 0 ? Math.round(cantAcum / cc * 100) : 0
-                const num = { fontSize: 12, color: 'var(--c-text-2)' }
+                const num = { fontSize: 12, color: 'var(--c-text-2)', verticalAlign: 'top', paddingTop: 8 }
                 return (
                   <tr key={l.id}>
                     <td style={{ verticalAlign: 'top', fontSize: 11, fontWeight: 700, color: 'var(--c-text-2)', paddingTop: 8 }}>{l.actividadId || '—'}</td>
                     <td style={{ verticalAlign: 'top' }}>
-                      <div style={{ fontSize: 12, lineHeight: 1.35, whiteSpace: 'normal', wordBreak: 'break-word', textAlign: 'justify', minWidth: 220, maxWidth: 380, paddingTop: 6 }}>{l.descripcion}</div>
+                      <div style={{ fontSize: 12, lineHeight: 1.35, whiteSpace: 'normal', wordBreak: 'break-word', textAlign: 'justify', paddingTop: 6 }}>{l.descripcion}</div>
                     </td>
                     {/* Contrato (bloqueado) */}
                     <td className="num" style={num}>{cc ? fmt(cc) : '—'}</td>
@@ -514,11 +519,11 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
                     <td className="num" style={num}>{fmt(ant.cant)}</td>
                     <td className="num" style={num}>{money(ant.total)}</td>
                     {/* Este período: SOLO la cantidad es editable, total formulado */}
-                    <td className="num"><input type="number" min="0" step="any" className="input sm" disabled={!editable} value={l.cantidad ?? ''} placeholder="0" onFocus={e => e.target.select()} onChange={e => updLinea(l.id, { cantidad: e.target.value })} style={{ width: 72, textAlign: 'right', fontWeight: 700 }} /></td>
-                    <td className="num" style={{ fontWeight: 700 }}>{money(totEste)}</td>
+                    <td className="num" style={{ verticalAlign: 'top', paddingTop: 5 }}><input type="number" min="0" step="any" className="input sm" disabled={!editable} value={l.cantidad ?? ''} placeholder="0" onFocus={e => e.target.select()} onChange={e => updLinea(l.id, { cantidad: e.target.value })} style={{ width: '100%', textAlign: 'right', fontWeight: 700 }} /></td>
+                    <td className="num" style={{ ...num, fontWeight: 700, color: 'var(--c-text)' }}>{money(totEste)}</td>
                     {/* Acumulado (bloqueado) */}
                     <td className="num" style={{ ...num, fontWeight: 600 }}>{fmt(cantAcum)}</td>
-                    <td className="num" style={{ fontWeight: 700 }}>{money(totAcum)}</td>
+                    <td className="num" style={{ ...num, fontWeight: 700, color: 'var(--c-text)' }}>{money(totAcum)}</td>
                     <td className="num" style={{ ...num, fontWeight: 700, color: pct >= 100 ? 'var(--c-success)' : 'var(--c-text-2)' }}>{cc ? `${pct}%` : '—'}</td>
                   </tr>
                 )
@@ -526,9 +531,14 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
             </tbody>
             {lsDestajo.length > 0 && (
               <tfoot><tr>
-                <td colSpan={8} style={{ textAlign: 'right', fontWeight: 800, background: 'var(--c-ink)', color: '#fff' }}>SUBTOTAL ESTE PERÍODO</td>
-                <td className="num" style={{ fontWeight: 800, background: 'var(--c-ink)', color: 'var(--c-accent)' }}>{money(t.destajo)}</td>
-                <td colSpan={3} style={{ background: 'var(--c-ink)' }}></td>
+                <td colSpan={5} style={{ textAlign: 'right', fontWeight: 800, background: 'var(--c-ink)', color: '#fff' }}>SUBTOTALES</td>
+                <td style={{ background: 'var(--c-ink)' }}></td>
+                <td className="num" style={FT}>{money(subAnt)}</td>
+                <td style={{ background: 'var(--c-ink)' }}></td>
+                <td className="num" style={FT}>{money(subEste)}</td>
+                <td style={{ background: 'var(--c-ink)' }}></td>
+                <td className="num" style={FT}>{money(subAcum)}</td>
+                <td style={{ background: 'var(--c-ink)' }}></td>
               </tr></tfoot>
             )}
           </table>

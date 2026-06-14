@@ -24,6 +24,8 @@ export const exportPDFPlanilla = async (budget, pla, tot, empresa = {}, acumAnt 
   const lsD = (pla.lineas_json || []).filter(l => l.tipo === 'destajo' && (l.descripcion || '').trim())
   if (lsD.length) {
     const antDe = l => acumAnt[`${l.actividadId || ''}|${l.manoObraId || ''}`] || { cant: 0, total: 0 }
+    const subAnt = round2(lsD.reduce((s, l) => s + antDe(l).total, 0))
+    const subAcum = round2(subAnt + tot.destajo)
     doc.autoTable({
       startY: y,
       head: [
@@ -58,9 +60,13 @@ export const exportPDFPlanilla = async (budget, pla, tot, empresa = {}, acumAnt 
         ]
       }),
       foot: [[
-        { content: 'SUBTOTAL ESTE PERÍODO', colSpan: 6, styles: { halign: 'right', fontStyle: 'bold', fillColor: T.bg, textColor: 255 } },
+        { content: 'SUBTOTALES', colSpan: 4, styles: { halign: 'right', fontStyle: 'bold', fillColor: T.bg, textColor: 255 } },
+        { content: money(subAnt), styles: { halign: 'right', fontStyle: 'bold', fillColor: T.bg, textColor: T.acc } },
+        { content: '', styles: { fillColor: T.bg } },
         { content: money(tot.destajo), styles: { halign: 'right', fontStyle: 'bold', fillColor: T.bg, textColor: T.acc } },
-        { content: '', colSpan: 3, styles: { fillColor: T.bg } },
+        { content: '', styles: { fillColor: T.bg } },
+        { content: money(subAcum), styles: { halign: 'right', fontStyle: 'bold', fillColor: T.bg, textColor: T.acc } },
+        { content: '', styles: { fillColor: T.bg } },
       ]],
       styles: { fontSize: 7, cellPadding: 1.3 },
       headStyles: { fillColor: T.mid, textColor: 255, fontStyle: 'bold', halign: 'center', fontSize: 6.5 },
