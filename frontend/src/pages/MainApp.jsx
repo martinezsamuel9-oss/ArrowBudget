@@ -48,8 +48,23 @@ function formatMoney(amount, currency = 'USD') {
 }
 
 
+// ============ ACCESO DENEGADO ============
+function AccesoDenegado({ modulo }) {
+  return (
+    <div className="page-body"><div style={{ textAlign: 'center', padding: '80px 20px', color: 'var(--c-text-3)' }}>
+      <ShieldCheck size={40} style={{ marginBottom: 12, opacity: 0.4 }} />
+      <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--c-text-2)' }}>Acceso restringido</div>
+      <div style={{ fontSize: 13 }}>Tu rol en este proyecto no tiene acceso a {modulo}.</div>
+    </div></div>
+  )
+}
+
 // ============ SIDEBAR ============
-function Sidebar({ page, setPage, projectActivo, setTabProject, tabProject, user, onLogout, projectsCount, onSettings }) {
+function Sidebar({ page, setPage, projectActivo, projectRole, setTabProject, tabProject, user, onLogout, projectsCount, onSettings }) {
+  // Módulos de gasto de ejecución: ocultos para el supervisor (solo ve
+  // estimaciones, órdenes de cambio y cronograma). Si aún no hay rol de
+  // proyecto definido, no se restringe.
+  const verGastos = !projectRole || puedeHacer(projectRole, 'verGastosEjecucion')
   const mainNav = [
     { id: 'inicio',     label: 'Inicio',     Icon: Home },
     { id: 'proyectos',  label: 'Proyectos',  Icon: Folder },
@@ -57,9 +72,9 @@ function Sidebar({ page, setPage, projectActivo, setTabProject, tabProject, user
     { id: 'cronograma', label: 'Cronograma', Icon: CalendarRange },
     { id: 'estimaciones', label: 'Estimaciones', Icon: Receipt },
     { id: 'ordenes', label: 'Órdenes de Cambio', Icon: ClipboardList },
-    { id: 'planillas-obra', label: 'Contratos de Obra', Icon: HardHat },
-    { id: 'informes', label: 'Informe ejecutivo', Icon: BarChart2 },
-  ]
+    { id: 'planillas-obra', label: 'Contratos de Obra', Icon: HardHat, gasto: true },
+    { id: 'informes', label: 'Informe ejecutivo', Icon: BarChart2, gasto: true },
+  ].filter(item => !item.gasto || verGastos)
   const projectNav = [
     { id: 'presupuesto',    label: 'Presupuesto',         Icon: FileText },
     { id: 'cat-mat',        label: 'Materiales',           Icon: Package },
@@ -3791,6 +3806,7 @@ export default function MainApp() {
       <Sidebar
         page={page} setPage={setPage}
         projectActivo={budget}
+        projectRole={projectRole}
         setTabProject={setTabProject} tabProject={tabProject}
         user={{ name: userName, empresa: userEmpresa }}
         onLogout={doLogout}
@@ -3826,8 +3842,12 @@ export default function MainApp() {
         {page === 'cronograma' && <CronogramaPage budget={budget} projectRole={projectRole} user={user} params={params} />}
         {page === 'estimaciones' && <EstimacionesPage budget={budget} projectRole={projectRole} user={user} params={params} />}
         {page === 'ordenes' && <OrdenesCambioPage budget={budget} projectRole={projectRole} user={user} params={params} />}
-        {page === 'planillas-obra' && <PlanillasPage budget={budget} projectRole={projectRole} user={user} params={params} />}
-        {page === 'informes' && <InformesPage budget={budget} params={params} userEmpresa={userEmpresa} />}
+        {page === 'planillas-obra' && (projectRole && !puedeHacer(projectRole, 'verGastosEjecucion')
+          ? <AccesoDenegado modulo="los contratos de obra y planillas" />
+          : <PlanillasPage budget={budget} projectRole={projectRole} user={user} params={params} />)}
+        {page === 'informes' && (projectRole && !puedeHacer(projectRole, 'verGastosEjecucion')
+          ? <AccesoDenegado modulo="el informe ejecutivo" />
+          : <InformesPage budget={budget} params={params} userEmpresa={userEmpresa} />)}
         {page === 'asistente-ia' && <AsistenteIAPage proyectos={proyectos} onCrear={crearProyectoIA} moneda={budget?.moneda || 'USD'} />}
         {page === 'reportes'   && <ReportesPage  proyectos={proyectos} budget={budget} params={params} userEmpresa={userEmpresa} />}
         {page === 'plantillas' && <PlantillasPage budget={budget} setBudget={setBudget} />}

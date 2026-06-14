@@ -95,8 +95,14 @@ const PERMISOS = {
   /** Elaborar planillas a contratistas (Fase III) */
   elaborarPlanilla:     ['gerente', 'ing_costos_1', 'ing_costos_2', 'ing_residente', 'compras'],
 
-  /** Aprobar/rechazar planillas a contratistas (Fase III) */
-  aprobarPlanilla:      ['gerente', 'supervisor', 'administrador_empresa'],
+  /** Aprobar/rechazar planillas a contratistas (Fase III).
+   *  El supervisor NO interviene en gastos de ejecución. */
+  aprobarPlanilla:      ['gerente', 'administrador_empresa'],
+
+  /** Ver módulos de gasto de ejecución (planillas/contratos de obra,
+   *  órdenes de compra, informe ejecutivo con costos). El supervisor queda
+   *  fuera: solo ve estimaciones, órdenes de cambio y cronograma. */
+  verGastosEjecucion:   ['gerente', 'ing_costos_1', 'ing_costos_2', 'ing_residente', 'compras', 'administrador_empresa', 'cliente'],
 
   /** Gestionar equipo del proyecto (asignar roles) */
   gestionarEquipo:      ['gerente'],
