@@ -7,6 +7,7 @@ import { useState, useEffect, useMemo, Fragment } from 'react'
 import { supabase } from '../lib/supabase'
 import { calcItem, calcResumenFinanciero, makeMoneyFmt, round2 } from '../lib/calc'
 import { flattenActividades, calcularFechas, avanceGlobal, hoyISO } from '../lib/cronograma'
+import { efectoOC } from '../lib/contrato'
 import { exportPDFInforme } from '../lib/exportInforme'
 import { BarChart2, FileText, Coins, Activity, TrendingUp, Receipt, HardHat, DollarSign } from 'lucide-react'
 
@@ -79,11 +80,9 @@ export default function InformesPage({ budget, params, userEmpresa }) {
     const R = calcResumenFinanciero(budget.items, budget.catalogos, params)
     const contratoOriginal = R.total
     const tot = arr => arr.filter(x => ['aprobada', 'pagada'].includes(x.estado))
-    // OC aprobadas
-    const ocAprob = round2(oc.filter(o => o.estado === 'aprobada').reduce((s, o) => {
-      const m = (o.lineas_json || []).reduce((x, l) => x + (+l.cantidad || 0) * (+l.pu || 0), 0)
-      return s + (o.tipo === 'deductiva' ? -m : m)
-    }, 0))
+    // OC aprobadas — usa efectoOC (ajuste = (cantNueva−cantOriginal)×pu) para no
+    // descuadrar contra Órdenes de Cambio y Estimaciones
+    const ocAprob = round2(oc.filter(o => o.estado === 'aprobada').reduce((s, o) => s + efectoOC(o), 0))
     const contratoVigente = round2(contratoOriginal + ocAprob)
     // Estimaciones (cobrado al cliente)
     const estA = tot(est)

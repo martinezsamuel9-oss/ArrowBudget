@@ -88,18 +88,23 @@ export const procesarIFC = async (arrayBuffer, onProgress) => {
         try { psets = await api.properties.getPropertySets(modelID, eid, true) } catch { psets = [] }
         const c = cantidadDeElemento(psets, cat.magnitud)
         if (c != null) { suma += c; conCantidad++ }
+        // Cede el hilo cada 200 elementos para no congelar el navegador en
+        // modelos grandes y reflejar progreso dentro de la categoría
+        if (j % 200 === 199) {
+          onProgress?.((i + (j / n)) / total)
+          await new Promise(r => setTimeout(r))
+        }
       }
-      resultado.push({
-        ...cat,
-        cantidad: Math.round(suma * 100) / 100,
-        elementos: n,
-        conCantidad,
-      })
+      resultado.push({ ...cat, cantidad: Math.round(suma * 100) / 100, elementos: n, conCantidad })
       onProgress?.((i + 1) / total)
     }
   } finally {
     api.CloseModel(modelID)
   }
-  // Solo categorías con presencia en el modelo
-  return resultado.filter(r => r.elementos > 0)
+  const cats = resultado.filter(r => r.elementos > 0)
+  // Aviso si el modelo no trae Base Quantities (todo lo medible salió en 0)
+  const medibles = cats.filter(c => c.magnitud !== 'count')
+  const sinCantidades = medibles.length > 0 && medibles.every(c => c.conCantidad === 0)
+  cats.sinBaseQuantities = sinCantidades
+  return cats
 }

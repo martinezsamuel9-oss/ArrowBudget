@@ -37,6 +37,7 @@ export default function EstimacionesPage({ budget, projectRole, user, params }) 
   const canAprobar  = puedeHacer(projectRole, 'aprobarEstimacion')
 
   const acts = useMemo(() => flattenActividades(budget?.items || []), [budget?.items])
+  const actById = useMemo(() => Object.fromEntries(acts.map(a => [a.id, a])), [acts])
 
   // PU contractual por actividad (precio de venta del presupuesto)
   const pus = useMemo(() => {
@@ -242,7 +243,10 @@ export default function EstimacionesPage({ budget, projectRole, user, params }) 
     // partida sin tope) no se limita — ahí entra la orden de cambio.
     const topeDe = actividadId => {
       const l = sel.lineas_json.find(x => x.actividadId === actividadId)
-      const cc = +l?.cantContrato || 0
+      // Cantidad de contrato VIVA: si la partida existe en el presupuesto, usa
+      // la ajustada por OCs aprobadas (no la congelada al crear la estimación)
+      const a = actById[actividadId]
+      const cc = a ? cantContratoDe(a) : (+l?.cantContrato || 0)
       if (cc <= 0) return Infinity
       return Math.max(0, round2(cc - (A.prev[actividadId] || 0)))
     }

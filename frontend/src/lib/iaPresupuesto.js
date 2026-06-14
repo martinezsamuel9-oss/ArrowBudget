@@ -53,7 +53,9 @@ export const aprenderTipo = (proyectos, tipo, fuenteIds = null) => {
       const actKey = normalize(a.descripcion)
       const acts = capMap[capKey].acts
       if (!acts[actKey]) { acts[actKey] = { desc: a.descripcion, unidades: {}, rendSum: 0, n: 0, samples: [] }; capMap[capKey].actOrder.push(actKey) }
-      const rend = (+a.cantidad || 0) / m2
+      const cant = +a.cantidad
+      if (!Number.isFinite(cant)) continue   // ignora items con cantidad corrupta (no contamina el promedio)
+      const rend = cant / m2
       acts[actKey].rendSum += rend
       acts[actKey].n++
       const u = a.unidad || ''

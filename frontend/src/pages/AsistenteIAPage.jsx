@@ -59,8 +59,9 @@ export default function AsistenteIAPage({ proyectos, onCrear, moneda = 'USD' }) 
     try {
       const buf = await f.arrayBuffer()
       const r = await procesarIFC(buf, setProgreso)
-      if (!r.length) { setErrIfc('No se detectaron elementos cuantificables en el modelo. Verifica que el IFC incluya cantidades base (Base Quantities) al exportar desde Revit.'); setProcesando(false); return }
-      setCats(r.map(c => ({ ...c, incluir: true, descripcion: c.label, pu: 0 })))
+      if (!r.length) { setErrIfc('No se detectaron elementos en el modelo. Verifica que sea un IFC válido exportado desde Revit/ArchiCAD.'); setProcesando(false); return }
+      if (r.sinBaseQuantities) setErrIfc('⚠️ El modelo no incluye "Base Quantities", por eso las áreas/longitudes salieron en 0 (el conteo de puertas/ventanas sí funciona). Vuelve a exportar el IFC desde Revit activando "Exportar cantidades base / Base Quantities" para obtener m², ml y m³.')
+      setCats(r.map(c => ({ ...c, incluir: c.magnitud === 'count' || c.conCantidad > 0, descripcion: c.label, pu: 0 })))
     } catch (err) {
       console.error('[IFC]', err)
       setErrIfc('No se pudo leer el archivo IFC: ' + (err.message || err) + '. Asegúrate de que sea un .ifc válido exportado desde Revit/ArchiCAD.')

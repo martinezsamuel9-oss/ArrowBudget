@@ -446,6 +446,15 @@ export default function CronogramaPage({ budget, projectRole, user, params }) {
     return () => clearTimeout(t)
   }, [crono]) // eslint-disable-line
 
+  // Flush inmediato al cambiar de proyecto o desmontar (evita perder cambios
+  // del Gantt/avances dentro de la ventana de 1.2s) + aviso al cerrar pestaña
+  useEffect(() => () => { flushSave() }, [budget?.id]) // eslint-disable-line
+  useEffect(() => {
+    const onBeforeUnload = e => { if (pendingRef.current || savingRef.current) { flushSave(); e.preventDefault(); e.returnValue = '' } }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, []) // eslint-disable-line
+
   // ── Derivados ──
   const acts = useMemo(() => flattenActividades(budget?.items || []), [budget?.items])
   const datos = crono?.datos_json?.actividades || {}

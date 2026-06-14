@@ -159,7 +159,9 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
     }
     const setDed = deducciones_json => setSel({ ...sel, deducciones_json })
 
-    const Seccion = ({ titulo, tipo, icon: Icon }) => {
+    // Función que retorna JSX (NO componente con <Seccion/>): si fuera componente
+    // definido aquí, cada tecla remontaría los inputs y se perdería el foco.
+    const renderSeccion = (titulo, tipo, Icon) => {
       const ls = (sel.lineas_json || []).filter(l => l.tipo === tipo)
       return (
         <div className="card" style={{ padding: 0, marginBottom: 16 }}>
@@ -259,8 +261,8 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
             </div>
           </div>
 
-          <Seccion titulo="Obra por destajo" tipo="destajo" icon={HardHat} />
-          <Seccion titulo="Personal al día / Obras varias" tipo="dia" icon={Users} />
+          {renderSeccion('Obra por destajo', 'destajo', HardHat)}
+          {renderSeccion('Personal al día / Obras varias', 'dia', Users)}
 
           {/* Deducciones */}
           <div className="card" style={{ padding: 0, marginBottom: 16 }}>
