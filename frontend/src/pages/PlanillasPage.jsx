@@ -6,7 +6,7 @@
 import { useState, useEffect, useMemo, Fragment } from 'react'
 import { supabase } from '../lib/supabase'
 import { puedeHacer } from '../lib/permissions'
-import { calcItem, calcFicha, makeMoneyFmt, fmt, round2, uid } from '../lib/calc'
+import { calcItem, calcFicha, conceptoCost, makeMoneyFmt, fmt, round2, uid } from '../lib/calc'
 import { flattenActividades, pctReal, hoyISO } from '../lib/cronograma'
 import { Modal } from '../components/ui'
 import { exportPDFPlanilla } from '../lib/exportPlanilla'
@@ -85,12 +85,67 @@ function GenerarDestajoModal({ open, onClose, acts, moUnit, pendientes, money, y
   )
 }
 
+// Modal para generar destajo POR OFICIO (mano de obra): elige una M.O. del
+// catálogo y discrimina las actividades que la usan. Componente top-level.
+function GenerarPorOficioModal({ open, onClose, porOficio, money, yaCombos, onConfirmar }) {
+  const [moId, setMoId] = useState(null)
+  const [sel, setSel] = useState({})
+  useEffect(() => { if (open) { setMoId(null); setSel({}) } }, [open])
+  if (!open) return null
+  const oficios = Object.entries(porOficio).map(([id, v]) => ({ id, ...v })).sort((a, b) => b.acts.length - a.acts.length)
+  const actual = moId ? porOficio[moId] : null
+  const disponibles = actual ? actual.acts.filter(a => !yaCombos.has(`${a.id}|${moId}`)) : []
+  const ids = Object.keys(sel).filter(k => sel[k])
+  const toggle = id => setSel(p => ({ ...p, [id]: !p[id] }))
+
+  return (
+    <Modal open={open} onClose={onClose} title="Generar por mano de obra (oficio)"
+      footer={<>
+        <button className="btn ghost" onClick={moId ? () => { setMoId(null); setSel({}) } : onClose}>{moId ? '← Oficios' : 'Cancelar'}</button>
+        {moId && <button className="btn brand" disabled={!ids.length} onClick={() => onConfirmar(moId, ids)}><Check size={13} /> Agregar {ids.length} actividad{ids.length !== 1 ? 'es' : ''}</button>}
+      </>}>
+      {!moId ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ fontSize: 12.5, color: 'var(--c-text-2)', background: 'var(--c-accent-soft)', padding: '8px 12px', borderRadius: 8, lineHeight: 1.5 }}>
+            Elige el <b>oficio</b> que ejecuta este contratista. Luego marcas en qué actividades aplica; cada una será una línea con su cantidad y el costo del oficio por unidad.
+          </div>
+          {oficios.length === 0 && <div style={{ padding: 16, textAlign: 'center', fontSize: 13, color: 'var(--c-text-3)' }}>No hay mano de obra usada en las fichas del presupuesto.</div>}
+          {oficios.map(o => (
+            <button key={o.id} className="card" onClick={() => { setMoId(o.id); setSel({}) }}
+              style={{ padding: '10px 14px', cursor: 'pointer', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontWeight: 600, fontSize: 14 }}>{o.insumo.descripcion}</span>
+              <span style={{ fontSize: 12, color: 'var(--c-text-3)' }}>{o.acts.length} actividad{o.acts.length !== 1 ? 'es' : ''} →</span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontWeight: 700, fontSize: 14 }}>{actual.insumo.descripcion}</div>
+          <div style={{ maxHeight: 340, overflowY: 'auto', border: '1px solid var(--c-line)', borderRadius: 8 }}>
+            {disponibles.length === 0 && <div style={{ padding: 16, textAlign: 'center', fontSize: 13, color: 'var(--c-text-3)' }}>Todas las actividades de este oficio ya están en la planilla.</div>}
+            {disponibles.map(a => (
+              <label key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderBottom: '1px solid var(--c-line-2)', cursor: 'pointer', background: sel[a.id] ? 'var(--c-accent-soft)' : 'transparent' }}>
+                <input type="checkbox" checked={!!sel[a.id]} onChange={() => toggle(a.id)} style={{ width: 15, height: 15, accentColor: 'var(--c-accent)' }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500 }}><span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--c-text-3)', marginRight: 6 }}>{a.id}</span>{a.descripcion}</div>
+                  <div style={{ fontSize: 11, color: 'var(--c-text-3)' }}>{fmt(a.cantidad)} {a.unidad} · {money(a.pu)}/{a.unidad}</div>
+                </div>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </Modal>
+  )
+}
+
 export default function PlanillasPage({ budget, projectRole, user, params }) {
   const [lista, setLista] = useState([])
   const [loading, setLoading] = useState(true)
   const [sel, setSel] = useState(null)
   const [busy, setBusy] = useState(false)
   const [showGen, setShowGen] = useState(false)
+  const [showGenMO, setShowGenMO] = useState(false)
 
   const money = makeMoneyFmt(budget?.moneda)
   const canElaborar = puedeHacer(projectRole, 'elaborarPlanilla')
@@ -108,6 +163,31 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
     } }
     walk(budget?.items || [])
     return m
+  }, [budget?.items, budget?.catalogos, params])
+
+  // Por oficio (insumo de mano de obra) → actividades que lo usan, con el costo
+  // del oficio por unidad de actividad (rendimiento × costo del insumo M.O.)
+  const porOficio = useMemo(() => {
+    const cat = budget?.catalogos
+    const moById = Object.fromEntries((cat?.manoObra || []).map(i => [i.id, i]))
+    const map = {}
+    const walk = (its, capId, capDesc) => { for (const it of (its || [])) {
+      if (it.tipo === 'capitulo') walk(it.children, it.id, it.descripcion)
+      else if (it.tipo === 'subcapitulo') walk(it.children, capId, capDesc)
+      else if (it.tipo === 'actividad') {
+        const porIns = {}
+        for (const c of (it.ficha?.manoObra || [])) {
+          if (!c.insumoId || !moById[c.insumoId]) continue
+          porIns[c.insumoId] = round2((porIns[c.insumoId] || 0) + conceptoCost(c, cat, 'manoObra'))
+        }
+        for (const [insId, puUnit] of Object.entries(porIns)) {
+          if (!map[insId]) map[insId] = { insumo: moById[insId], acts: [] }
+          map[insId].acts.push({ id: it.id, descripcion: it.descripcion, unidad: it.unidad, cantidad: +it.cantidad || 0, capId, capDesc, pu: puUnit })
+        }
+      }
+    } }
+    walk(budget?.items || [])
+    return map
   }, [budget?.items, budget?.catalogos, params])
 
   const [avances, setAvances] = useState({})  // cortes de avance físico del cronograma
@@ -242,7 +322,8 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
       const ejec = round2((pctReal(avances[a.id]?.avances) / 100) * (+a.cantidad || 0))
       pendientes[a.id] = Math.max(0, round2(ejec - (pagadoPrevio[a.id] || 0)))
     }
-    const yaEnPlanilla = new Set((sel.lineas_json || []).filter(l => l.tipo === 'destajo' && l.actividadId).map(l => l.actividadId))
+    // Por actividad: solo cuenta líneas de actividad completa (sin oficio)
+    const yaEnPlanilla = new Set((sel.lineas_json || []).filter(l => l.tipo === 'destajo' && l.actividadId && !l.manoObraId).map(l => l.actividadId))
     const generarDestajo = ids => {
       const nuevas = ids.map(id => {
         const a = actById[id]
@@ -250,6 +331,17 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
       })
       setSel({ ...sel, lineas_json: [...(sel.lineas_json || []), ...nuevas] })
       setShowGen(false)
+    }
+    // Por oficio: combos actividad|oficio ya presentes (para no duplicar)
+    const yaCombos = new Set((sel.lineas_json || []).filter(l => l.tipo === 'destajo' && l.manoObraId).map(l => `${l.actividadId}|${l.manoObraId}`))
+    const generarPorOficio = (moId, actIds) => {
+      const o = porOficio[moId]; if (!o) return
+      const nuevas = actIds.map(aid => {
+        const a = o.acts.find(x => x.id === aid)
+        return { id: uid(), tipo: 'destajo', actividadId: aid, manoObraId: moId, capId: a.capId, descripcion: `${o.insumo.descripcion} · ${a.descripcion}`, unidad: a.unidad, cantidad: a.cantidad, pu: round2(a.pu) }
+      })
+      setSel({ ...sel, lineas_json: [...(sel.lineas_json || []), ...nuevas] })
+      setShowGenMO(false)
     }
     const setDed = deducciones_json => setSel({ ...sel, deducciones_json })
 
@@ -262,7 +354,8 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
           <div className="card-header">
             <div className="card-title"><Icon size={15} /> {titulo}</div>
             <div style={{ display: 'flex', gap: 8 }}>
-              {editable && tipo === 'destajo' && <button className="btn sm brand" onClick={() => setShowGen(true)}><Wand2 size={13} /> Generar desde presupuesto</button>}
+              {editable && tipo === 'destajo' && <button className="btn sm brand" onClick={() => setShowGen(true)}><Wand2 size={13} /> Generar por actividad</button>}
+              {editable && tipo === 'destajo' && <button className="btn sm" onClick={() => setShowGenMO(true)}><HardHat size={13} /> Generar por oficio</button>}
               {editable && <button className="btn sm" onClick={() => addLinea(tipo)}><Plus size={13} /> Agregar línea</button>}
             </div>
           </div>
@@ -419,6 +512,8 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
         </div>
         <GenerarDestajoModal open={showGen} onClose={() => setShowGen(false)} acts={acts} moUnit={moUnit}
           pendientes={pendientes} money={money} yaEnPlanilla={yaEnPlanilla} onConfirmar={generarDestajo} />
+        <GenerarPorOficioModal open={showGenMO} onClose={() => setShowGenMO(false)} porOficio={porOficio}
+          money={money} yaCombos={yaCombos} onConfirmar={generarPorOficio} />
       </Fragment>
     )
   }
