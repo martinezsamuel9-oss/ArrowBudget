@@ -134,10 +134,14 @@ function GenerarPorOficioModal({ open, onClose, porOficio, money, yaCombos, onCo
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-            <button className="btn xs" onClick={() => marcarTodo(true)}>Seleccionar todo</button>
-            <button className="btn xs ghost" onClick={() => marcarTodo(false)}>Ninguno</button>
-          </div>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontWeight: 700, fontSize: 13, alignSelf: 'flex-start' }}>
+            <input type="checkbox"
+              checked={combosDisp.length > 0 && combosDisp.every(k => sel[k])}
+              ref={el => { if (el) el.indeterminate = selIds.length > 0 && selIds.length < combosDisp.length }}
+              onChange={e => marcarTodo(e.target.checked)}
+              style={{ width: 17, height: 17, accentColor: 'var(--c-accent)' }} />
+            Todo
+          </label>
           <div style={{ maxHeight: 360, overflowY: 'auto', border: '1px solid var(--c-line)', borderRadius: 8 }}>
             {secciones.length === 0 && <div style={{ padding: 16, textAlign: 'center', fontSize: 13, color: 'var(--c-text-3)' }}>Todas las actividades de los oficios elegidos ya están en la planilla.</div>}
             {secciones.map(s => (
