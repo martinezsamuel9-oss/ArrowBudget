@@ -409,6 +409,11 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
                   <span style={{ fontSize: b ? 16 : 13, fontWeight: 700, fontFamily: 'var(--font-mono)', color: b ? 'var(--c-accent)' : 'var(--c-text)' }}>{v}</span>
                 </div>
               ))}
+              {((+sel.pct_retencion || 0) + (+sel.pct_amortizacion || 0) > 100 || t.neto < 0) && (
+                <div style={{ padding: '8px 16px', background: '#fee2e2', color: '#991b1b', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <X size={14} /> {t.neto < 0 ? 'El neto a pagar es negativo.' : 'Retención + amortización superan el 100%.'} Revisa los porcentajes/deducciones.
+                </div>
+              )}
             </div>
           </div>
         </div>

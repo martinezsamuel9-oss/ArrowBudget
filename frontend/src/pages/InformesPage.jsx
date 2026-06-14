@@ -7,7 +7,7 @@ import { useState, useEffect, useMemo, Fragment } from 'react'
 import { supabase } from '../lib/supabase'
 import { calcItem, calcResumenFinanciero, makeMoneyFmt, round2 } from '../lib/calc'
 import { flattenActividades, calcularFechas, avanceGlobal, hoyISO } from '../lib/cronograma'
-import { efectoOC } from '../lib/contrato'
+import { efectoOC, deltaCantPorActividad, obraNuevaAprobada } from '../lib/contrato'
 import { exportPDFInforme } from '../lib/exportInforme'
 import { BarChart2, FileText, Coins, Activity, TrendingUp, Receipt, HardHat, DollarSign } from 'lucide-react'
 
@@ -106,19 +106,34 @@ export default function InformesPage({ budget, params, userEmpresa }) {
       avanceFisico = avanceGlobal(acts, fechas, datos, pesos, hoyISO()).real
     }
     const avanceFinanciero = contratoVigente > 0 ? Math.round(cobradoBruto / contratoVigente * 100) : 0
-    // Por capítulo
+    // Por capítulo — venta = contrato VIGENTE (cantidad ajustada por OC aprobadas)
     const cobradoCap = sumCobradoPorCap(est)
     const gastoCap = sumLineasDestajoPorCap(pla)
+    const delta = deltaCantPorActividad(oc)
     const capsMap = new Map()
+    const ensureCap = (capId, capDesc) => { if (!capsMap.has(capId)) capsMap.set(capId, { capId, capDesc, venta: 0 }); return capsMap.get(capId) }
     for (const a of acts) {
-      if (!capsMap.has(a.capId)) capsMap.set(a.capId, { capId: a.capId, capDesc: a.capDesc, venta: 0 })
-      capsMap.get(a.capId).venta = round2(capsMap.get(a.capId).venta + (pus[a.id] || 0) * (+a.cantidad || 0))
+      const c = ensureCap(a.capId, a.capDesc)
+      const cant = (+a.cantidad || 0) + (delta[a.id] || 0)
+      c.venta = round2(c.venta + (pus[a.id] || 0) * cant)
+    }
+    // Obra nueva aprobada → pseudo-capítulos OC-N (con su venta)
+    for (const n of obraNuevaAprobada(oc)) {
+      const c = ensureCap(n.capId, n.capDesc)
+      c.venta = round2(c.venta + (+n.cantidad || 0) * (+n.pu || 0))
     }
     const capitulos = [...capsMap.values()].map(c => {
       const cobrado = cobradoCap[c.capId] || 0
       const gastado = gastoCap[c.capId] || 0
       return { ...c, cobrado, gastado, margen: round2(cobrado - gastado), pctFin: c.venta > 0 ? Math.round(cobrado / c.venta * 100) : 0 }
     })
+    // Fila "Otros": personal al día y destajo sin capítulo → para que los
+    // totales de la tabla cuadren con el resumen (cobrado/gasto bruto)
+    const otrosCobrado = round2(cobradoBruto - capitulos.reduce((s, c) => s + c.cobrado, 0))
+    const otrosGastado = round2(gastoBruto - capitulos.reduce((s, c) => s + c.gastado, 0))
+    if (otrosCobrado > 0.01 || otrosGastado > 0.01) {
+      capitulos.push({ capId: '—', capDesc: 'Personal al día / sin capítulo', venta: 0, cobrado: otrosCobrado, gastado: otrosGastado, margen: round2(otrosCobrado - otrosGastado), pctFin: 0, esOtros: true })
+    }
     return {
       contratoOriginal, ocAprob, contratoVigente, costoDirecto: R.direct,
       cobradoBruto, retCliente, amoCliente, cobradoNeto,
@@ -267,7 +282,7 @@ export default function InformesPage({ budget, params, userEmpresa }) {
               </table>
             </div>
             <div style={{ fontSize: 11, color: 'var(--c-text-3)', padding: '10px 16px' }}>
-              Gastado = líneas de destajo de planillas aprobadas/pagadas vinculadas a actividades del capítulo. El personal al día no se prorratea por capítulo.
+              Venta = contrato vigente (incluye órdenes de cambio aprobadas). Gastado = destajo de planillas aprobadas/pagadas ligado al capítulo. El personal al día y el destajo sin capítulo se agrupan en "Personal al día / sin capítulo" para que los totales cuadren con el resumen.
             </div>
           </div>
         )}

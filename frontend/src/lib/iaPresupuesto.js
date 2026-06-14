@@ -68,7 +68,7 @@ export const aprenderTipo = (proyectos, tipo, fuenteIds = null) => {
     const c = capMap[ck]
     const actividades = c.actOrder.map(ak => {
       const a = c.acts[ak]
-      const unidad = Object.entries(a.unidades).sort((x, y) => y[1] - x[1])[0][0]
+      const unidad = (Object.entries(a.unidades).sort((x, y) => y[1] - x[1])[0]?.[0]) || ''
       const best = a.samples.slice().sort((x, y) => y.len - x.len)[0]
       return {
         desc: a.desc, unidad,
@@ -94,7 +94,9 @@ export const aprenderTipo = (proyectos, tipo, fuenteIds = null) => {
 export const generarDesdeModelo = (modelo, m2Destino, capsActivos = null) => {
   const catalogos = { materiales: [], manoObra: [], herramientaEquipo: [], subcontratos: [] }
   const idx = { materiales: {}, manoObra: {}, herramientaEquipo: {}, subcontratos: {} }
-  const keyIns = i => normalize(i.descripcion) + '|' + normalize(i.unidad || '')
+  // Incluye el costoBase en la clave: insumos con misma descripción/unidad pero
+  // distinto precio (de proyectos distintos) NO se fusionan — preserva el precio real
+  const keyIns = i => normalize(i.descripcion) + '|' + normalize(i.unidad || '') + '|' + (Math.round((+i.costoBase || 0) * 100) / 100)
   const ensureIns = (catFuente, k, srcId) => {
     const src = (catFuente?.[k] || []).find(i => i.id === srcId)
     if (!src) return null

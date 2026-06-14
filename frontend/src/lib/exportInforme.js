@@ -61,10 +61,11 @@ export const exportPDFInforme = async (budget, d, empresa = {}) => {
   y = doc.lastAutoTable.finalY + 6
 
   // Por capítulo
+  const caps = d.capitulos || []
   doc.autoTable({
     startY: y,
     head: [['Capítulo', 'Venta', 'Cobrado', 'Gastado', 'Margen', '%']],
-    body: d.capitulos.map(c => [
+    body: caps.map(c => [
       `${c.capId} · ${c.capDesc}`,
       { content: money(c.venta), styles: { halign: 'right' } },
       { content: money(c.cobrado), styles: { halign: 'right' } },
@@ -74,10 +75,10 @@ export const exportPDFInforme = async (budget, d, empresa = {}) => {
     ]),
     foot: [[
       { content: 'TOTAL', styles: { fillColor: T.bg, textColor: T.acc, fontStyle: 'bold' } },
-      { content: money(round2(d.capitulos.reduce((s, c) => s + c.venta, 0))), styles: { halign: 'right', fillColor: T.bg, textColor: T.acc, fontStyle: 'bold' } },
-      { content: money(round2(d.capitulos.reduce((s, c) => s + c.cobrado, 0))), styles: { halign: 'right', fillColor: T.bg, textColor: T.acc, fontStyle: 'bold' } },
-      { content: money(round2(d.capitulos.reduce((s, c) => s + c.gastado, 0))), styles: { halign: 'right', fillColor: T.bg, textColor: T.acc, fontStyle: 'bold' } },
-      { content: money(round2(d.capitulos.reduce((s, c) => s + c.margen, 0))), styles: { halign: 'right', fillColor: T.bg, textColor: T.acc, fontStyle: 'bold' } },
+      { content: money(round2(caps.reduce((s, c) => s + c.venta, 0))), styles: { halign: 'right', fillColor: T.bg, textColor: T.acc, fontStyle: 'bold' } },
+      { content: money(round2(caps.reduce((s, c) => s + c.cobrado, 0))), styles: { halign: 'right', fillColor: T.bg, textColor: T.acc, fontStyle: 'bold' } },
+      { content: money(round2(caps.reduce((s, c) => s + c.gastado, 0))), styles: { halign: 'right', fillColor: T.bg, textColor: T.acc, fontStyle: 'bold' } },
+      { content: money(round2(caps.reduce((s, c) => s + c.margen, 0))), styles: { halign: 'right', fillColor: T.bg, textColor: T.acc, fontStyle: 'bold' } },
       { content: '', styles: { fillColor: T.bg } },
     ]],
     styles: { fontSize: 7.5, cellPadding: 1.6 },

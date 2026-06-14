@@ -403,6 +403,11 @@ export default function EstimacionesPage({ budget, projectRole, user, params }) 
                   <span style={{ fontSize: b ? 16 : 13, fontWeight: 700, fontFamily: 'var(--font-mono)', color: b ? 'var(--c-accent)' : 'var(--c-text)' }}>{v}</span>
                 </div>
               ))}
+              {((+sel.pct_retencion || 0) + (+sel.pct_amortizacion || 0) > 100 || A.neto < 0) && (
+                <div style={{ padding: '8px 16px', background: '#fee2e2', color: '#991b1b', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <AlertTriangle size={14} /> {A.neto < 0 ? 'El neto a cobrar es negativo.' : 'Retención + amortización superan el 100%.'} Revisa los porcentajes.
+                </div>
+              )}
             </div>
             <div className="card" style={{ padding: 0 }}>
               <div className="card-header"><div className="card-title"><AlertTriangle size={15} /> Acumulados del contrato</div></div>
