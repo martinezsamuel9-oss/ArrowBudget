@@ -57,7 +57,7 @@ function Sidebar({ page, setPage, projectActivo, setTabProject, tabProject, user
     { id: 'cronograma', label: 'Cronograma', Icon: CalendarRange },
     { id: 'estimaciones', label: 'Estimaciones', Icon: Receipt },
     { id: 'ordenes', label: 'Órdenes de Cambio', Icon: ClipboardList },
-    { id: 'planillas-obra', label: 'Planillas', Icon: HardHat },
+    { id: 'planillas-obra', label: 'Contratos de Obra', Icon: HardHat },
     { id: 'informes', label: 'Informe ejecutivo', Icon: BarChart2 },
   ]
   const projectNav = [
@@ -3765,7 +3765,7 @@ export default function MainApp() {
   else if (page === 'cronograma')        crumbs = ['Cronograma']
   else if (page === 'estimaciones')      crumbs = ['Estimaciones']
   else if (page === 'ordenes')           crumbs = ['Órdenes de Cambio']
-  else if (page === 'planillas-obra')    crumbs = ['Planillas']
+  else if (page === 'planillas-obra')    crumbs = ['Contratos de Obra']
   else if (page === 'informes')          crumbs = ['Informe ejecutivo']
   else if (page === 'asistente-ia')      crumbs = ['Asistente IA']
   else if (page === 'reportes')           crumbs = ['Reportes']

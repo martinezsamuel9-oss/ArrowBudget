@@ -7,7 +7,7 @@ import { useState, useEffect, useMemo, Fragment } from 'react'
 import { supabase } from '../lib/supabase'
 import { puedeHacer } from '../lib/permissions'
 import { calcItem, calcFicha, conceptoCost, makeMoneyFmt, fmt, round2, uid } from '../lib/calc'
-import { flattenActividades, pctReal, hoyISO } from '../lib/cronograma'
+import { flattenActividades, hoyISO } from '../lib/cronograma'
 import { Modal } from '../components/ui'
 import { exportPDFPlanilla } from '../lib/exportPlanilla'
 import {
@@ -33,11 +33,11 @@ const importeLinea = l => round2((+l.cantidad || 0) * (+l.pu || 0) * (1 - (+l.de
 // Modal para generar líneas de destajo desde el presupuesto (alcance del
 // contratista), con cantidad pendiente desde el avance físico y P.U. = mano
 // de obra unitaria. Componente top-level para no perder foco.
-function GenerarDestajoModal({ open, onClose, acts, moUnit, pendientes, money, yaEnPlanilla, onConfirmar }) {
+function GenerarDestajoModal({ open, onClose, acts, moUnit, money, yaEnContrato, onConfirmar }) {
   const [sel, setSel] = useState({})
   useEffect(() => { if (open) setSel({}) }, [open])
   if (!open) return null
-  const disponibles = acts.filter(a => !yaEnPlanilla.has(a.id))
+  const disponibles = acts.filter(a => !yaEnContrato.has(a.id))
   const ids = Object.keys(sel).filter(k => sel[k])
   // Agrupar por capítulo
   const porCap = []
@@ -59,12 +59,11 @@ function GenerarDestajoModal({ open, onClose, acts, moUnit, pendientes, money, y
       </>}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ fontSize: 12.5, color: 'var(--c-text-2)', background: 'var(--c-accent-soft)', padding: '8px 12px', borderRadius: 8, lineHeight: 1.5 }}>
-          Marca las actividades que ejecuta este contratista. Se crea una línea por actividad con la
-          <b> cantidad pendiente</b> (avance físico − ya pagado en planillas anteriores) y el P.U. de
-          <b> mano de obra</b> de la ficha (editable). Tú pones los materiales.
+          Marca las actividades que contratas a este destajista. Se crea una línea por actividad con la
+          <b> cantidad del presupuesto</b> y el P.U. de <b>mano de obra</b> de la ficha. Tú pones los materiales.
         </div>
         <div style={{ maxHeight: 360, overflowY: 'auto', border: '1px solid var(--c-line)', borderRadius: 8 }}>
-          {disponibles.length === 0 && <div style={{ padding: 16, textAlign: 'center', fontSize: 13, color: 'var(--c-text-3)' }}>Todas las actividades del presupuesto ya están en esta planilla.</div>}
+          {disponibles.length === 0 && <div style={{ padding: 16, textAlign: 'center', fontSize: 13, color: 'var(--c-text-3)' }}>Todas las actividades del presupuesto ya están en este contrato.</div>}
           {porCap.map(g => (
             <div key={g.cap.id || 'sc'}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', background: 'var(--c-ink)', color: 'var(--c-accent)', fontWeight: 700, fontSize: 12 }}>
@@ -77,7 +76,7 @@ function GenerarDestajoModal({ open, onClose, acts, moUnit, pendientes, money, y
                   <input type="checkbox" checked={!!sel[a.id]} onChange={() => toggle(a.id)} style={{ width: 15, height: 15, accentColor: 'var(--c-accent)' }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 500 }}>{a.descripcion}</div>
-                    <div style={{ fontSize: 11, color: 'var(--c-text-3)' }}>Pendiente: {fmt(pendientes[a.id] || 0)} {a.unidad} · m.o. {money(moUnit[a.id] || 0)}/{a.unidad}</div>
+                    <div style={{ fontSize: 11, color: 'var(--c-text-3)' }}>{fmt(a.cantidad)} {a.unidad} · m.o. {money(moUnit[a.id] || 0)}/{a.unidad}</div>
                   </div>
                 </label>
               ))}
@@ -147,7 +146,7 @@ function GenerarPorOficioModal({ open, onClose, porOficio, money, yaCombos, onCo
             Todo
           </label>
           <div style={{ maxHeight: 360, overflowY: 'auto', border: '1px solid var(--c-line)', borderRadius: 8 }}>
-            {secciones.length === 0 && <div style={{ padding: 16, textAlign: 'center', fontSize: 13, color: 'var(--c-text-3)' }}>Todas las actividades de los oficios elegidos ya están en la planilla.</div>}
+            {secciones.length === 0 && <div style={{ padding: 16, textAlign: 'center', fontSize: 13, color: 'var(--c-text-3)' }}>Todas las actividades de los oficios elegidos ya están en el contrato.</div>}
             {secciones.map(s => (
               <div key={s.id}>
                 <div style={{ padding: '7px 12px', background: 'var(--c-ink)', color: 'var(--c-accent)', fontWeight: 700, fontSize: 12 }}>{s.insumo.descripcion}</div>
@@ -173,9 +172,11 @@ function GenerarPorOficioModal({ open, onClose, porOficio, money, yaCombos, onCo
 }
 
 export default function PlanillasPage({ budget, projectRole, user, params }) {
-  const [lista, setLista] = useState([])
+  const [contratos, setContratos] = useState([])
+  const [planillas, setPlanillas] = useState([])
   const [loading, setLoading] = useState(true)
-  const [sel, setSel] = useState(null)
+  const [selContrato, setSelContrato] = useState(null)
+  const [selPlanilla, setSelPlanilla] = useState(null)
   const [busy, setBusy] = useState(false)
   const [showGen, setShowGen] = useState(false)
   const [showGenMO, setShowGenMO] = useState(false)
@@ -223,22 +224,21 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
     return map
   }, [budget?.items, budget?.catalogos, params])
 
-  const [avances, setAvances] = useState({})  // cortes de avance físico del cronograma
   useEffect(() => {
     let cancel = false
     const cargar = async () => {
-      if (!budget?.id) { setLista([]); setLoading(false); return }
+      if (!budget?.id) { setContratos([]); setPlanillas([]); setLoading(false); return }
       setLoading(true)
-      const [{ data }, { data: cr }] = await Promise.all([
+      const [{ data: cs }, { data: ps }] = await Promise.all([
+        supabase.from('contratos_obra').select('*').eq('presupuesto_id', budget.id).order('created_at'),
         supabase.from('planillas').select('*').eq('presupuesto_id', budget.id).order('created_at'),
-        supabase.from('cronogramas').select('datos_json').eq('presupuesto_id', budget.id).maybeSingle(),
       ])
       if (cancel) return
-      setLista(data || [])
-      setAvances(cr?.datos_json?.actividades || {})
+      setContratos(cs || [])
+      setPlanillas(ps || [])
       setLoading(false)
     }
-    cargar(); setSel(null)
+    cargar(); setSelContrato(null); setSelPlanilla(null)
     return () => { cancel = true }
   }, [budget?.id])
 
@@ -253,13 +253,16 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
     return { destajo, dia, sub, ret, amo, ded, neto: round2(sub - ret - amo - ded) }
   }
 
-  // Acumulado de líneas destajo de las planillas ANTERIORES del mismo
-  // contratista (número menor, no rechazadas). Key: actividadId|manoObraId.
+  // Monto del contrato = Σ subtotales de sus líneas (importeLinea con la
+  // cantidad contractual y el descuento por línea).
+  const montoContrato = c => round2((c.lineas_json || []).reduce((s, l) => s + importeLinea(l), 0))
+
+  // Acumulado de líneas destajo de las planillas ANTERIORES del MISMO CONTRATO
+  // (número menor, no rechazadas). Key: actividadId|manoObraId.
   const acumAntDe = p => {
     const m = {}
-    const mismoContr = c => (c || '').trim().toLowerCase() === (p.contratista || '').trim().toLowerCase()
-    for (const q of lista) {
-      if (q.id === p.id || q.estado === 'rechazada' || !mismoContr(q.contratista)) continue
+    for (const q of planillas) {
+      if (q.id === p.id || q.estado === 'rechazada' || q.contrato_id !== p.contrato_id) continue
       if ((+q.numero || 0) >= (+p.numero || 0)) continue
       for (const l of (q.lineas_json || [])) {
         if (l.tipo !== 'destajo') continue
@@ -272,24 +275,70 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
     return m
   }
 
-  const nueva = async () => {
-    const contratista = prompt('Nombre del contratista:')
+  // ── CRUD Contrato de Obra ──
+  const nuevoContrato = async () => {
+    const contratista = prompt('Nombre del contratista (destajista):')
     if (!contratista || !contratista.trim()) return
-    const numero = lista.filter(p => (p.contratista || '').trim().toLowerCase() === contratista.trim().toLowerCase())
-      .reduce((mx, p) => Math.max(mx, p.numero), 0) + 1
-    const { data, error } = await supabase.from('planillas').insert({
-      presupuesto_id: budget.id, numero, contratista: contratista.trim(),
-      periodo_inicio: hoyISO(), periodo_fin: hoyISO(),
-      lineas_json: [], deducciones_json: [], creado_por: user?.id || null,
+    const { data, error } = await supabase.from('contratos_obra').insert({
+      presupuesto_id: budget.id, contratista: contratista.trim(),
+      lineas_json: [], pct_retencion: 0, pct_amortizacion: 0, creado_por: user?.id || null,
     }).select().single()
     if (error) {
-      alert('Error al crear la planilla: ' + error.message +
-        (/planillas/.test(error.message) ? '\n\n(¿Se ejecutó supabase/fase3/fase3_03_planillas.sql?)' : ''))
+      alert('Error al crear el contrato: ' + error.message +
+        (/contratos_obra/.test(error.message) ? '\n\n(¿Se ejecutó supabase/fase3/fase3_05_contratos_obra.sql?)' : ''))
       return
     }
-    setLista(p => [...p, data]); setSel(data)
+    setContratos(c => [...c, data]); setSelContrato(data)
   }
 
+  const guardarContrato = async (c, extra = {}) => {
+    setBusy(true)
+    const monto = montoContrato(c)
+    const { error } = await supabase.from('contratos_obra').update({
+      contratista: c.contratista, lineas_json: c.lineas_json,
+      pct_retencion: +c.pct_retencion || 0, pct_amortizacion: +c.pct_amortizacion || 0,
+      monto_contrato: monto, notas: c.notas || null,
+      updated_at: new Date().toISOString(), ...extra,
+    }).eq('id', c.id)
+    setBusy(false)
+    if (error) { alert('Error al guardar el contrato: ' + error.message); return false }
+    const act = { ...c, ...extra, monto_contrato: monto }
+    setContratos(prev => prev.map(x => x.id === c.id ? act : x))
+    return act
+  }
+
+  const eliminarContrato = async c => {
+    const n = planillas.filter(p => p.contrato_id === c.id).length
+    if (!confirm(`¿Eliminar el contrato de ${c.contratista}?` +
+      (n ? `\n\nSe eliminarán también sus ${n} planilla(s).` : '') + '\n\nEsta acción no se puede deshacer.')) return
+    const { error } = await supabase.from('contratos_obra').delete().eq('id', c.id)
+    if (error) return alert('Error: ' + error.message)
+    setContratos(prev => prev.filter(x => x.id !== c.id))
+    setPlanillas(prev => prev.filter(p => p.contrato_id !== c.id))
+    if (selContrato?.id === c.id) setSelContrato(null)
+  }
+
+  // Genera una nueva planilla a partir de las líneas del contrato (snapshot):
+  // cantContrato = cantidad del contrato; cantidad (este período) vacía.
+  const generarPlanilla = async c => {
+    if (!(c.lineas_json || []).length) return alert('El contrato no tiene líneas. Agrega actividades primero.')
+    const numero = planillas.filter(p => p.contrato_id === c.id).reduce((mx, p) => Math.max(mx, p.numero), 0) + 1
+    const lineas = (c.lineas_json || []).map(l => ({
+      id: uid(), tipo: 'destajo', actividadId: l.actividadId || '', manoObraId: l.manoObraId, capId: l.capId,
+      descripcion: l.descripcion, unidad: l.unidad, cantContrato: +l.cantidad || 0, cantidad: '', pu: +l.pu || 0, descuento: +l.descuento || 0,
+    }))
+    const { data, error } = await supabase.from('planillas').insert({
+      presupuesto_id: budget.id, contrato_id: c.id, numero, contratista: c.contratista,
+      periodo_inicio: hoyISO(), periodo_fin: hoyISO(),
+      lineas_json: lineas, deducciones_json: [],
+      pct_retencion: +c.pct_retencion || 0, pct_amortizacion: +c.pct_amortizacion || 0,
+      creado_por: user?.id || null,
+    }).select().single()
+    if (error) { alert('Error al generar la planilla: ' + error.message); return }
+    setPlanillas(p => [...p, data]); setSelPlanilla(data)
+  }
+
+  // ── CRUD Planilla ──
   const guardar = async (p, extra = {}) => {
     const t = totalesDe(p)
     setBusy(true)
@@ -303,7 +352,7 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
     setBusy(false)
     if (error) { alert('Error al guardar: ' + error.message); return false }
     const act = { ...p, ...extra, subtotal: t.sub, neto: t.neto }
-    setLista(prev => prev.map(x => x.id === p.id ? act : x))
+    setPlanillas(prev => prev.map(x => x.id === p.id ? act : x))
     return act
   }
 
@@ -311,29 +360,29 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
     if (msj && !confirm(msj)) return
     const extra = { estado }
     if (estado === 'aprobada') extra.aprobado_por = user?.id || null
-    const r = await guardar(p, extra); if (r) setSel(r)
+    const r = await guardar(p, extra); if (r) setSelPlanilla(r)
   }
 
   const reabrirComoNueva = async p => {
-    const numero = lista.filter(x => (x.contratista || '').trim().toLowerCase() === (p.contratista || '').trim().toLowerCase())
+    const numero = planillas.filter(x => x.contrato_id === p.contrato_id)
       .reduce((mx, x) => Math.max(mx, x.numero), 0) + 1
     if (!confirm(`La Planilla No. ${p.numero} de ${p.contratista} fue rechazada.\n\n¿Generar la No. ${numero} como versión corregida?`)) return
     const { data, error } = await supabase.from('planillas').insert({
-      presupuesto_id: budget.id, numero, contratista: p.contratista,
+      presupuesto_id: budget.id, contrato_id: p.contrato_id, numero, contratista: p.contratista,
       periodo_inicio: p.periodo_inicio, periodo_fin: p.periodo_fin,
       lineas_json: p.lineas_json, deducciones_json: p.deducciones_json,
       pct_retencion: p.pct_retencion, pct_amortizacion: p.pct_amortizacion,
       creado_por: user?.id || null,
     }).select().single()
     if (error) { alert('Error: ' + error.message); return }
-    setLista(prev => [...prev, data]); setSel(data)
+    setPlanillas(prev => [...prev, data]); setSelPlanilla(data)
   }
 
   const eliminar = async p => {
     if (!confirm(`¿Eliminar la Planilla No. ${p.numero} de ${p.contratista}?\n\nEsta acción no se puede deshacer.`)) return
     const { error } = await supabase.from('planillas').delete().eq('id', p.id)
     if (error) return alert('Error: ' + error.message)
-    setLista(prev => prev.filter(x => x.id !== p.id)); if (sel?.id === p.id) setSel(null)
+    setPlanillas(prev => prev.filter(x => x.id !== p.id)); if (selPlanilla?.id === p.id) setSelPlanilla(null)
   }
 
   const pdf = p => exportPDFPlanilla(budget, p, totalesDe(p),
@@ -344,84 +393,37 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
     <div className="page-body"><div style={{ textAlign: 'center', padding: '80px 20px', color: 'var(--c-text-3)' }}>
       <HardHat size={40} style={{ marginBottom: 12, opacity: 0.4 }} />
       <div style={{ fontWeight: 600, marginBottom: 6 }}>Sin proyecto activo</div>
-      <div style={{ fontSize: 13 }}>Abre un proyecto para gestionar las planillas a contratistas.</div>
+      <div style={{ fontSize: 13 }}>Abre un proyecto para gestionar los contratos de obra.</div>
     </div></div>
   )
-  if (loading) return <div className="page-body" style={{ padding: 60, textAlign: 'center', color: 'var(--c-text-3)' }}>Cargando planillas…</div>
+  if (loading) return <div className="page-body" style={{ padding: 60, textAlign: 'center', color: 'var(--c-text-3)' }}>Cargando contratos…</div>
 
-  // ════════ EDITOR ════════
-  if (sel) {
+  // ════════ EDITOR DE PLANILLA (estimación acumulada de 4 partes) ════════
+  if (selPlanilla) {
+    const sel = selPlanilla
+    const setSel = setSelPlanilla
     const editable = sel.estado === 'borrador' && canElaborar
     const t = totalesDe(sel)
     const setLineas = lineas_json => setSel({ ...sel, lineas_json })
     const addLinea = tipo => setLineas([...(sel.lineas_json || []), { id: uid(), tipo, actividadId: '', descripcion: '', unidad: '', cantidad: tipo === 'dia' ? 1 : '', pu: 0 }])
     const updLinea = (id, patch) => setLineas(sel.lineas_json.map(l => l.id === id ? { ...l, ...patch } : l))
     const delLinea = id => setLineas(sel.lineas_json.filter(l => l.id !== id))
-    // Cantidad pendiente de pagar por actividad a ESTE contratista:
-    // ejecutado acumulado (avance físico) − ya pagado en sus planillas previas
-    const pagadoPrevio = {}
-    for (const p of lista) {
-      if (p.id === sel.id || p.estado === 'rechazada') continue
-      if ((p.contratista || '').trim().toLowerCase() !== (sel.contratista || '').trim().toLowerCase()) continue
-      for (const l of (p.lineas_json || [])) if (l.tipo === 'destajo' && l.actividadId) pagadoPrevio[l.actividadId] = round2((pagadoPrevio[l.actividadId] || 0) + (+l.cantidad || 0))
-    }
-    const pendientes = {}
-    for (const a of acts) {
-      const ejec = round2((pctReal(avances[a.id]?.avances) / 100) * (+a.cantidad || 0))
-      pendientes[a.id] = Math.max(0, round2(ejec - (pagadoPrevio[a.id] || 0)))
-    }
     // Acumulado anterior por línea (cant + total) desde planillas previas del
-    // mismo contratista (número menor). Bloqueado en el cuadro.
+    // mismo contrato (número menor). Bloqueado en el cuadro.
     const acumAnt = acumAntDe(sel)
     const anteriorDe = l => acumAnt[`${l.actividadId || ''}|${l.manoObraId || ''}`] || { cant: 0, total: 0 }
     const contratoDe = l => +l.cantContrato || (+actById[l.actividadId]?.cantidad) || 0
-    // Por actividad: solo cuenta líneas de actividad completa (sin oficio)
-    const yaEnPlanilla = new Set((sel.lineas_json || []).filter(l => l.tipo === 'destajo' && l.actividadId && !l.manoObraId).map(l => l.actividadId))
-    const generarDestajo = ids => {
-      const nuevas = ids.map(id => {
-        const a = actById[id]
-        // Cantidad de "este período" vacía: el usuario la introduce manualmente
-        return { id: uid(), tipo: 'destajo', actividadId: id, capId: a.capId, descripcion: a.descripcion, unidad: a.unidad, cantContrato: +a.cantidad || 0, cantidad: '', pu: round2(moUnit[id] || 0) }
-      })
-      setSel({ ...sel, lineas_json: [...(sel.lineas_json || []), ...nuevas] })
-      setShowGen(false)
-    }
-    // Por oficio: combos actividad|oficio ya presentes (para no duplicar)
-    const yaCombos = new Set((sel.lineas_json || []).filter(l => l.tipo === 'destajo' && l.manoObraId).map(l => `${l.actividadId}|${l.manoObraId}`))
-    const generarPorOficio = combos => {
-      const nuevas = combos.map(({ moId, actId }) => {
-        const o = porOficio[moId]; const a = o?.acts.find(x => x.id === actId)
-        if (!o || !a) return null
-        return { id: uid(), tipo: 'destajo', actividadId: actId, manoObraId: moId, capId: a.capId, descripcion: `${o.insumo.descripcion} · ${a.descripcion}`, unidad: a.unidad, cantContrato: +a.cantidad || 0, cantidad: '', pu: round2(a.pu) }
-      }).filter(Boolean)
-      setSel({ ...sel, lineas_json: [...(sel.lineas_json || []), ...nuevas] })
-      setShowGenMO(false)
-    }
     const setDed = deducciones_json => setSel({ ...sel, deducciones_json })
 
     // ── DESTAJO: cuadro de estimación acumulada (Contrato | Anterior | Este
     // período | Acumulado). Contrato y acumulados bloqueados; editable solo la
     // cantidad de este período y el descuento. ──
     const lsDestajo = (sel.lineas_json || []).filter(l => l.tipo === 'destajo')
-    const descComun = lsDestajo.length && lsDestajo.every(l => (+l.descuento || 0) === (+lsDestajo[0].descuento || 0)) ? (+lsDestajo[0].descuento || 0) : ''
-    const setDescTodas = v => setLineas((sel.lineas_json || []).map(l => l.tipo === 'destajo' ? { ...l, descuento: v } : l))
     const HG = { background: 'var(--c-ink)', color: 'var(--c-accent)', fontSize: 10, fontWeight: 700, textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.04em' }
     const renderDestajo = () => (
       <div className="card" style={{ padding: 0, marginBottom: 16 }}>
         <div className="card-header">
           <div className="card-title"><HardHat size={15} /> Obra por destajo</div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {lsDestajo.length > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <span style={{ fontSize: 11, color: 'var(--c-text-3)' }}>Descuento % a todas:</span>
-                <input type="number" min="0" max="100" step="any" className="input sm" disabled={!editable} value={descComun} placeholder="0"
-                  onChange={e => setDescTodas(Math.max(0, Math.min(100, +e.target.value || 0)))} style={{ width: 64, textAlign: 'right', fontWeight: 700 }} />
-              </div>
-            )}
-            {editable && <button className="btn sm brand" onClick={() => setShowGen(true)}><Wand2 size={13} /> Generar por actividad</button>}
-            {editable && <button className="btn sm" onClick={() => setShowGenMO(true)}><HardHat size={13} /> Generar por oficio</button>}
-            {editable && <button className="btn sm" onClick={() => addLinea('destajo')}><Plus size={13} /> Agregar línea</button>}
-          </div>
         </div>
         <div style={{ overflowX: 'auto' }}>
           <table className="bt" style={{ minWidth: 1180 }}>
@@ -433,7 +435,6 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
                 <th colSpan={2} style={HG}>Período anterior</th>
                 <th colSpan={2} style={HG}>Este período</th>
                 <th colSpan={3} style={HG}>Acumulado</th>
-                <th rowSpan={2} style={{ width: 36 }}></th>
               </tr>
               <tr>
                 <th className="num" style={{ width: 70 }}>Cant.</th><th style={{ width: 48, textAlign: 'center' }}>Und</th><th className="num" style={{ width: 84 }}>P.U.</th>
@@ -443,10 +444,8 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
               </tr>
             </thead>
             <tbody>
-              {lsDestajo.length === 0 && <tr><td colSpan={13} className="empty" style={{ padding: 18, textAlign: 'center', color: 'var(--c-text-3)', fontSize: 13 }}>Sin líneas. {editable && 'Usa "Generar…" o "Agregar línea".'}</td></tr>}
+              {lsDestajo.length === 0 && <tr><td colSpan={12} className="empty" style={{ padding: 18, textAlign: 'center', color: 'var(--c-text-3)', fontSize: 13 }}>Esta planilla no tiene líneas de contrato.</td></tr>}
               {lsDestajo.map(l => {
-                const ligada = !!l.actividadId
-                const lock = !editable || ligada
                 const cc = contratoDe(l)
                 const ant = anteriorDe(l)
                 const totEste = importeLinea(l)
@@ -458,28 +457,22 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
                   <tr key={l.id}>
                     <td style={{ verticalAlign: 'top', fontSize: 11, fontWeight: 700, color: 'var(--c-text-2)', paddingTop: 8 }}>{l.actividadId || '—'}</td>
                     <td style={{ verticalAlign: 'top' }}>
-                      {lock
-                        ? <div style={{ fontSize: 12, lineHeight: 1.35, whiteSpace: 'normal', wordBreak: 'break-word', textAlign: 'justify', minWidth: 220, maxWidth: 380, paddingTop: 6 }}>{l.descripcion}</div>
-                        : <input className="input sm" value={l.descripcion} onChange={e => updLinea(l.id, { descripcion: e.target.value })} style={{ width: '100%', minWidth: 220 }} />}
+                      <div style={{ fontSize: 12, lineHeight: 1.35, whiteSpace: 'normal', wordBreak: 'break-word', textAlign: 'justify', minWidth: 220, maxWidth: 380, paddingTop: 6 }}>{l.descripcion}</div>
                     </td>
                     {/* Contrato (bloqueado) */}
                     <td className="num" style={num}>{cc ? fmt(cc) : '—'}</td>
                     <td style={{ textAlign: 'center', ...num }}>{l.unidad || '—'}</td>
-                    <td className="num">{lock ? <span style={num}>{money(l.pu)}</span> : <input type="number" min="0" step="any" className="input sm" value={l.pu} onFocus={e => e.target.select()} onChange={e => updLinea(l.id, { pu: e.target.value })} style={{ width: 80, textAlign: 'right' }} />}</td>
+                    <td className="num" style={num}>{money(l.pu)}{(+l.descuento || 0) > 0 && <span style={{ fontSize: 9, color: 'var(--c-warn)', display: 'block' }}>−{fmt(l.descuento)}%</span>}</td>
                     {/* Período anterior (bloqueado) */}
                     <td className="num" style={num}>{fmt(ant.cant)}</td>
                     <td className="num" style={num}>{money(ant.total)}</td>
-                    {/* Este período: cantidad EDITABLE + descuento, total formulado */}
+                    {/* Este período: SOLO la cantidad es editable, total formulado */}
                     <td className="num"><input type="number" min="0" step="any" className="input sm" disabled={!editable} value={l.cantidad ?? ''} placeholder="0" onFocus={e => e.target.select()} onChange={e => updLinea(l.id, { cantidad: e.target.value })} style={{ width: 72, textAlign: 'right', fontWeight: 700 }} /></td>
-                    <td className="num" style={{ fontWeight: 700 }}>
-                      {money(totEste)}
-                      {(+l.descuento || 0) > 0 && <span style={{ fontSize: 9, color: 'var(--c-warn)', display: 'block' }}>−{fmt(l.descuento)}%</span>}
-                    </td>
+                    <td className="num" style={{ fontWeight: 700 }}>{money(totEste)}</td>
                     {/* Acumulado (bloqueado) */}
                     <td className="num" style={{ ...num, fontWeight: 600 }}>{fmt(cantAcum)}</td>
                     <td className="num" style={{ fontWeight: 700 }}>{money(totAcum)}</td>
                     <td className="num" style={{ ...num, fontWeight: 700, color: pct >= 100 ? 'var(--c-success)' : 'var(--c-text-2)' }}>{cc ? `${pct}%` : '—'}</td>
-                    <td>{editable && <button className="btn xs danger icon" onClick={() => delLinea(l.id)}><Trash2 size={11} /></button>}</td>
                   </tr>
                 )
               })}
@@ -488,12 +481,12 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
               <tfoot><tr>
                 <td colSpan={8} style={{ textAlign: 'right', fontWeight: 800, background: 'var(--c-ink)', color: '#fff' }}>SUBTOTAL ESTE PERÍODO</td>
                 <td className="num" style={{ fontWeight: 800, background: 'var(--c-ink)', color: 'var(--c-accent)' }}>{money(t.destajo)}</td>
-                <td colSpan={4} style={{ background: 'var(--c-ink)' }}></td>
+                <td colSpan={3} style={{ background: 'var(--c-ink)' }}></td>
               </tr></tfoot>
             )}
           </table>
         </div>
-        {editable && <div style={{ fontSize: 11, color: 'var(--c-text-3)', padding: '8px 16px' }}>Cantidad/P.U. del contrato y los acumulados están bloqueados (vienen del presupuesto y de planillas anteriores). Solo editas la <b>cantidad de este período</b> y el <b>descuento</b>.</div>}
+        {editable && <div style={{ fontSize: 11, color: 'var(--c-text-3)', padding: '8px 16px' }}>El contrato (cantidad, P.U., descuento) y los acumulados están bloqueados. Solo editas la <b>cantidad de este período</b> por línea.</div>}
       </div>
     )
 
@@ -544,7 +537,7 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
       <Fragment>
         <div className="page-head">
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button className="btn sm ghost" onClick={() => setSel(null)}><ChevronLeft size={14} /> Planillas</button>
+            <button className="btn sm ghost" onClick={() => setSel(null)}><ChevronLeft size={14} /> Contrato</button>
             <div>
               <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--c-text)', display: 'flex', alignItems: 'center', gap: 10 }}>
                 Planilla No. {sel.numero} <Chip estado={sel.estado} />
@@ -646,24 +639,197 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
             </div>
           </div>
         </div>
-        <GenerarDestajoModal open={showGen} onClose={() => setShowGen(false)} acts={acts} moUnit={moUnit}
-          pendientes={pendientes} money={money} yaEnPlanilla={yaEnPlanilla} onConfirmar={generarDestajo} />
-        <GenerarPorOficioModal open={showGenMO} onClose={() => setShowGenMO(false)} porOficio={porOficio}
-          money={money} yaCombos={yaCombos} onConfirmar={generarPorOficio} />
       </Fragment>
     )
   }
 
-  // ════════ LISTA ════════
-  const totalPagado = round2(lista.filter(p => ['aprobada', 'pagada'].includes(p.estado)).reduce((s, p) => s + totalesDe(p).neto, 0))
+  // ════════ EDITOR DE CONTRATO DE OBRA ════════
+  if (selContrato) {
+    const c = selContrato
+    const setC = setSelContrato
+    const cEditable = canElaborar && c.estado !== 'cerrado'
+    const lineas = c.lineas_json || []
+    const monto = montoContrato(c)
+    const setLineas = lineas_json => setC({ ...c, lineas_json })
+    const addLinea = () => setLineas([...lineas, { id: uid(), tipo: 'destajo', actividadId: '', descripcion: '', unidad: '', cantidad: 0, pu: 0, descuento: 0 }])
+    const updLinea = (id, patch) => setLineas(lineas.map(l => l.id === id ? { ...l, ...patch } : l))
+    const delLinea = id => setLineas(lineas.filter(l => l.id !== id))
+    const descComun = lineas.length && lineas.every(l => (+l.descuento || 0) === (+lineas[0].descuento || 0)) ? (+lineas[0].descuento || 0) : ''
+    const setDescTodas = v => setLineas(lineas.map(l => ({ ...l, descuento: v })))
+    const yaEnContrato = new Set(lineas.filter(l => l.actividadId && !l.manoObraId).map(l => l.actividadId))
+    const yaCombos = new Set(lineas.filter(l => l.manoObraId).map(l => `${l.actividadId}|${l.manoObraId}`))
+    const generarActividad = ids => {
+      const nuevas = ids.map(id => {
+        const a = actById[id]
+        return { id: uid(), tipo: 'destajo', actividadId: id, capId: a.capId, descripcion: a.descripcion, unidad: a.unidad, cantidad: +a.cantidad || 0, pu: round2(moUnit[id] || 0), descuento: 0 }
+      })
+      setLineas([...lineas, ...nuevas]); setShowGen(false)
+    }
+    const generarOficio = combos => {
+      const nuevas = combos.map(({ moId, actId }) => {
+        const o = porOficio[moId]; const a = o?.acts.find(x => x.id === actId)
+        if (!o || !a) return null
+        return { id: uid(), tipo: 'destajo', actividadId: actId, manoObraId: moId, capId: a.capId, descripcion: `${o.insumo.descripcion} · ${a.descripcion}`, unidad: a.unidad, cantidad: +a.cantidad || 0, pu: round2(a.pu), descuento: 0 }
+      }).filter(Boolean)
+      setLineas([...lineas, ...nuevas]); setShowGenMO(false)
+    }
+    const planillasContrato = planillas.filter(p => p.contrato_id === c.id).sort((a, b) => a.numero - b.numero)
+
+    return (
+      <Fragment>
+        <div className="page-head">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button className="btn sm ghost" onClick={() => setSelContrato(null)}><ChevronLeft size={14} /> Contratos</button>
+            <div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--c-text)' }}>Contrato de Obra</div>
+              <div style={{ fontSize: 13, color: 'var(--c-text-3)', marginTop: 2 }}>{c.contratista} · {budget.nombreProyecto}</div>
+            </div>
+          </div>
+          <div className="page-head-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {cEditable && <button className="btn primary" disabled={busy} onClick={async () => { if (await guardarContrato(c)) alert('💾 Contrato guardado.') }}><Check size={13} /> {busy ? 'Guardando…' : 'Guardar'}</button>}
+            {canElaborar && <button className="btn brand" disabled={busy} onClick={async () => { await guardarContrato(c); generarPlanilla(c) }}><FileText size={13} /> Generar nueva planilla</button>}
+          </div>
+        </div>
+
+        <div className="page-body">
+          <div className="kpi-row" style={{ marginBottom: 14 }}>
+            <div className="kpi">
+              <div className="kpi-label">Contratista</div>
+              <input className="input" disabled={!cEditable} value={c.contratista || ''} onChange={e => setC({ ...c, contratista: e.target.value })} style={{ marginTop: 4, fontWeight: 700 }} />
+            </div>
+            <div className="kpi">
+              <div className="kpi-label">Retención %</div>
+              <input type="number" min="0" max="100" step="any" className="input" disabled={!cEditable} value={c.pct_retencion ?? 0} onFocus={e => e.target.select()} onChange={e => setC({ ...c, pct_retencion: e.target.value })} style={{ marginTop: 4 }} />
+            </div>
+            <div className="kpi">
+              <div className="kpi-label">Amortización anticipo %</div>
+              <input type="number" min="0" max="100" step="any" className="input" disabled={!cEditable} value={c.pct_amortizacion ?? 0} onFocus={e => e.target.select()} onChange={e => setC({ ...c, pct_amortizacion: e.target.value })} style={{ marginTop: 4 }} />
+            </div>
+            <div className="kpi highlight">
+              <div className="kpi-label"><DollarSign size={12} className="ico" /> Monto del contrato</div>
+              <div className="kpi-val" style={{ fontSize: 18 }}>{money(monto)}</div>
+            </div>
+          </div>
+
+          {/* Líneas del contrato */}
+          <div className="card" style={{ padding: 0, marginBottom: 16 }}>
+            <div className="card-header">
+              <div className="card-title"><HardHat size={15} /> Obra por destajo (contrato)</div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {lineas.length > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ fontSize: 11, color: 'var(--c-text-3)' }}>Descuento % a todas:</span>
+                    <input type="number" min="0" max="100" step="any" className="input sm" disabled={!cEditable} value={descComun} placeholder="0"
+                      onChange={e => setDescTodas(Math.max(0, Math.min(100, +e.target.value || 0)))} style={{ width: 64, textAlign: 'right', fontWeight: 700 }} />
+                  </div>
+                )}
+                {cEditable && <button className="btn sm brand" onClick={() => setShowGen(true)}><Wand2 size={13} /> Generar por actividad</button>}
+                {cEditable && <button className="btn sm" onClick={() => setShowGenMO(true)}><HardHat size={13} /> Generar por oficio</button>}
+                {cEditable && <button className="btn sm" onClick={addLinea}><Plus size={13} /> Agregar línea</button>}
+              </div>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="bt" style={{ minWidth: 980 }}>
+                <thead><tr>
+                  <th style={{ width: 120 }}>Actividad</th>
+                  <th>Descripción</th>
+                  <th className="num" style={{ width: 96 }}>Cantidad</th>
+                  <th style={{ width: 64, textAlign: 'center' }}>Und</th>
+                  <th className="num" style={{ width: 110 }}>P. Unitario</th>
+                  <th className="num" style={{ width: 84 }}>Desc. %</th>
+                  <th className="num" style={{ width: 130 }}>Subtotal</th>
+                  <th style={{ width: 40 }}></th>
+                </tr></thead>
+                <tbody>
+                  {lineas.length === 0 && <tr><td colSpan={8} className="empty" style={{ padding: 18, textAlign: 'center', color: 'var(--c-text-3)', fontSize: 13 }}>Sin líneas. {cEditable && 'Usa "Generar por actividad/oficio" o "Agregar línea".'}</td></tr>}
+                  {lineas.map(l => {
+                    const ligada = !!l.actividadId
+                    const lock = !cEditable || ligada
+                    const num = { fontSize: 12, color: 'var(--c-text-2)' }
+                    return (
+                      <tr key={l.id}>
+                        <td style={{ verticalAlign: 'top', fontSize: 11, fontWeight: 700, color: 'var(--c-text-2)', paddingTop: 8 }}>{l.actividadId || '—'}</td>
+                        <td style={{ verticalAlign: 'top' }}>
+                          {lock
+                            ? <div style={{ fontSize: 12, lineHeight: 1.35, whiteSpace: 'normal', wordBreak: 'break-word', textAlign: 'justify', minWidth: 220, maxWidth: 420, paddingTop: 6 }}>{l.descripcion}</div>
+                            : <input className="input sm" value={l.descripcion} onChange={e => updLinea(l.id, { descripcion: e.target.value })} style={{ width: '100%', minWidth: 220 }} />}
+                        </td>
+                        <td className="num">{lock ? <span style={num}>{fmt(l.cantidad)}</span> : <input type="number" min="0" step="any" className="input sm" value={l.cantidad} onFocus={e => e.target.select()} onChange={e => updLinea(l.id, { cantidad: e.target.value })} style={{ width: 88, textAlign: 'right' }} />}</td>
+                        <td style={{ textAlign: 'center', verticalAlign: 'top', paddingTop: 8 }}>{lock ? <span style={num}>{l.unidad || '—'}</span> : <input className="input sm" value={l.unidad} onChange={e => updLinea(l.id, { unidad: e.target.value })} style={{ width: 56, textAlign: 'center' }} />}</td>
+                        <td className="num">{lock ? <span style={num}>{money(l.pu)}</span> : <input type="number" min="0" step="any" className="input sm" value={l.pu} onFocus={e => e.target.select()} onChange={e => updLinea(l.id, { pu: e.target.value })} style={{ width: 96, textAlign: 'right' }} />}</td>
+                        <td className="num"><input type="number" min="0" max="100" step="any" className="input sm" disabled={!cEditable} value={l.descuento ?? 0} onFocus={e => e.target.select()} onChange={e => updLinea(l.id, { descuento: Math.max(0, Math.min(100, +e.target.value || 0)) })} style={{ width: 70, textAlign: 'right' }} /></td>
+                        <td className="num" style={{ fontWeight: 700 }}>{money(importeLinea(l))}</td>
+                        <td>{cEditable && <button className="btn xs danger icon" onClick={() => delLinea(l.id)}><Trash2 size={11} /></button>}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                {lineas.length > 0 && (
+                  <tfoot><tr>
+                    <td colSpan={6} style={{ textAlign: 'right', fontWeight: 800, background: 'var(--c-ink)', color: '#fff' }}>MONTO DEL CONTRATO</td>
+                    <td className="num" style={{ fontWeight: 800, background: 'var(--c-ink)', color: 'var(--c-accent)' }}>{money(monto)}</td>
+                    <td style={{ background: 'var(--c-ink)' }}></td>
+                  </tr></tfoot>
+                )}
+              </table>
+            </div>
+            {cEditable && <div style={{ fontSize: 11, color: 'var(--c-text-3)', padding: '8px 16px' }}>El descuento se aplica sobre el P. Unitario de cada actividad. <b>Subtotal = Cantidad × P.U. × (1 − descuento%)</b>. Las planillas se generan a partir de este contrato.</div>}
+          </div>
+
+          {/* Planillas del contrato */}
+          <div className="card" style={{ padding: 0 }}>
+            <div className="card-header">
+              <div className="card-title"><FileText size={15} /> Planillas de este contrato</div>
+              {canElaborar && <button className="btn sm brand" disabled={busy} onClick={async () => { await guardarContrato(c); generarPlanilla(c) }}><Plus size={13} /> Generar nueva planilla</button>}
+            </div>
+            {planillasContrato.length === 0
+              ? <div style={{ padding: '30px 20px', textAlign: 'center', color: 'var(--c-text-3)', fontSize: 13 }}>Aún no hay planillas. Genera la primera estimación periódica desde este contrato.</div>
+              : (
+                <table className="bt">
+                  <thead><tr>
+                    <th style={{ width: 60 }}>No.</th>
+                    <th style={{ width: 200 }}>Periodo</th>
+                    <th style={{ width: 110 }}>Estado</th>
+                    <th className="num">Neto a pagar</th>
+                    <th style={{ width: 170 }}></th>
+                  </tr></thead>
+                  <tbody>
+                    {planillasContrato.map(p => (
+                      <tr key={p.id} style={{ cursor: 'pointer' }} onClick={() => setSelPlanilla(p)}>
+                        <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>#{p.numero}</td>
+                        <td style={{ fontSize: 12, color: 'var(--c-text-2)' }}>{p.periodo_inicio || '—'} → {p.periodo_fin || '—'}</td>
+                        <td><Chip estado={p.estado} /></td>
+                        <td className="num" style={{ fontWeight: 700 }}>{money(totalesDe(p).neto)}</td>
+                        <td className="actions" onClick={ev => ev.stopPropagation()}>
+                          <button className="btn xs" onClick={() => setSelPlanilla(p)}>Abrir</button>
+                          <button className="btn xs ghost" style={{ marginLeft: 4 }} onClick={() => pdf(p)}><FileText size={11} /> PDF</button>
+                          {p.estado === 'borrador' && canElaborar && <button className="btn xs danger icon" style={{ marginLeft: 4 }} onClick={() => eliminar(p)}><Trash2 size={11} /></button>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+          </div>
+        </div>
+        <GenerarDestajoModal open={showGen} onClose={() => setShowGen(false)} acts={acts} moUnit={moUnit}
+          money={money} yaEnContrato={yaEnContrato} onConfirmar={generarActividad} />
+        <GenerarPorOficioModal open={showGenMO} onClose={() => setShowGenMO(false)} porOficio={porOficio}
+          money={money} yaCombos={yaCombos} onConfirmar={generarOficio} />
+      </Fragment>
+    )
+  }
+
+  // ════════ LISTA DE CONTRATOS ════════
+  const totalPagado = round2(planillas.filter(p => ['aprobada', 'pagada'].includes(p.estado)).reduce((s, p) => s + totalesDe(p).neto, 0))
   return (
     <Fragment>
       <div className="page-head">
         <div>
-          <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--c-text)' }}>Planillas a contratistas — {budget.nombreProyecto}</div>
-          <div style={{ fontSize: 13, color: 'var(--c-text-3)', marginTop: 2 }}>{lista.length} planilla{lista.length !== 1 ? 's' : ''}</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--c-text)' }}>Contratos de Obra — {budget.nombreProyecto}</div>
+          <div style={{ fontSize: 13, color: 'var(--c-text-3)', marginTop: 2 }}>{contratos.length} contrato{contratos.length !== 1 ? 's' : ''}</div>
         </div>
-        {canElaborar && <button className="btn brand" onClick={nueva}><Plus size={14} strokeWidth={2.5} /> Nueva planilla</button>}
+        {canElaborar && <button className="btn brand" onClick={nuevoContrato}><Plus size={14} strokeWidth={2.5} /> Nuevo Contrato de Obra</button>}
       </div>
 
       <div className="page-body">
@@ -671,46 +837,44 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
           <div className="kpi highlight">
             <div className="kpi-label"><DollarSign size={12} className="ico" /> Pagado a contratistas</div>
             <div className="kpi-val" style={{ fontSize: 18 }}>{money(totalPagado)}</div>
-            <div className="kpi-foot">aprobadas + pagadas</div>
+            <div className="kpi-foot">planillas aprobadas + pagadas</div>
           </div>
           <div className="kpi">
-            <div className="kpi-label"><Users size={12} className="ico" /> Contratistas</div>
-            <div className="kpi-val" style={{ fontSize: 18 }}>{new Set(lista.map(p => (p.contratista || '').trim()).filter(Boolean)).size}</div>
+            <div className="kpi-label"><Users size={12} className="ico" /> Contratos</div>
+            <div className="kpi-val" style={{ fontSize: 18 }}>{contratos.length}</div>
           </div>
         </div>
 
         <div className="card" style={{ padding: 0 }}>
-          {lista.length === 0
+          {contratos.length === 0
             ? <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--c-text-3)' }}>
                 <HardHat size={36} style={{ marginBottom: 10, opacity: 0.4 }} />
-                <div style={{ fontWeight: 600, marginBottom: 4, color: 'var(--c-text-2)' }}>Aún no hay planillas</div>
-                <div style={{ fontSize: 13 }}>Registra los pagos por destajo y personal al día de tus subcontratistas.</div>
+                <div style={{ fontWeight: 600, marginBottom: 4, color: 'var(--c-text-2)' }}>Aún no hay contratos de obra</div>
+                <div style={{ fontSize: 13 }}>Crea un contrato con un destajista: elige sus actividades, fija el descuento y genera las planillas periódicas.</div>
               </div>
             : (
               <table className="bt">
                 <thead><tr>
-                  <th style={{ width: 60 }}>No.</th>
                   <th>Contratista</th>
-                  <th style={{ width: 190 }}>Periodo</th>
-                  <th style={{ width: 110 }}>Estado</th>
-                  <th className="num">Neto a pagar</th>
-                  <th style={{ width: 180 }}></th>
+                  <th style={{ width: 110, textAlign: 'center' }}>Planillas</th>
+                  <th className="num">Monto del contrato</th>
+                  <th style={{ width: 150 }}></th>
                 </tr></thead>
                 <tbody>
-                  {lista.map(p => (
-                    <tr key={p.id} style={{ cursor: 'pointer' }} onClick={() => setSel(p)}>
-                      <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>#{p.numero}</td>
-                      <td style={{ fontWeight: 600 }}>{p.contratista || '—'}</td>
-                      <td style={{ fontSize: 12, color: 'var(--c-text-2)' }}>{p.periodo_inicio || '—'} → {p.periodo_fin || '—'}</td>
-                      <td><Chip estado={p.estado} /></td>
-                      <td className="num" style={{ fontWeight: 700 }}>{money(totalesDe(p).neto)}</td>
-                      <td className="actions" onClick={ev => ev.stopPropagation()}>
-                        <button className="btn xs" onClick={() => setSel(p)}>Abrir</button>
-                        <button className="btn xs ghost" style={{ marginLeft: 4 }} onClick={() => pdf(p)}><FileText size={11} /> PDF</button>
-                        {p.estado === 'borrador' && canElaborar && <button className="btn xs danger icon" style={{ marginLeft: 4 }} onClick={() => eliminar(p)}><Trash2 size={11} /></button>}
-                      </td>
-                    </tr>
-                  ))}
+                  {contratos.map(c => {
+                    const nPlan = planillas.filter(p => p.contrato_id === c.id).length
+                    return (
+                      <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => setSelContrato(c)}>
+                        <td style={{ fontWeight: 600 }}>{c.contratista || '—'}</td>
+                        <td style={{ textAlign: 'center', color: 'var(--c-text-2)' }}>{nPlan}</td>
+                        <td className="num" style={{ fontWeight: 700 }}>{money(c.monto_contrato ?? montoContrato(c))}</td>
+                        <td className="actions" onClick={ev => ev.stopPropagation()}>
+                          <button className="btn xs" onClick={() => setSelContrato(c)}>Abrir</button>
+                          {canElaborar && <button className="btn xs danger icon" style={{ marginLeft: 4 }} onClick={() => eliminarContrato(c)}><Trash2 size={11} /></button>}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             )}
