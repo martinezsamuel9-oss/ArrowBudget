@@ -416,6 +416,15 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
     const acumAnt = acumAntDe(sel)
     const anteriorDe = l => acumAnt[`${l.actividadId || ''}|${l.manoObraId || ''}`] || { cant: 0, total: 0 }
     const contratoDe = l => +l.cantContrato || (+actById[l.actividadId]?.cantidad) || 0
+    // Control acumulado de anticipo y retención del contrato (planillas
+    // anteriores no rechazadas + esta). Saldo retención = total retenido;
+    // amortización acumulada = anticipo descontado hasta ahora.
+    const planillasPrev = planillas.filter(q => q.contrato_id === sel.contrato_id && q.id !== sel.id && q.estado !== 'rechazada' && (+q.numero || 0) < (+sel.numero || 0))
+    const retAnt = round2(planillasPrev.reduce((s, q) => s + totalesDe(q).ret, 0))
+    const amoAnt = round2(planillasPrev.reduce((s, q) => s + totalesDe(q).amo, 0))
+    const retAcum = round2(retAnt + t.ret)
+    const amoAcum = round2(amoAnt + t.amo)
+    const contrato = contratos.find(x => x.id === sel.contrato_id)
     const setDed = deducciones_json => setSel({ ...sel, deducciones_json })
 
     // ── DESTAJO: cuadro de estimación acumulada (Contrato | Anterior | Este
@@ -551,6 +560,7 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
             </div>
           </div>
           <div className="page-head-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {canElaborar && contrato && <button className="btn" disabled={busy} onClick={async () => { if (editable) await guardar(sel); generarPlanilla(contrato) }}><Plus size={13} /> Siguiente planilla</button>}
             {editable && <button className="btn primary" disabled={busy} onClick={async () => { if (await guardar(sel)) alert('💾 Planilla guardada.') }}><Check size={13} /> {busy ? 'Guardando…' : 'Guardar'}</button>}
             {editable && <button className="btn brand" disabled={busy} onClick={() => cambiarEstado(sel, 'enviada', '¿Enviar la planilla para aprobación?')}><Send size={13} /> Enviar</button>}
             {sel.estado === 'enviada' && canAprobar && (
@@ -572,11 +582,11 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
               <input className="input" disabled={!editable} value={sel.contratista || ''} onChange={e => setSel({ ...sel, contratista: e.target.value })} style={{ marginTop: 4, fontWeight: 700 }} />
             </div>
             <div className="kpi">
-              <div className="kpi-label">Periodo del</div>
+              <div className="kpi-label">Período de estimación · inicio</div>
               <input type="date" className="input" disabled={!editable} value={sel.periodo_inicio || ''} onChange={e => setSel({ ...sel, periodo_inicio: e.target.value })} style={{ marginTop: 4 }} />
             </div>
             <div className="kpi">
-              <div className="kpi-label">al</div>
+              <div className="kpi-label">Período de estimación · fin</div>
               <input type="date" className="input" disabled={!editable} value={sel.periodo_fin || ''} onChange={e => setSel({ ...sel, periodo_fin: e.target.value })} style={{ marginTop: 4 }} />
             </div>
             <div className="kpi highlight">
@@ -608,16 +618,42 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
 
           {/* Resumen */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            <div className="card card-pad">
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div className="field">
-                  <label className="field-label">Retención %</label>
-                  <input type="number" min="0" max="100" step="any" className="input" disabled={!editable} value={sel.pct_retencion ?? 0} onFocus={e => e.target.select()} onChange={e => setSel({ ...sel, pct_retencion: e.target.value })} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div className="card card-pad">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div className="field">
+                    <label className="field-label">Retención %</label>
+                    <input type="number" min="0" max="100" step="any" className="input" disabled={!editable} value={sel.pct_retencion ?? 0} onFocus={e => e.target.select()} onChange={e => setSel({ ...sel, pct_retencion: e.target.value })} />
+                  </div>
+                  <div className="field">
+                    <label className="field-label">Amortización anticipo %</label>
+                    <input type="number" min="0" max="100" step="any" className="input" disabled={!editable} value={sel.pct_amortizacion ?? 0} onFocus={e => e.target.select()} onChange={e => setSel({ ...sel, pct_amortizacion: e.target.value })} />
+                  </div>
                 </div>
-                <div className="field">
-                  <label className="field-label">Amortización anticipo %</label>
-                  <input type="number" min="0" max="100" step="any" className="input" disabled={!editable} value={sel.pct_amortizacion ?? 0} onFocus={e => e.target.select()} onChange={e => setSel({ ...sel, pct_amortizacion: e.target.value })} />
-                </div>
+              </div>
+              {/* Control acumulado de anticipo y retención (todo el contrato) */}
+              <div className="card" style={{ padding: 0 }}>
+                <div className="card-header"><div className="card-title"><Coins size={15} /> Amortización de anticipo y saldo de retención</div></div>
+                <table className="bt">
+                  <thead><tr>
+                    <th>Concepto</th>
+                    <th className="num" style={{ width: 130 }}>Este período</th>
+                    <th className="num" style={{ width: 140 }}>Acumulado</th>
+                  </tr></thead>
+                  <tbody>
+                    <tr>
+                      <td>Amortización del anticipo</td>
+                      <td className="num">{money(t.amo)}</td>
+                      <td className="num" style={{ fontWeight: 700 }}>{money(amoAcum)}</td>
+                    </tr>
+                    <tr>
+                      <td>Saldo de retención <span style={{ fontSize: 11, color: 'var(--c-text-3)' }}>(retenido a la fecha)</span></td>
+                      <td className="num">{money(t.ret)}</td>
+                      <td className="num" style={{ fontWeight: 700 }}>{money(retAcum)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div style={{ fontSize: 11, color: 'var(--c-text-3)', padding: '8px 16px' }}>Acumula esta planilla y las anteriores del contrato. El saldo de retención se libera al cierre; el anticipo se amortiza hasta saldarlo.</div>
               </div>
             </div>
             <div className="card" style={{ padding: 0 }}>
