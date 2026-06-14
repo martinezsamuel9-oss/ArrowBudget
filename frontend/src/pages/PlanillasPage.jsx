@@ -1028,21 +1028,36 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
                 <div style={{ fontSize: 13 }}>Crea un contrato con un destajista: elige sus actividades, fija el descuento y genera las planillas periódicas.</div>
               </div>
             : (
-              <table className="bt">
+              <div style={{ overflowX: 'auto' }}>
+              <table className="bt" style={{ minWidth: 980 }}>
                 <thead><tr>
                   <th>Contratista</th>
-                  <th style={{ width: 110, textAlign: 'center' }}>Planillas</th>
-                  <th className="num">Monto del contrato</th>
-                  <th style={{ width: 150 }}></th>
+                  <th style={{ width: 80, textAlign: 'center' }}>Planillas</th>
+                  <th className="num" style={{ width: 130 }}>Monto del contrato</th>
+                  <th className="num" style={{ width: 130 }}>Monto ejecutado</th>
+                  <th className="num" style={{ width: 80 }}>% ejec.</th>
+                  <th className="num" style={{ width: 130 }}>Amort. anticipo</th>
+                  <th className="num" style={{ width: 130 }}>Retención de obra</th>
+                  <th style={{ width: 120 }}></th>
                 </tr></thead>
                 <tbody>
                   {contratos.map(c => {
+                    const plc = planillas.filter(p => p.contrato_id === c.id && p.estado !== 'rechazada')
                     const nPlan = planillas.filter(p => p.contrato_id === c.id).length
+                    const mc = round2(c.monto_contrato ?? montoContrato(c))
+                    const ejec = round2(plc.reduce((s, p) => s + totalesDe(p).destajo, 0))
+                    const amort = round2(plc.reduce((s, p) => s + totalesDe(p).amo, 0))
+                    const reten = round2(plc.reduce((s, p) => s + totalesDe(p).ret, 0))
+                    const pctEj = mc > 0 ? Math.round(ejec / mc * 100) : 0
                     return (
                       <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => setSelContrato(c)}>
                         <td style={{ fontWeight: 600 }}>{c.contratista || '—'}</td>
                         <td style={{ textAlign: 'center', color: 'var(--c-text-2)' }}>{nPlan}</td>
-                        <td className="num" style={{ fontWeight: 700 }}>{money(c.monto_contrato ?? montoContrato(c))}</td>
+                        <td className="num" style={{ fontWeight: 700 }}>{money(mc)}</td>
+                        <td className="num">{money(ejec)}</td>
+                        <td className="num" style={{ fontWeight: 700, color: pctEj > 100 ? 'var(--c-danger)' : pctEj >= 100 ? 'var(--c-success)' : 'var(--c-text-2)' }}>{pctEj}%</td>
+                        <td className="num">{money(amort)}</td>
+                        <td className="num">{money(reten)}</td>
                         <td className="actions" onClick={ev => ev.stopPropagation()}>
                           <button className="btn xs" onClick={() => setSelContrato(c)}>Abrir</button>
                           {canElaborar && <button className="btn xs danger icon" style={{ marginLeft: 4 }} onClick={() => eliminarContrato(c)}><Trash2 size={11} /></button>}
@@ -1052,6 +1067,7 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
                   })}
                 </tbody>
               </table>
+              </div>
             )}
         </div>
       </div>
