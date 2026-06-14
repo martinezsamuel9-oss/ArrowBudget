@@ -253,6 +253,25 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
     return { destajo, dia, sub, ret, amo, ded, neto: round2(sub - ret - amo - ded) }
   }
 
+  // Acumulado de líneas destajo de las planillas ANTERIORES del mismo
+  // contratista (número menor, no rechazadas). Key: actividadId|manoObraId.
+  const acumAntDe = p => {
+    const m = {}
+    const mismoContr = c => (c || '').trim().toLowerCase() === (p.contratista || '').trim().toLowerCase()
+    for (const q of lista) {
+      if (q.id === p.id || q.estado === 'rechazada' || !mismoContr(q.contratista)) continue
+      if ((+q.numero || 0) >= (+p.numero || 0)) continue
+      for (const l of (q.lineas_json || [])) {
+        if (l.tipo !== 'destajo') continue
+        const k = `${l.actividadId || ''}|${l.manoObraId || ''}`
+        if (!m[k]) m[k] = { cant: 0, total: 0 }
+        m[k].cant = round2(m[k].cant + (+l.cantidad || 0))
+        m[k].total = round2(m[k].total + importeLinea(l))
+      }
+    }
+    return m
+  }
+
   const nueva = async () => {
     const contratista = prompt('Nombre del contratista:')
     if (!contratista || !contratista.trim()) return
@@ -318,7 +337,8 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
   }
 
   const pdf = p => exportPDFPlanilla(budget, p, totalesDe(p),
-    { logo: budget.logoOfertante, logoCliente: budget.logoCliente, headerBg: budget.apuHeaderBg, headerText: budget.apuHeaderText })
+    { logo: budget.logoOfertante, logoCliente: budget.logoCliente, headerBg: budget.apuHeaderBg, headerText: budget.apuHeaderText },
+    acumAntDe(p))
 
   if (!budget) return (
     <div className="page-body"><div style={{ textAlign: 'center', padding: '80px 20px', color: 'var(--c-text-3)' }}>
@@ -355,12 +375,17 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
       const ejec = round2((pctReal(avances[a.id]?.avances) / 100) * (+a.cantidad || 0))
       pendientes[a.id] = Math.max(0, round2(ejec - (pagadoPrevio[a.id] || 0)))
     }
+    // Acumulado anterior por línea (cant + total) desde planillas previas del
+    // mismo contratista (número menor). Bloqueado en el cuadro.
+    const acumAnt = acumAntDe(sel)
+    const anteriorDe = l => acumAnt[`${l.actividadId || ''}|${l.manoObraId || ''}`] || { cant: 0, total: 0 }
+    const contratoDe = l => +l.cantContrato || (+actById[l.actividadId]?.cantidad) || 0
     // Por actividad: solo cuenta líneas de actividad completa (sin oficio)
     const yaEnPlanilla = new Set((sel.lineas_json || []).filter(l => l.tipo === 'destajo' && l.actividadId && !l.manoObraId).map(l => l.actividadId))
     const generarDestajo = ids => {
       const nuevas = ids.map(id => {
         const a = actById[id]
-        return { id: uid(), tipo: 'destajo', actividadId: id, capId: a.capId, descripcion: a.descripcion, unidad: a.unidad, cantidad: pendientes[id] || 0, pu: round2(moUnit[id] || 0) }
+        return { id: uid(), tipo: 'destajo', actividadId: id, capId: a.capId, descripcion: a.descripcion, unidad: a.unidad, cantContrato: +a.cantidad || 0, cantidad: pendientes[id] || 0, pu: round2(moUnit[id] || 0) }
       })
       setSel({ ...sel, lineas_json: [...(sel.lineas_json || []), ...nuevas] })
       setShowGen(false)
@@ -371,93 +396,154 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
       const nuevas = combos.map(({ moId, actId }) => {
         const o = porOficio[moId]; const a = o?.acts.find(x => x.id === actId)
         if (!o || !a) return null
-        return { id: uid(), tipo: 'destajo', actividadId: actId, manoObraId: moId, capId: a.capId, descripcion: `${o.insumo.descripcion} · ${a.descripcion}`, unidad: a.unidad, cantidad: a.cantidad, pu: round2(a.pu) }
+        return { id: uid(), tipo: 'destajo', actividadId: actId, manoObraId: moId, capId: a.capId, descripcion: `${o.insumo.descripcion} · ${a.descripcion}`, unidad: a.unidad, cantContrato: +a.cantidad || 0, cantidad: a.cantidad, pu: round2(a.pu) }
       }).filter(Boolean)
       setSel({ ...sel, lineas_json: [...(sel.lineas_json || []), ...nuevas] })
       setShowGenMO(false)
     }
     const setDed = deducciones_json => setSel({ ...sel, deducciones_json })
 
-    // Función que retorna JSX (NO componente con <Seccion/>): si fuera componente
-    // definido aquí, cada tecla remontaría los inputs y se perdería el foco.
-    const renderSeccion = (titulo, tipo, Icon) => {
-      const ls = (sel.lineas_json || []).filter(l => l.tipo === tipo)
-      const esDestajo = tipo === 'destajo'
-      // Maestro de descuento: refleja el % común si todas las líneas comparten
-      // uno; al cambiarlo lo aplica a todas (cada línea sigue siendo editable)
-      const descComun = ls.length && ls.every(l => (+l.descuento || 0) === (+ls[0].descuento || 0)) ? (+ls[0].descuento || 0) : ''
-      const setDescTodas = v => setLineas((sel.lineas_json || []).map(l => l.tipo === tipo ? { ...l, descuento: v } : l))
-      const cols = esDestajo ? 8 : 6
-      return (
-        <div className="card" style={{ padding: 0, marginBottom: 16 }}>
-          <div className="card-header">
-            <div className="card-title"><Icon size={15} /> {titulo}</div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              {esDestajo && ls.length > 0 && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <span style={{ fontSize: 11, color: 'var(--c-text-3)' }}>Descuento % a todas:</span>
-                  <input type="number" min="0" max="100" step="any" className="input sm" disabled={!editable}
-                    value={descComun} placeholder="0"
-                    onChange={e => setDescTodas(Math.max(0, Math.min(100, +e.target.value || 0)))}
-                    style={{ width: 64, textAlign: 'right', fontWeight: 700 }} />
-                </div>
-              )}
-              {editable && esDestajo && <button className="btn sm brand" onClick={() => setShowGen(true)}><Wand2 size={13} /> Generar por actividad</button>}
-              {editable && esDestajo && <button className="btn sm" onClick={() => setShowGenMO(true)}><HardHat size={13} /> Generar por oficio</button>}
-              {editable && <button className="btn sm" onClick={() => addLinea(tipo)}><Plus size={13} /> Agregar línea</button>}
-            </div>
-          </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table className="bt">
-              <thead><tr>
-                {esDestajo && <th style={{ width: 150 }}>Actividad (presupuesto)</th>}
-                <th>Descripción</th>
-                <th style={{ width: 80, textAlign: 'center' }}>Unidad</th>
-                <th className="num" style={{ width: 100 }}>Cantidad</th>
-                <th className="num" style={{ width: 120 }}>P. Unitario</th>
-                {esDestajo && <th className="num" style={{ width: 84 }}>Desc. %</th>}
-                <th className="num" style={{ width: 120 }}>Importe</th>
-                <th style={{ width: 44 }}></th>
-              </tr></thead>
-              <tbody>
-                {ls.length === 0 && <tr><td colSpan={cols} className="empty" style={{ padding: 18, textAlign: 'center', color: 'var(--c-text-3)', fontSize: 13 }}>Sin líneas. {editable && 'Usa "Agregar línea".'}</td></tr>}
-                {ls.map(l => {
-                  // Líneas ligadas al presupuesto: cantidad/P.U./descripción/unidad bloqueadas
-                  const ligada = esDestajo && !!l.actividadId
-                  const lock = !editable || ligada
-                  return (
-                  <tr key={l.id}>
-                    {esDestajo && (
-                      <td>
-                        <select className="input sm" disabled={!editable || !!l.actividadId} value={l.actividadId || ''} onChange={e => vincular(l.id, e.target.value)} style={{ width: 140, fontSize: 11 }}>
-                          <option value="">— libre —</option>
-                          {acts.map(a => <option key={a.id} value={a.id}>{a.id} · {a.descripcion.slice(0, 30)}</option>)}
-                        </select>
-                      </td>
-                    )}
-                    <td><input className="input sm" disabled={lock} placeholder="Descripción" value={l.descripcion} onChange={e => updLinea(l.id, { descripcion: e.target.value })} style={{ width: '100%' }} /></td>
-                    <td><input className="input sm" disabled={lock} placeholder={tipo === 'dia' ? 'día, hora…' : 'm², ml…'} value={l.unidad} onChange={e => updLinea(l.id, { unidad: e.target.value })} style={{ width: 70, textAlign: 'center' }} /></td>
-                    <td className="num"><input type="number" min="0" step="any" className="input sm" disabled={lock} value={l.cantidad} onFocus={e => e.target.select()} onChange={e => updLinea(l.id, { cantidad: e.target.value })} style={{ width: 86, textAlign: 'right' }} /></td>
-                    <td className="num"><input type="number" min="0" step="any" className="input sm" disabled={lock} value={l.pu} onFocus={e => e.target.select()} onChange={e => updLinea(l.id, { pu: e.target.value })} style={{ width: 106, textAlign: 'right' }} /></td>
-                    {esDestajo && <td className="num"><input type="number" min="0" max="100" step="any" className="input sm" disabled={!editable} value={l.descuento ?? 0} onFocus={e => e.target.select()} onChange={e => updLinea(l.id, { descuento: Math.max(0, Math.min(100, +e.target.value || 0)) })} style={{ width: 70, textAlign: 'right' }} /></td>}
-                    <td className="num" style={{ fontWeight: 700 }}>{money(importeLinea(l))}</td>
-                    <td>{editable && <button className="btn xs danger icon" onClick={() => delLinea(l.id)}><Trash2 size={11} /></button>}</td>
-                  </tr>
-                  )
-                })}
-              </tbody>
-              {ls.length > 0 && (
-                <tfoot><tr>
-                  <td colSpan={cols - 2} style={{ textAlign: 'right', fontWeight: 800, background: 'var(--c-ink)', color: '#fff' }}>SUBTOTAL {titulo.toUpperCase()}</td>
-                  <td className="num" style={{ fontWeight: 800, background: 'var(--c-ink)', color: 'var(--c-accent)' }}>{money(esDestajo ? t.destajo : t.dia)}</td>
-                  <td style={{ background: 'var(--c-ink)' }}></td>
-                </tr></tfoot>
-              )}
-            </table>
+    // ── DESTAJO: cuadro de estimación acumulada (Contrato | Anterior | Este
+    // período | Acumulado). Contrato y acumulados bloqueados; editable solo la
+    // cantidad de este período y el descuento. ──
+    const lsDestajo = (sel.lineas_json || []).filter(l => l.tipo === 'destajo')
+    const descComun = lsDestajo.length && lsDestajo.every(l => (+l.descuento || 0) === (+lsDestajo[0].descuento || 0)) ? (+lsDestajo[0].descuento || 0) : ''
+    const setDescTodas = v => setLineas((sel.lineas_json || []).map(l => l.tipo === 'destajo' ? { ...l, descuento: v } : l))
+    const HG = { background: 'var(--c-ink)', color: 'var(--c-accent)', fontSize: 10, fontWeight: 700, textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.04em' }
+    const renderDestajo = () => (
+      <div className="card" style={{ padding: 0, marginBottom: 16 }}>
+        <div className="card-header">
+          <div className="card-title"><HardHat size={15} /> Obra por destajo</div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {lsDestajo.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ fontSize: 11, color: 'var(--c-text-3)' }}>Descuento % a todas:</span>
+                <input type="number" min="0" max="100" step="any" className="input sm" disabled={!editable} value={descComun} placeholder="0"
+                  onChange={e => setDescTodas(Math.max(0, Math.min(100, +e.target.value || 0)))} style={{ width: 64, textAlign: 'right', fontWeight: 700 }} />
+              </div>
+            )}
+            {editable && <button className="btn sm brand" onClick={() => setShowGen(true)}><Wand2 size={13} /> Generar por actividad</button>}
+            {editable && <button className="btn sm" onClick={() => setShowGenMO(true)}><HardHat size={13} /> Generar por oficio</button>}
+            {editable && <button className="btn sm" onClick={() => addLinea('destajo')}><Plus size={13} /> Agregar línea</button>}
           </div>
         </div>
-      )
-    }
+        <div style={{ overflowX: 'auto' }}>
+          <table className="bt" style={{ minWidth: 1180 }}>
+            <thead>
+              <tr>
+                <th rowSpan={2} style={{ width: 150 }}>Actividad</th>
+                <th rowSpan={2}>Descripción</th>
+                <th colSpan={3} style={HG}>Contrato de obra</th>
+                <th colSpan={2} style={HG}>Período anterior</th>
+                <th colSpan={2} style={HG}>Este período</th>
+                <th colSpan={3} style={HG}>Acumulado</th>
+                <th rowSpan={2} style={{ width: 36 }}></th>
+              </tr>
+              <tr>
+                <th className="num" style={{ width: 70 }}>Cant.</th><th style={{ width: 48, textAlign: 'center' }}>Und</th><th className="num" style={{ width: 84 }}>P.U.</th>
+                <th className="num" style={{ width: 70 }}>Cant.</th><th className="num" style={{ width: 96 }}>Total</th>
+                <th className="num" style={{ width: 78 }}>Cant.</th><th className="num" style={{ width: 96 }}>Total</th>
+                <th className="num" style={{ width: 70 }}>Cant.</th><th className="num" style={{ width: 96 }}>Total</th><th className="num" style={{ width: 54 }}>%</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lsDestajo.length === 0 && <tr><td colSpan={13} className="empty" style={{ padding: 18, textAlign: 'center', color: 'var(--c-text-3)', fontSize: 13 }}>Sin líneas. {editable && 'Usa "Generar…" o "Agregar línea".'}</td></tr>}
+              {lsDestajo.map(l => {
+                const ligada = !!l.actividadId
+                const lock = !editable || ligada
+                const cc = contratoDe(l)
+                const ant = anteriorDe(l)
+                const totEste = importeLinea(l)
+                const cantAcum = round2(ant.cant + (+l.cantidad || 0))
+                const totAcum = round2(ant.total + totEste)
+                const pct = cc > 0 ? Math.round(cantAcum / cc * 100) : 0
+                const num = { fontSize: 12, color: 'var(--c-text-2)' }
+                return (
+                  <tr key={l.id}>
+                    <td>
+                      <select className="input sm" disabled={!editable || !!l.actividadId} value={l.actividadId || ''} onChange={e => vincular(l.id, e.target.value)} style={{ width: 140, fontSize: 11 }}>
+                        <option value="">— libre —</option>
+                        {acts.map(a => <option key={a.id} value={a.id}>{a.id} · {a.descripcion.slice(0, 30)}</option>)}
+                      </select>
+                    </td>
+                    <td><input className="input sm" disabled={lock} value={l.descripcion} onChange={e => updLinea(l.id, { descripcion: e.target.value })} style={{ width: '100%', minWidth: 180 }} /></td>
+                    {/* Contrato (bloqueado) */}
+                    <td className="num" style={num}>{cc ? fmt(cc) : '—'}</td>
+                    <td style={{ textAlign: 'center', ...num }}>{l.unidad || '—'}</td>
+                    <td className="num">{lock ? <span style={num}>{money(l.pu)}</span> : <input type="number" min="0" step="any" className="input sm" value={l.pu} onFocus={e => e.target.select()} onChange={e => updLinea(l.id, { pu: e.target.value })} style={{ width: 80, textAlign: 'right' }} />}</td>
+                    {/* Período anterior (bloqueado) */}
+                    <td className="num" style={num}>{fmt(ant.cant)}</td>
+                    <td className="num" style={num}>{money(ant.total)}</td>
+                    {/* Este período: cantidad EDITABLE + descuento, total formulado */}
+                    <td className="num"><input type="number" min="0" step="any" className="input sm" disabled={!editable} value={l.cantidad} onFocus={e => e.target.select()} onChange={e => updLinea(l.id, { cantidad: e.target.value })} style={{ width: 72, textAlign: 'right', fontWeight: 700 }} /></td>
+                    <td className="num" style={{ fontWeight: 700 }}>
+                      {money(totEste)}
+                      {(+l.descuento || 0) > 0 && <span style={{ fontSize: 9, color: 'var(--c-warn)', display: 'block' }}>−{fmt(l.descuento)}%</span>}
+                    </td>
+                    {/* Acumulado (bloqueado) */}
+                    <td className="num" style={{ ...num, fontWeight: 600 }}>{fmt(cantAcum)}</td>
+                    <td className="num" style={{ fontWeight: 700 }}>{money(totAcum)}</td>
+                    <td className="num" style={{ ...num, fontWeight: 700, color: pct >= 100 ? 'var(--c-success)' : 'var(--c-text-2)' }}>{cc ? `${pct}%` : '—'}</td>
+                    <td>{editable && <button className="btn xs danger icon" onClick={() => delLinea(l.id)}><Trash2 size={11} /></button>}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+            {lsDestajo.length > 0 && (
+              <tfoot><tr>
+                <td colSpan={8} style={{ textAlign: 'right', fontWeight: 800, background: 'var(--c-ink)', color: '#fff' }}>SUBTOTAL ESTE PERÍODO</td>
+                <td className="num" style={{ fontWeight: 800, background: 'var(--c-ink)', color: 'var(--c-accent)' }}>{money(t.destajo)}</td>
+                <td colSpan={4} style={{ background: 'var(--c-ink)' }}></td>
+              </tr></tfoot>
+            )}
+          </table>
+        </div>
+        {editable && <div style={{ fontSize: 11, color: 'var(--c-text-3)', padding: '8px 16px' }}>Cantidad/P.U. del contrato y los acumulados están bloqueados (vienen del presupuesto y de planillas anteriores). Solo editas la <b>cantidad de este período</b> y el <b>descuento</b>.</div>}
+      </div>
+    )
+
+    // ── PERSONAL AL DÍA / obras varias: tabla simple, sin contrato ──
+    const lsDia = (sel.lineas_json || []).filter(l => l.tipo === 'dia')
+    const renderDia = () => (
+      <div className="card" style={{ padding: 0, marginBottom: 16 }}>
+        <div className="card-header">
+          <div className="card-title"><Users size={15} /> Personal al día / Obras varias</div>
+          {editable && <button className="btn sm" onClick={() => addLinea('dia')}><Plus size={13} /> Agregar línea</button>}
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table className="bt">
+            <thead><tr>
+              <th>Descripción</th>
+              <th style={{ width: 90, textAlign: 'center' }}>Unidad</th>
+              <th className="num" style={{ width: 100 }}>Cantidad</th>
+              <th className="num" style={{ width: 120 }}>P. Unitario</th>
+              <th className="num" style={{ width: 120 }}>Importe</th>
+              <th style={{ width: 44 }}></th>
+            </tr></thead>
+            <tbody>
+              {lsDia.length === 0 && <tr><td colSpan={6} className="empty" style={{ padding: 18, textAlign: 'center', color: 'var(--c-text-3)', fontSize: 13 }}>Sin líneas. {editable && 'Usa "Agregar línea".'}</td></tr>}
+              {lsDia.map(l => (
+                <tr key={l.id}>
+                  <td><input className="input sm" disabled={!editable} placeholder="Descripción" value={l.descripcion} onChange={e => updLinea(l.id, { descripcion: e.target.value })} style={{ width: '100%' }} /></td>
+                  <td><input className="input sm" disabled={!editable} placeholder="día, hora…" value={l.unidad} onChange={e => updLinea(l.id, { unidad: e.target.value })} style={{ width: 80, textAlign: 'center' }} /></td>
+                  <td className="num"><input type="number" min="0" step="any" className="input sm" disabled={!editable} value={l.cantidad} onFocus={e => e.target.select()} onChange={e => updLinea(l.id, { cantidad: e.target.value })} style={{ width: 86, textAlign: 'right' }} /></td>
+                  <td className="num"><input type="number" min="0" step="any" className="input sm" disabled={!editable} value={l.pu} onFocus={e => e.target.select()} onChange={e => updLinea(l.id, { pu: e.target.value })} style={{ width: 106, textAlign: 'right' }} /></td>
+                  <td className="num" style={{ fontWeight: 700 }}>{money(importeLinea(l))}</td>
+                  <td>{editable && <button className="btn xs danger icon" onClick={() => delLinea(l.id)}><Trash2 size={11} /></button>}</td>
+                </tr>
+              ))}
+            </tbody>
+            {lsDia.length > 0 && (
+              <tfoot><tr>
+                <td colSpan={4} style={{ textAlign: 'right', fontWeight: 800, background: 'var(--c-ink)', color: '#fff' }}>SUBTOTAL PERSONAL AL DÍA</td>
+                <td className="num" style={{ fontWeight: 800, background: 'var(--c-ink)', color: 'var(--c-accent)' }}>{money(t.dia)}</td>
+                <td style={{ background: 'var(--c-ink)' }}></td>
+              </tr></tfoot>
+            )}
+          </table>
+        </div>
+      </div>
+    )
 
     return (
       <Fragment>
@@ -506,8 +592,8 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
             </div>
           </div>
 
-          {renderSeccion('Obra por destajo', 'destajo', HardHat)}
-          {renderSeccion('Personal al día / Obras varias', 'dia', Users)}
+          {renderDestajo()}
+          {renderDia()}
 
           {/* Deducciones */}
           <div className="card" style={{ padding: 0, marginBottom: 16 }}>
