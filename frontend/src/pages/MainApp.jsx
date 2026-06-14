@@ -1525,7 +1525,8 @@ function FichaCostoModal({ open, onClose, actividad, budget, catalogos, params, 
   const f = actividad.ficha || { materiales: [], manoObra: [], herramientaEquipo: [], subcontratos: [] }
   const calc = calcFicha(f, catalogos, params)
   const upd = (k, i, fld, v) => { const nf = { ...f, [k]: [...f[k]] }; nf[k][i] = { ...nf[k][i], [fld]: v }; onUpdate({ ...actividad, ficha: nf }) }
-  const add = k => onUpdate({ ...actividad, ficha: { ...f, [k]: [...(f[k] || []), { id: uid(), insumoId: null, rendimiento: 1, desperdicio: 0 }] } })
+  // Herramienta y equipo entra con rendimiento 0 (se captura manual); el resto con 1
+  const add = k => onUpdate({ ...actividad, ficha: { ...f, [k]: [...(f[k] || []), { id: uid(), insumoId: null, rendimiento: k === 'herramientaEquipo' ? 0 : 1, desperdicio: 0 }] } })
   const del = (k, i) => onUpdate({ ...actividad, ficha: { ...f, [k]: f[k].filter((_, ix) => ix !== i) } })
   const createIns = (k, i, desc) => { const r = findOrCreateInsumo(catalogos, k, desc); if (!r) return; onUpdateCatalogos(r.catalogos); upd(k, i, 'insumoId', r.insumo.id) }
   return (

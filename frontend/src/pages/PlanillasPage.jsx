@@ -354,14 +354,9 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
     const editable = sel.estado === 'borrador' && canElaborar
     const t = totalesDe(sel)
     const setLineas = lineas_json => setSel({ ...sel, lineas_json })
-    const addLinea = tipo => setLineas([...(sel.lineas_json || []), { id: uid(), tipo, actividadId: '', descripcion: '', unidad: '', cantidad: tipo === 'dia' ? 1 : 0, pu: 0 }])
+    const addLinea = tipo => setLineas([...(sel.lineas_json || []), { id: uid(), tipo, actividadId: '', descripcion: '', unidad: '', cantidad: tipo === 'dia' ? 1 : '', pu: 0 }])
     const updLinea = (id, patch) => setLineas(sel.lineas_json.map(l => l.id === id ? { ...l, ...patch } : l))
     const delLinea = id => setLineas(sel.lineas_json.filter(l => l.id !== id))
-    const vincular = (id, actId) => {
-      const a = acts.find(x => x.id === actId)
-      // P.U. = mano de obra unitaria (al destajista se le paga la m.o., no el precio de venta)
-      updLinea(id, a ? { actividadId: actId, capId: a.capId, descripcion: a.descripcion, unidad: a.unidad, pu: round2(moUnit[actId] || 0) } : { actividadId: '' })
-    }
     // Cantidad pendiente de pagar por actividad a ESTE contratista:
     // ejecutado acumulado (avance físico) − ya pagado en sus planillas previas
     const pagadoPrevio = {}
@@ -385,7 +380,8 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
     const generarDestajo = ids => {
       const nuevas = ids.map(id => {
         const a = actById[id]
-        return { id: uid(), tipo: 'destajo', actividadId: id, capId: a.capId, descripcion: a.descripcion, unidad: a.unidad, cantContrato: +a.cantidad || 0, cantidad: pendientes[id] || 0, pu: round2(moUnit[id] || 0) }
+        // Cantidad de "este período" vacía: el usuario la introduce manualmente
+        return { id: uid(), tipo: 'destajo', actividadId: id, capId: a.capId, descripcion: a.descripcion, unidad: a.unidad, cantContrato: +a.cantidad || 0, cantidad: '', pu: round2(moUnit[id] || 0) }
       })
       setSel({ ...sel, lineas_json: [...(sel.lineas_json || []), ...nuevas] })
       setShowGen(false)
@@ -396,7 +392,7 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
       const nuevas = combos.map(({ moId, actId }) => {
         const o = porOficio[moId]; const a = o?.acts.find(x => x.id === actId)
         if (!o || !a) return null
-        return { id: uid(), tipo: 'destajo', actividadId: actId, manoObraId: moId, capId: a.capId, descripcion: `${o.insumo.descripcion} · ${a.descripcion}`, unidad: a.unidad, cantContrato: +a.cantidad || 0, cantidad: a.cantidad, pu: round2(a.pu) }
+        return { id: uid(), tipo: 'destajo', actividadId: actId, manoObraId: moId, capId: a.capId, descripcion: `${o.insumo.descripcion} · ${a.descripcion}`, unidad: a.unidad, cantContrato: +a.cantidad || 0, cantidad: '', pu: round2(a.pu) }
       }).filter(Boolean)
       setSel({ ...sel, lineas_json: [...(sel.lineas_json || []), ...nuevas] })
       setShowGenMO(false)
@@ -460,13 +456,12 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
                 const num = { fontSize: 12, color: 'var(--c-text-2)' }
                 return (
                   <tr key={l.id}>
-                    <td>
-                      <select className="input sm" disabled={!editable || !!l.actividadId} value={l.actividadId || ''} onChange={e => vincular(l.id, e.target.value)} style={{ width: 140, fontSize: 11 }}>
-                        <option value="">— libre —</option>
-                        {acts.map(a => <option key={a.id} value={a.id}>{a.id} · {a.descripcion.slice(0, 30)}</option>)}
-                      </select>
+                    <td style={{ verticalAlign: 'top', fontSize: 11, fontWeight: 700, color: 'var(--c-text-2)', paddingTop: 8 }}>{l.actividadId || '—'}</td>
+                    <td style={{ verticalAlign: 'top' }}>
+                      {lock
+                        ? <div style={{ fontSize: 12, lineHeight: 1.35, whiteSpace: 'normal', wordBreak: 'break-word', textAlign: 'justify', minWidth: 220, maxWidth: 380, paddingTop: 6 }}>{l.descripcion}</div>
+                        : <input className="input sm" value={l.descripcion} onChange={e => updLinea(l.id, { descripcion: e.target.value })} style={{ width: '100%', minWidth: 220 }} />}
                     </td>
-                    <td><input className="input sm" disabled={lock} value={l.descripcion} onChange={e => updLinea(l.id, { descripcion: e.target.value })} style={{ width: '100%', minWidth: 180 }} /></td>
                     {/* Contrato (bloqueado) */}
                     <td className="num" style={num}>{cc ? fmt(cc) : '—'}</td>
                     <td style={{ textAlign: 'center', ...num }}>{l.unidad || '—'}</td>
@@ -475,7 +470,7 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
                     <td className="num" style={num}>{fmt(ant.cant)}</td>
                     <td className="num" style={num}>{money(ant.total)}</td>
                     {/* Este período: cantidad EDITABLE + descuento, total formulado */}
-                    <td className="num"><input type="number" min="0" step="any" className="input sm" disabled={!editable} value={l.cantidad} onFocus={e => e.target.select()} onChange={e => updLinea(l.id, { cantidad: e.target.value })} style={{ width: 72, textAlign: 'right', fontWeight: 700 }} /></td>
+                    <td className="num"><input type="number" min="0" step="any" className="input sm" disabled={!editable} value={l.cantidad ?? ''} placeholder="0" onFocus={e => e.target.select()} onChange={e => updLinea(l.id, { cantidad: e.target.value })} style={{ width: 72, textAlign: 'right', fontWeight: 700 }} /></td>
                     <td className="num" style={{ fontWeight: 700 }}>
                       {money(totEste)}
                       {(+l.descuento || 0) > 0 && <span style={{ fontSize: 9, color: 'var(--c-warn)', display: 'block' }}>−{fmt(l.descuento)}%</span>}
