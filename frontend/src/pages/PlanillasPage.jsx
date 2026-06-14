@@ -6,11 +6,12 @@
 import { useState, useEffect, useMemo, Fragment } from 'react'
 import { supabase } from '../lib/supabase'
 import { puedeHacer } from '../lib/permissions'
-import { calcItem, makeMoneyFmt, round2, uid } from '../lib/calc'
-import { flattenActividades, hoyISO } from '../lib/cronograma'
+import { calcItem, calcFicha, makeMoneyFmt, fmt, round2, uid } from '../lib/calc'
+import { flattenActividades, pctReal, hoyISO } from '../lib/cronograma'
+import { Modal } from '../components/ui'
 import { exportPDFPlanilla } from '../lib/exportPlanilla'
 import {
-  HardHat, Plus, FileText, Check, X, Send, ChevronLeft, Trash2, DollarSign, Users, Coins,
+  HardHat, Plus, FileText, Check, X, Send, ChevronLeft, Trash2, DollarSign, Users, Coins, Wand2,
 } from 'lucide-react'
 
 const ESTADOS = {
@@ -25,34 +26,104 @@ const Chip = ({ estado }) => {
   return <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 10, background: e.bg, color: e.fg, whiteSpace: 'nowrap' }}>{e.label}</span>
 }
 
+// Modal para generar líneas de destajo desde el presupuesto (alcance del
+// contratista), con cantidad pendiente desde el avance físico y P.U. = mano
+// de obra unitaria. Componente top-level para no perder foco.
+function GenerarDestajoModal({ open, onClose, acts, moUnit, pendientes, money, yaEnPlanilla, onConfirmar }) {
+  const [sel, setSel] = useState({})
+  useEffect(() => { if (open) setSel({}) }, [open])
+  if (!open) return null
+  const disponibles = acts.filter(a => !yaEnPlanilla.has(a.id))
+  const ids = Object.keys(sel).filter(k => sel[k])
+  // Agrupar por capítulo
+  const porCap = []
+  let lastCap = null
+  for (const a of disponibles) {
+    if (a.capId !== lastCap) { lastCap = a.capId; porCap.push({ cap: { id: a.capId, desc: a.capDesc }, acts: [] }) }
+    porCap[porCap.length - 1].acts.push(a)
+  }
+  const toggle = id => setSel(p => ({ ...p, [id]: !p[id] }))
+  const toggleCap = (capActs, on) => setSel(p => { const n = { ...p }; capActs.forEach(a => n[a.id] = on); return n })
+
+  return (
+    <Modal open={open} onClose={onClose} title="Generar destajo desde el presupuesto"
+      footer={<>
+        <button className="btn ghost" onClick={onClose}>Cancelar</button>
+        <button className="btn brand" disabled={!ids.length} onClick={() => onConfirmar(ids)}>
+          <Check size={13} /> Agregar {ids.length} actividad{ids.length !== 1 ? 'es' : ''}
+        </button>
+      </>}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ fontSize: 12.5, color: 'var(--c-text-2)', background: 'var(--c-accent-soft)', padding: '8px 12px', borderRadius: 8, lineHeight: 1.5 }}>
+          Marca las actividades que ejecuta este contratista. Se crea una línea por actividad con la
+          <b> cantidad pendiente</b> (avance físico − ya pagado en planillas anteriores) y el P.U. de
+          <b> mano de obra</b> de la ficha (editable). Tú pones los materiales.
+        </div>
+        <div style={{ maxHeight: 360, overflowY: 'auto', border: '1px solid var(--c-line)', borderRadius: 8 }}>
+          {disponibles.length === 0 && <div style={{ padding: 16, textAlign: 'center', fontSize: 13, color: 'var(--c-text-3)' }}>Todas las actividades del presupuesto ya están en esta planilla.</div>}
+          {porCap.map(g => (
+            <div key={g.cap.id || 'sc'}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', background: 'var(--c-ink)', color: 'var(--c-accent)', fontWeight: 700, fontSize: 12 }}>
+                <span style={{ flex: 1 }}>{g.cap.id} · {g.cap.desc}</span>
+                <button className="btn xs" onClick={() => toggleCap(g.acts, true)} style={{ padding: '1px 6px' }}>todas</button>
+                <button className="btn xs ghost" onClick={() => toggleCap(g.acts, false)} style={{ padding: '1px 6px', color: '#fff' }}>ninguna</button>
+              </div>
+              {g.acts.map(a => (
+                <label key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 12px', borderBottom: '1px solid var(--c-line-2)', cursor: 'pointer', background: sel[a.id] ? 'var(--c-accent-soft)' : 'transparent' }}>
+                  <input type="checkbox" checked={!!sel[a.id]} onChange={() => toggle(a.id)} style={{ width: 15, height: 15, accentColor: 'var(--c-accent)' }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500 }}>{a.descripcion}</div>
+                    <div style={{ fontSize: 11, color: 'var(--c-text-3)' }}>Pendiente: {fmt(pendientes[a.id] || 0)} {a.unidad} · m.o. {money(moUnit[a.id] || 0)}/{a.unidad}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 export default function PlanillasPage({ budget, projectRole, user, params }) {
   const [lista, setLista] = useState([])
   const [loading, setLoading] = useState(true)
   const [sel, setSel] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [showGen, setShowGen] = useState(false)
 
   const money = makeMoneyFmt(budget?.moneda)
   const canElaborar = puedeHacer(projectRole, 'elaborarPlanilla')
   const canAprobar  = puedeHacer(projectRole, 'aprobarPlanilla')
 
   const acts = useMemo(() => flattenActividades(budget?.items || []), [budget?.items])
-  const puDe = useMemo(() => {
+  const actById = useMemo(() => Object.fromEntries(acts.map(a => [a.id, a])), [acts])
+  // Mano de obra unitaria por actividad (lo que se le paga al destajista; los
+  // materiales los pone la empresa) y cantidad de contrato
+  const moUnit = useMemo(() => {
     const m = {}
     const walk = its => { for (const it of (its || [])) {
-      if (it.tipo === 'actividad') m[it.id] = calcItem(it, budget?.catalogos, params).precioUnitario
+      if (it.tipo === 'actividad') m[it.id] = round2(calcFicha(it.ficha, budget?.catalogos, params).totMo)
       else if (it.children) walk(it.children)
     } }
     walk(budget?.items || [])
     return m
   }, [budget?.items, budget?.catalogos, params])
 
+  const [avances, setAvances] = useState({})  // cortes de avance físico del cronograma
   useEffect(() => {
     let cancel = false
     const cargar = async () => {
       if (!budget?.id) { setLista([]); setLoading(false); return }
       setLoading(true)
-      const { data } = await supabase.from('planillas').select('*').eq('presupuesto_id', budget.id).order('created_at')
-      if (!cancel) { setLista(data || []); setLoading(false) }
+      const [{ data }, { data: cr }] = await Promise.all([
+        supabase.from('planillas').select('*').eq('presupuesto_id', budget.id).order('created_at'),
+        supabase.from('cronogramas').select('datos_json').eq('presupuesto_id', budget.id).maybeSingle(),
+      ])
+      if (cancel) return
+      setLista(data || [])
+      setAvances(cr?.datos_json?.actividades || {})
+      setLoading(false)
     }
     cargar(); setSel(null)
     return () => { cancel = true }
@@ -155,7 +226,30 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
     const delLinea = id => setLineas(sel.lineas_json.filter(l => l.id !== id))
     const vincular = (id, actId) => {
       const a = acts.find(x => x.id === actId)
-      updLinea(id, a ? { actividadId: actId, descripcion: a.descripcion, unidad: a.unidad, pu: round2(puDe[actId] || 0) } : { actividadId: '' })
+      // P.U. = mano de obra unitaria (al destajista se le paga la m.o., no el precio de venta)
+      updLinea(id, a ? { actividadId: actId, capId: a.capId, descripcion: a.descripcion, unidad: a.unidad, pu: round2(moUnit[actId] || 0) } : { actividadId: '' })
+    }
+    // Cantidad pendiente de pagar por actividad a ESTE contratista:
+    // ejecutado acumulado (avance físico) − ya pagado en sus planillas previas
+    const pagadoPrevio = {}
+    for (const p of lista) {
+      if (p.id === sel.id || p.estado === 'rechazada') continue
+      if ((p.contratista || '').trim().toLowerCase() !== (sel.contratista || '').trim().toLowerCase()) continue
+      for (const l of (p.lineas_json || [])) if (l.tipo === 'destajo' && l.actividadId) pagadoPrevio[l.actividadId] = round2((pagadoPrevio[l.actividadId] || 0) + (+l.cantidad || 0))
+    }
+    const pendientes = {}
+    for (const a of acts) {
+      const ejec = round2((pctReal(avances[a.id]?.avances) / 100) * (+a.cantidad || 0))
+      pendientes[a.id] = Math.max(0, round2(ejec - (pagadoPrevio[a.id] || 0)))
+    }
+    const yaEnPlanilla = new Set((sel.lineas_json || []).filter(l => l.tipo === 'destajo' && l.actividadId).map(l => l.actividadId))
+    const generarDestajo = ids => {
+      const nuevas = ids.map(id => {
+        const a = actById[id]
+        return { id: uid(), tipo: 'destajo', actividadId: id, capId: a.capId, descripcion: a.descripcion, unidad: a.unidad, cantidad: pendientes[id] || 0, pu: round2(moUnit[id] || 0) }
+      })
+      setSel({ ...sel, lineas_json: [...(sel.lineas_json || []), ...nuevas] })
+      setShowGen(false)
     }
     const setDed = deducciones_json => setSel({ ...sel, deducciones_json })
 
@@ -167,7 +261,10 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
         <div className="card" style={{ padding: 0, marginBottom: 16 }}>
           <div className="card-header">
             <div className="card-title"><Icon size={15} /> {titulo}</div>
-            {editable && <button className="btn sm" onClick={() => addLinea(tipo)}><Plus size={13} /> Agregar línea</button>}
+            <div style={{ display: 'flex', gap: 8 }}>
+              {editable && tipo === 'destajo' && <button className="btn sm brand" onClick={() => setShowGen(true)}><Wand2 size={13} /> Generar desde presupuesto</button>}
+              {editable && <button className="btn sm" onClick={() => addLinea(tipo)}><Plus size={13} /> Agregar línea</button>}
+            </div>
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table className="bt">
@@ -315,6 +412,8 @@ export default function PlanillasPage({ budget, projectRole, user, params }) {
             </div>
           </div>
         </div>
+        <GenerarDestajoModal open={showGen} onClose={() => setShowGen(false)} acts={acts} moUnit={moUnit}
+          pendientes={pendientes} money={money} yaEnPlanilla={yaEnPlanilla} onConfirmar={generarDestajo} />
       </Fragment>
     )
   }
